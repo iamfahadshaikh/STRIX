@@ -4,7 +4,7 @@ Quick integration test for the target classifier and gating logic.
 Tests that the scanner properly classifies targets and gates tools accordingly.
 """
 
-from target_classifier import TargetClassifierBuilder, ScanContext, TargetType, TargetScope
+from target_profile import TargetProfile
 
 def test_classification():
     """Test target classification"""

@@ -1,55 +1,45 @@
-# Advanced Security Reconnaissance & Vulnerability Scanner
+# Architecture-Driven VAPT Tool Orchestrator
 
-**A Python-based security tool orchestrator that automates execution of external reconnaissance, scanning, and exploitation tools and aggregates their raw outputs.**
+**An intelligent security scanning engine that orchestrates 15-20 security tools with signal-driven gating, discovery caching, and findings intelligence.**
 
-## ⚠️ The Honest Assessment
+## What This Is
 
-**What This Is:**
-- ✅ A tool orchestrator (Python controls Bash tools)
-- ✅ An automation framework (systematic execution at scale)
-- ✅ A reconnaissance factory (raw data collection)
-- ✅ Excellent for pentesters who want to automate repetitive tasks
+**Production-Ready Tool Orchestrator With Intelligence:**
+- ✅ Architecture-driven tool routing (root domain vs subdomain vs IP)
+- ✅ Signal-based gating (tools run only when prerequisites discovered)
+- ✅ Discovery cache (findings from early tools gate later ones)
+- ✅ Findings deduplication & correlation
+- ✅ Intelligence layer (confidence scoring, cross-tool validation)
+- ✅ Professional reporting (JSON, HTML, TXT with OWASP mapping)
+- ✅ HTTPS capability probing & budget controls
+- ✅ Structured outcomes (SKIPPED/BLOCKED/EXECUTED_NO_SIGNAL transparency)
 
 **What This Is NOT:**
-- ❌ A vulnerability scanner in the product sense
-- ❌ A deployment gate that blocks releases
-- ❌ A risk engine that tells you "fix this first"
-- ❌ A deduplicator (same vuln found by 2 tools = 2 findings)
+- ❌ A point-and-click GUI scanner
+- ❌ A real-time vulnerability feed
+- ❌ An automated remediation engine
+- ❌ A compliance certification tool
 
-**The Core Reality:**
-Your Python code is a **controller**, not a analyzer. It:
-- Detects tools
-- Installs tools  
-- Executes tools
-- Captures stdout/stderr
-- Saves files
-
-Everything **meaningful** happens in the external tools, not in Python.
-
-This is **valuable infrastructure** but **Phase 1 of a scanner**, not **Phase 2 intelligence**.
+**The Reality:**
+This is a **professional pentesting automation framework** with:
+- Intelligent orchestration (not just blind tool execution)
+- Signal-driven decisions (not brute-force scanning)
+- Normalized findings model (not raw tool dumps)
+- Production-grade reporting (not just text files)
 
 ---
 
 ## Key Features
 
-### What You Get (Execution Excellence)
-- ✅ **32 integrated tools** across 8 categories
-- ✅ **325+ individual commands** (not just "run nmap")
-- ✅ **Smart orchestration** - each variant gets its own output file
-- ✅ **Zero timeout constraints** - tools run to completion
-- ✅ **Dual scan modes** - Gate (5-10 min) for quick checks, Full (2-8 hours) for deep dives
-- ✅ **Protocol aware** - HTTPS/HTTP variants for everything
-- ✅ **Structured logging** - timestamp, correlation ID, execution metadata
-- ✅ **Error resilience** - one tool fails, others continue
-
-### What You Don't Get (Intelligence Missing)
-- ❌ **Signal extraction** - raw tool outputs, no parsing
-- ❌ **Deduplication** - xsstrike + dalfox both find XSS = 2 findings
-- ❌ **Correlation** - no "these 3 signals = confirmed RCE"
-- ❌ **Risk ranking** - no "fix this first" recommendations
-- ❌ **Gate decisions** - no automatic pass/fail for deployment
-- ❌ **Normalized schema** - findings not standardized
-- ❌ **Confidence levels** - no "this is 95% real vs 30% false positive"
+### Core Capabilities
+- ✅ **~15-20 integrated tools** across DNS, Network, Web, SSL, Nuclei, and exploitation categories
+- ✅ **Smart routing** - Different execution paths for root domains, subdomains, and IPs
+- ✅ **Discovery-driven gating** - XSS tools only run if reflections found, SQLi only if params exist
+- ✅ **Budget controls** - Runtime budgets, DNS time caps, timeout enforcement
+- ✅ **HTTPS probe** - Explicit TLS handshake before SSL tool execution
+- ✅ **Findings intelligence** - Correlation, confidence scoring, false positive filtering
+- ✅ **Structured outcomes** - Clear SKIPPED/BLOCKED/SUCCESS semantics
+- ✅ **Professional reporting** - JSON (source of truth), HTML (visual), TXT (findings summary)
 
 ---
 
@@ -92,106 +82,87 @@ This is **valuable infrastructure** but **Phase 1 of a scanner**, not **Phase 2 
 ### Basic Usage
 
 ```bash
-# Scan a domain (both HTTP and HTTPS)
-python3 automation_scanner.py example.com
+# Scan a domain (HTTPS probe determines protocol)
+python3 automation_scanner_v2.py example.com
 
-# Scan with HTTPS only
-python3 automation_scanner.py example.com --protocol https
+# Explicit HTTPS
+python3 automation_scanner_v2.py https://example.com
 
-# Scan with specific output directory
-python3 automation_scanner.py example.com -o my_assessment
+# Explicit HTTP  
+python3 automation_scanner_v2.py http://example.com
 
-# Auto-install missing tools
-python3 automation_scanner.py example.com --install-all
+# Custom output directory
+python3 automation_scanner_v2.py example.com -o my_scan_results
+
+# Skip tool installation checks
+python3 automation_scanner_v2.py example.com --skip-install
 ```
 
-### Protocol Selection
+### Target Types
 
 ```bash
-# HTTP only
-python3 automation_scanner.py example.com -p http
+# Root domain (broadest execution path)
+python3 automation_scanner_v2.py google.com
 
-# HTTPS only
-python3 automation_scanner.py example.com -p https
+# Subdomain (focused execution)
+python3 automation_scanner_v2.py mail.google.com
 
-# Both HTTP and HTTPS
-python3 automation_scanner.py example.com -p both
-
-# Auto-detect and ask user
-python3 automation_scanner.py example.com -p auto
-```
-
-### Advanced Options
-
-```bash
-# Skip tool installation prompts
-python3 automation_scanner.py example.com --skip-install
-
-# Auto-install all missing tools without prompts
-python3 automation_scanner.py example.com --install-all
-
-# Help
-python3 automation_scanner.py -h
+# IP address (network-focused)
+python3 automation_scanner_v2.py 142.251.32.46
 ```
 
 ## How It Works
 
-### The 9-Stage Process
+### Architecture-Driven Execution Pipeline
 
-**Stage 1: Tool Detection**
-### Stage 1: Tool Detection
-- Scans for all security tools on the system
-- Categorizes by functionality
-- Displays install status
+**Stage 1: Target Classification**
+- Parses target (URL, domain, or IP)
+- Classifies type (root domain vs subdomain vs IP)
+- Explicit HTTPS probe with cached verdict
+- Builds immutable TargetProfile
 
-### Stage 2: Tool Installation
-- Shows missing tools
-- Offers interactive installation
-- Supports apt, pip, brew, and Go
+**Stage 2: Decision Layer**
+- Builds DecisionLedger based on target type
+- Routes to appropriate executor (RootDomain/Subdomain/IP)
+- Tool approval/denial based on capabilities
 
-### Stage 3: Protocol Selection
-- Asks user for HTTP/HTTPS preference
-- Adjusts URLs accordingly
-- Supports auto-detection
+**Stage 3: Discovery Phase**
+- DNS resolution, port scanning, web detection
+- Results stored in DiscoveryCache
+- Feeds forward to gate later tools
 
-### Stage 4: Execution (The Real Work Happens Here)
-- Runs 325+ individual commands
-- Each command variant gets separate output file
-- Captures stdout and stderr with metadata
-- Records execution timestamp and correlation ID
-- **Note**: This is all external tool output - Python just orchestrates
+**Stage 4: Exploitation Phase (Gated)**
+- XSS tools only if reflections found
+- SQLi tools only if parameters discovered
+- Command injection only if command-like params exist
+- Budget enforcement prevents runaway scans
 
-### Stage 5: Error Handling
-- Continues even if tools fail
-- Logs all errors  
-- Never stops scanning
+**Stage 5: Intelligence Processing**
+- Tool output parsed into normalized Finding objects
+- Findings deduplicated by hash
+- Correlation identifies related findings
+- Confidence scoring based on cross-tool agreement
 
-### Stage 6: Results Aggregation
-- Displays tool execution table
-- Shows success/fail counts
-- Lists execution times
-- **What it doesn't do**: Parse outputs, deduplicate, prioritize
-
-### Stage 7-9: Basic Reporting
-- Generates JSON report with execution metadata
-- Placeholder remediation guidance
-- Raw tool output files
-- **Important**: This is "what happened", not "what matters"
+**Stage 6: Professional Reporting**
+- JSON: Complete execution metadata + findings
+- HTML: Visual report with severity grouping
+- TXT: OWASP-mapped findings summary
+- All outputs include correlation ID for traceability
 
 ## Output Structure
 
 ```
-scan_results_example.com_20240116_103022/
-├── assetfinder.txt                    # Individual tool outputs
-├── dnsrecon_std.txt
-├── nmap_fast.txt
-├── testssl_full.txt
-├── whatweb_https.txt
-├── xsstrike_http.txt
+scan_results_example.com_20260109_103022/
+├── dig_a.txt                          # Individual tool outputs
+├── nmap_quick.txt
+├── whatweb.txt
+├── nikto.txt
+├── sslscan.txt
+├── nuclei_crit.txt
 │
-├── EXECUTIVE_SUMMARY.txt              # Main report
-├── vulnerability_report.json          # Detailed findings
-├── remediation_report.json            # Action items
+├── execution_report.json              # Source of truth (outcomes, findings, discoveries, intelligence)
+├── security_report.html               # Visual report with severity grouping
+├── findings_summary.txt               # OWASP-mapped findings (CRITICAL/HIGH/MEDIUM)
 │
 └── [other tool outputs...]
 ```

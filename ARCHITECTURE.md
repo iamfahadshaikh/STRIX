@@ -1,6 +1,6 @@
-# Project Architecture: Security Tool Orchestrator v3.0
+# Project Architecture: Architecture-Driven VAPT Engine
 
-**Current Status**: Phase 1 Complete (Tool Orchestration) | Phase 2 Planned (Intelligence Layer)
+**Current Status**: Production-Ready | Intelligence Layer Active | Signal-Driven Gating Enabled
 
 ---
 
@@ -12,8 +12,6 @@
 4. [Execution Pipeline](#execution-pipeline)
 5. [Tool Ecosystem](#tool-ecosystem)
 6. [File Structure](#file-structure)
-7. [Current Limitations](#current-limitations)
-8. [Future Architecture (Phase 2)](#future-architecture-phase-2)
 
 ---
 
@@ -25,179 +23,180 @@
 │  python3 automation_scanner_v2.py <target> [options]        │
 └────────────────────────────┬────────────────────────────────┘
                              │
-              ┌──────────────┴──────────────┐
-              │                             │
-         ┌────▼────┐                  ┌────▼────┐
-         │  GATE   │                  │   FULL  │
-         │  MODE   │                  │  MODE   │
-         │ 5-10min │                  │ 2-8hrs  │
-         └────┬────┘                  └────┬────┘
-              │                             │
-              └──────────────┬──────────────┘
-                             │
            ┌─────────────────▼─────────────────┐
-           │  COMPREHENSIVE SECURITY SCANNER   │
-           │      Tool Orchestration Engine    │
-           └──────────────────────────────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-   ┌────▼─────┐        ┌────▼─────┐        ┌────▼─────┐
-   │Tool      │        │Execution │        │Output    │
-   │Detection │        │Engine    │        │Manager   │
-   │& Install │        │          │        │          │
-   └──────────┘        └──────────┘        └──────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-   ┌────▼──────┐       ┌────▼──────┐       ┌────▼──────┐
-   │32 Tools   │       │Raw Output │       │Execution  │
-   │Organized │       │Files      │       │Logs       │
-   │by         │       │(325+)     │       │(JSON)     │
-   │Category   │       │           │       │           │
-   └───────────┘       └───────────┘       └───────────┘
+           │    TARGET CLASSIFICATION          │
+           │  TargetProfile (immutable)        │
+           │  HTTPS probe (cached verdict)     │
+           └──────────────┬────────────────────┘
+                          │
+           ┌──────────────▼────────────────┐
+           │     DECISION LAYER            │
+           │  DecisionLedger               │
+           │  (allow/deny per tool)        │
+           └──────────────┬────────────────┘
+                          │
+        ┌─────────────────┴─────────────────┐
+        │                                   │
+   ┌────▼────┐        ┌────▼────┐     ┌───▼────┐
+   │  Root   │        │Subdomain│     │   IP   │
+   │Executor │        │Executor │     │Executor│
+   └────┬────┘        └────┬────┘     └───┬────┘
+        │                  │               │
+        └──────────────────┼───────────────┘
+                           │
+           ┌───────────────▼───────────────┐
+           │   DISCOVERY CACHE             │
+           │ (ports/params/reflections)    │
+           └───────────────┬───────────────┘
+                           │
+           ┌───────────────▼───────────────┐
+           │   FINDINGS REGISTRY           │
+           │ (dedupe + normalize)          │
+           └───────────────┬───────────────┘
+                           │
+           ┌───────────────▼───────────────┐
+           │  INTELLIGENCE LAYER           │
+           │ (correlation + confidence)    │
+           └───────────────┬───────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+   ┌────▼─────┐      ┌────▼─────┐      ┌────▼─────┐
+   │JSON      │      │HTML      │      │TXT       │
+   │Report    │      │Report    │      │Summary   │
+   └──────────┘      └──────────┘      └──────────┘
 ```
 
 ---
 
 ## Component Architecture
 
-### Layer 1: Entry Point
-**File**: `automation_scanner_v2.py` (Main class: `ComprehensiveSecurityScanner`)
+### Layer 1: Entry Point & Classification
+**File**: `automation_scanner_v2.py` (Class: `AutomationScannerV2`)
 
 **Responsibilities**:
-- Parse command-line arguments
-- Initialize scanner with target/protocol/mode
-- Route to gate or full scan
-- Orchestrate high-level execution flow
+- Parse target and initialize TargetProfile
+- Execute explicit HTTPS probe (TLS handshake + HEAD fallback)
+- Cache HTTPS verdict (immutable post-planning)
+- Initialize discovery cache and findings registry
+- Build decision ledger and route to executor
+
+**Key Components**:
+```python
+TargetProfile.from_target()             # Classify target type
+_with_https_probe()                     # Probe HTTPS capability
+DecisionEngine.build_ledger()           # Allow/deny tools
+get_executor()                          # Route to executor
+```
+
+---
+
+### Layer 2: Decision Layer
+**Files**: `decision_ledger.py`, `execution_paths.py`
+
+**DecisionLedger**:
+- Tracks ALLOW/DENY decisions per tool
+- No tool runs without explicit ALLOW
+- Timeouts and budgets configured per-tool
+
+**Executors** (3 types):
+- `RootDomainExecutor`: Broadest scan (DNS, subdomain enum, web, exploitation)
+- `SubdomainExecutor`: Focused scan (no subdomain enum)
+- `IPExecutor`: Network-first scan (no DNS, no subdomain enum)
 
 **Key Methods**:
 ```python
-__init__()                          # Initialize scanner
-run_gate_scan()                     # 5-10 min quick assessment
-run_full_scan()                     # Comprehensive 2-8 hour scan
-_finalize_scan()                    # Cleanup & reporting
+ledger.add_decision(tool, Decision.ALLOW, reason, timeout=...)
+executor.get_execution_plan()          # Returns [(tool, cmd, meta), ...]
 ```
 
 ---
 
-### Layer 2: Tool Management
-**File**: `tool_manager.py` (Class: `ToolManager`)
+### Layer 3: Discovery Cache & Signal-Based Gating
+**File**: `cache_discovery.py` (Class: `DiscoveryCache`)
 
-**Responsibilities**:
-- Detect installed tools on system
-- Install missing tools (apt, pip, brew, go)
-- Provide tool status and availability
-- Manage tool metadata
+**Purpose**: Store discoveries from early tools to gate later ones
 
-**Key Methods**:
+**Tracked Signals**:
+- Ports discovered (via nmap)
+- Endpoints discovered (via gobuster/dirsearch)
+- Parameters found (via URL parsing, whatweb)
+- Reflections detected (via probe)
+- Subdomains verified (via findomain/sublist3r)
+
+**Gating Logic**:
 ```python
-scan_all_tools()                    # Detect all 32 tools
-check_tool_installed(tool_name)     # Boolean check
-install_tool(tool_name)             # Install specific tool
-get_tool_status()                   # Report on all tools
+if not cache.has_params():
+    # Skip sqlmap, no parameters to test
+if not cache.has_reflections():
+    # Skip dalfox, no reflection evidence
 ```
-
-**Manages**: 32 tools across 8 categories
-- DNS/Subdomain: assetfinder, dnsrecon, dig, host, dnsenum, nslookup, findomain, theharvester
-- Network: nmap, ping, traceroute, whois
-- SSL/TLS: testssl.sh, sslyze, sslscan, openssl
-- Web: wpscan, wapiti, whatweb, ffuf, golismero
-- Directory: gobuster, dirsearch
-- Tech: Wappalyzer, retire
-- Templates: nuclei
-- Vulnerabilities: xsstrike, dalfox, xsser, ssrfmap, nosqlmap, dotdotpwn, sqlmap, commix
 
 ---
 
-### Layer 3: Execution Engine
-**File**: `automation_scanner_v2.py` (Methods: `_execute_tools()`, `run_command()`)
+### Layer 4: Findings Intelligence
+**Files**: `findings_model.py`, `tool_parsers.py`, `intelligence_layer.py`
 
-**Responsibilities**:
-- Execute commands sequentially
-- Capture stdout/stderr
-- Track execution metadata (timestamp, correlation ID)
-- Handle errors gracefully (continue on failure)
-- Save individual output files
+**FindingsRegistry**:
+- Deduplicates findings by hash (type + location + description)
+- Normalizes severity (CRITICAL, HIGH, MEDIUM, LOW, INFO)
+- Maps to OWASP categories
+- Tracks tool sources
 
-**Key Methods**:
-```python
-run_command(tool_name, command, timeout)      # Execute single command
-_execute_tools(tools, category)               # Run batch of tools
-```
+**ToolParsers**:
+- Parse nmap, nikto, sslscan, testssl, gobuster, dirsearch, xsstrike, sqlmap, commix
+- Extract structured Finding objects from raw stdout
 
-**Features**:
-- ✅ No timeout constraints (all optional)
-- ✅ Automatic stdout/stderr capture
-- ✅ Per-command output file (e.g., `dig_a.txt`, `nmap_syn.txt`)
-- ✅ Correlation ID for tracking
-- ✅ Error logging without stopping
+**IntelligenceEngine**:
+- Filters false positives
+- Correlates related findings
+- Assigns confidence scores (higher when multiple tools agree)
+- Generates intelligence report
 
 ---
 
-### Layer 4: Tool Category Functions
-**File**: `automation_scanner_v2.py` (Methods: `run_*_tools()`)
+### Layer 5: Execution Engine
+**File**: `automation_scanner_v2.py` (Method: `_run_tool()`)
 
-**Responsibilities**:
-- Define tool variants for each category
-- Build command strings with parameters
-- Organize commands logically
+**Execution Flow**:
+1. Budget checks (DNS time, runtime deadline)
+2. Decision layer (_should_run): BLOCK/SKIP/ALLOW
+3. Subprocess execution
+4. Classification (signal + failure_reason → outcome)
+5. Parsing (if SUCCESS_WITH_FINDINGS)
+6. Retry logic (if configured)
 
-**Functions** (8 categories):
-```python
-run_dns_subdomain_tools()           # 77 commands - DNS + Subdomain enum
-run_network_tools()                 # 30 commands - nmap, ping, traceroute, whois
-run_ssl_tls_tools()                 # 41 commands - testssl, sslyze, sslscan, openssl
-run_web_scanning_tools()            # 44 commands - wpscan, wapiti, whatweb, ffuf, golismero
-run_directory_enumeration_tools()   # 16 commands - gobuster, dirsearch
-run_technology_detection_tools()    # 7 commands - Wappalyzer, retire
-run_nuclei_scanner()                # 15 commands - Nuclei templates
-run_vulnerability_scanners()        # 95 commands - XSS, SQLi, SSRF, RCE, etc.
-```
+**Outcomes** (7 types):
+- `SUCCESS_WITH_FINDINGS`: Positive signal detected
+- `SUCCESS_NO_FINDINGS`: Explicit negative signal (confirmed absence)
+- `EXECUTED_NO_SIGNAL`: Ran but no signal (empty output)
+- `TIMEOUT`: Exceeded timeout
+- `BLOCKED`: Prerequisites missing or tool unavailable
+- `SKIPPED`: Decision layer chose not to run
+- `EXECUTION_ERROR`: Generic failure
 
-**Total**: 325+ commands, each with separate output file
+**Failure Classification**:
+- `tool_not_installed`, `permission_denied`, `target_unreachable`, `timeout`, `unknown_error`
 
 ---
 
-### Layer 5: Output Management
-**File**: `automation_scanner_v2.py` (Methods: `save_output()`, etc.)
+### Layer 6: Reporting
+**Files**: `html_report_generator.py`, `automation_scanner_v2.py`
 
-**Responsibilities**:
-- Create timestamped output directory
-- Save individual tool outputs
-- Generate execution metadata
+**JSON Report** (source of truth):
+- Complete execution metadata (outcomes, return codes, stderr)
+- Normalized findings with OWASP mapping
+- Discovery counts
+- Intelligence analysis
 
-**Output Structure**:
-```
-scan_results_target.com_YYYYMMDD_HHMMSS/
-├── dig_a.txt                       # DNS A records
-├── dig_aaaa.txt                    # DNS AAAA records
-├── nmap_syn.txt                    # nmap SYN scan
-├── testssl_basic.txt               # SSL/TLS scan
-├── wpscan_https_basic.txt          # WordPress scan
-├── xsstrike_https_basic.txt        # XSS detection
-├── gobuster_https_common.txt       # Directory enumeration
-├── nuclei_https_cves.txt           # Nuclei CVE templates
-│
-├── EXECUTIVE_SUMMARY.txt           # Human-readable report
-├── vulnerability_report.json       # Structured findings
-└── tool_execution.log              # Execution metadata
-```
+**HTML Report**:
+- Visual severity grouping
+- Tool execution timeline
+- Correlated findings
 
-**Metadata per file**:
-```
-======================================================================
-Tool: dig_a
-Target: dev-erp.sisschools.org
-Correlation ID: 20260105_143022
-Execution Time: 2026-01-05T14:30:22.123456
-Return Code: 0
-======================================================================
-STDOUT:
-[tool output]
-STDERR:
-[errors if any]
-```
+**TXT Summary**:
+- OWASP-grouped findings
+- CRITICAL/HIGH/MEDIUM only (suppresses LOW/INFO)
 
 ---
 
