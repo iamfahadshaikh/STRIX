@@ -166,12 +166,12 @@ class TargetProfile:
         """
         import re
         
-        # HARD-FAIL: No empty target
-        if not target or not target.strip():
-            raise ValueError("Target cannot be empty")
+        # HARD-FAIL: No empty or non-string target
+        if not isinstance(target, str) or not target.strip():
+            raise ValueError("Target must be a non-empty string")
         
-        # HARD-FAIL: Scheme must be explicit
-        if scheme not in ("http", "https"):
+        # HARD-FAIL: Scheme must be explicit and string
+        if not isinstance(scheme, str) or scheme not in ("http", "https"):
             raise ValueError(f"Scheme must be 'http' or 'https', got: {scheme}")
         
         # Strip protocol if present

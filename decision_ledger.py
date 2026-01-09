@@ -49,13 +49,10 @@ class DecisionLedger:
     def __init__(self, profile):
         """Initialize ledger for a target profile"""
         self.profile = profile
-        self._decisions: Dict[str, ToolDecision] = {}
-        self._is_built = False
-        self.profile = profile
         self.decisions: Dict[str, ToolDecision] = {}
         # Keep a datetime so isoformat() calls are safe during serialization
         self.created_at = datetime.now()
-        self._built = False
+        self._is_built = False
     
     def add_decision(
         self, 
@@ -67,7 +64,7 @@ class DecisionLedger:
         timeout: int = 300
     ) -> None:
         """Add a tool decision to the ledger"""
-        if self._built:
+        if self._is_built:
             raise RuntimeError("Cannot modify ledger after build()")
         
         self.decisions[tool_name] = ToolDecision(

@@ -2,12 +2,16 @@
 
 import argparse
 import json
+import socket
+import ssl
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
 
 from decision_ledger import DecisionLedger, DecisionEngine
 from execution_paths import get_executor
@@ -15,13 +19,25 @@ from target_profile import TargetProfile, TargetType
 from cache_discovery import DiscoveryCache
 from findings_model import FindingsRegistry, Finding, Severity, FindingType, map_to_owasp
 from tool_manager import ToolManager
+from tool_parsers import parse_tool_output, WhatwebParser
+from intelligence_layer import IntelligenceEngine
+from html_report_generator import HTMLReportGenerator
 
 
 class ToolOutcome(Enum):
     SUCCESS_WITH_FINDINGS = "SUCCESS_WITH_FINDINGS"
     SUCCESS_NO_FINDINGS = "SUCCESS_NO_FINDINGS"
+    EXECUTED_NO_SIGNAL = "EXECUTED_NO_SIGNAL"
     TIMEOUT = "TIMEOUT"
     EXECUTION_ERROR = "EXECUTION_ERROR"
+    SKIPPED = "SKIPPED"
+    BLOCKED = "BLOCKED"
+
+
+class DecisionOutcome(Enum):
+    ALLOW = "ALLOW"
+    SKIP = "SKIP"
+    BLOCK = "BLOCK"
 
 
 
@@ -31,17 +47,21 @@ class AutomationScannerV2:
         target: str,
         output_dir: str | None = None,
         skip_tool_check: bool = False,
-        mode: str = "full",
     ) -> None:
         self.target = target
-        self.mode = mode
         self.start_time = datetime.now()
         self.correlation_id = self.start_time.strftime("%Y%m%d_%H%M%S")
 
         self.profile = TargetProfile.from_target(target)
+
+        # Explicit HTTPS probe to set capability before planning/ledger
+        self.profile = self._with_https_probe(self.profile)
+        self._https_capability = self.profile.is_https  # cache immutable HTTPS verdict
+
         self.ledger = DecisionEngine.build_ledger(self.profile)
         self.executor = get_executor(self.profile, self.ledger)
         self.cache = DiscoveryCache()  # NEW: discovery cache for gating
+        self._lock = threading.Lock()  # Thread-safety for concurrent non-blocking tools
         
         # NEW: Runtime watchdog
         self.runtime_deadline = self.start_time.timestamp() + self.profile.runtime_budget
@@ -59,6 +79,15 @@ class AutomationScannerV2:
         
         # NEW: Findings registry for normalized, deduplicated findings
         self.findings = FindingsRegistry()
+        
+        # NEW: Intelligence engine for confidence scoring and correlation
+        self.intelligence = IntelligenceEngine()
+
+        # Error semantics counters for planning influence
+        self.error_counters = {
+            "network_failures": 0,
+            "timeouts": 0,
+        }
 
         # DNS budget (global cap across all DNS tools)
         self.dns_time_budget = 30
@@ -76,9 +105,6 @@ class AutomationScannerV2:
         self.log(f"Output directory: {self.output_dir}")
         self.log(f"Correlation ID: {self.correlation_id}")
 
-        if mode == "gate":
-            self.log("Gate mode deprecated - running full scan")
-
         if self.tool_manager:
             self._ensure_required_tools()
 
@@ -89,99 +115,132 @@ class AutomationScannerV2:
         timestamp = datetime.now().strftime("%H:%M:%S")
         print(f"[{timestamp}] [{level}] {msg}")
 
-    def _run_tool(self, plan_item: dict, index: int, total: int) -> None:
+    def _run_tool(self, plan_item: dict, index: int, total: int) -> dict:
+        """Orchestrate tool execution: decision → execution → parsing → result.
+        
+        Responsibility split:
+        - Decision layer: _should_run()
+        - Execution layer: _execute_tool_subprocess()
+        - Classification layer: _classify_execution_outcome()
+        - Parsing layer: _parse_discoveries(), _extract_findings()
+        """
         tool = plan_item["tool"]
         command = plan_item["command"]
         timeout = plan_item.get("timeout", 300)
         category = plan_item.get("category", "Unknown")
-        prereqs = plan_item.get("prereqs", set())
+        retries = plan_item.get("retries", 0)
         
-        # DNS global budget (30s total across all DNS tools)
+        # ====== PHASE 1: Budget checks ======
         if category == "DNS":
             remaining = max(0.0, self.dns_time_budget - self.dns_time_spent)
             if remaining <= 0:
+                result = {
+                    "index": index,
+                    "total": total,
+                    "tool": tool,
+                    "category": category,
+                    "status": "SKIPPED",
+                    "outcome": ToolOutcome.SKIPPED.value,
+                    "reason": "DNS budget exhausted",
+                    "return_code": None,
+                    "timed_out": False,
+                    "failure_reason": "dns_budget_exhausted",
+                    "started_at": datetime.now().isoformat(),
+                    "finished_at": datetime.now().isoformat(),
+                    "stderr_preview": "",
+                    "stderr_length": 0,
+                    "stderr_truncated": False,
+                    "signal": "NO_SIGNAL",
+                }
                 self.log(f"{tool} SKIPPED: DNS budget exhausted ({self.dns_time_budget}s)", "WARN")
-                return
+                with self._lock:
+                    self.execution_results.append(result)
+                return result
             timeout = min(timeout, remaining)
 
-        # NEW: Check prerequisites before running
-        if prereqs:
-            for prereq_tool in prereqs:
-                prereq_result = next(
-                    (r for r in self.execution_results if r["tool"] == prereq_tool),
-                    None
-                )
-                if not prereq_result or prereq_result["outcome"] != "SUCCESS_WITH_FINDINGS":
-                    self.log(f"{tool} BLOCKED: prerequisite {prereq_tool} not available", "WARN")
-                    return
+        # ====== PHASE 2: Decision layer ======
+        decision, reason = self._should_run(tool, plan_item)
+        if decision == DecisionOutcome.BLOCK:
+            result = {
+                "index": index,
+                "total": total,
+                "tool": tool,
+                "category": category,
+                "status": "BLOCKED",
+                "outcome": ToolOutcome.BLOCKED.value,
+                "reason": reason,
+                "return_code": None,
+                "timed_out": False,
+                "failure_reason": "blocked_by_prerequisite",
+                "started_at": datetime.now().isoformat(),
+                "finished_at": datetime.now().isoformat(),
+                "stderr_preview": "",
+                "stderr_length": 0,
+                "stderr_truncated": False,
+                "signal": "NO_SIGNAL",
+            }
+            self.log(f"[{index}/{total}] {tool} BLOCKED: {reason}", "WARN")
+            with self._lock:
+                self.execution_results.append(result)
+            return result
+        if decision == DecisionOutcome.SKIP:
+            result = {
+                "index": index,
+                "total": total,
+                "tool": tool,
+                "category": category,
+                "status": "SKIPPED",
+                "outcome": ToolOutcome.SKIPPED.value,
+                "reason": reason,
+                "return_code": None,
+                "timed_out": False,
+                "failure_reason": "skipped_by_policy",
+                "started_at": datetime.now().isoformat(),
+                "finished_at": datetime.now().isoformat(),
+                "stderr_preview": "",
+                "stderr_length": 0,
+                "stderr_truncated": False,
+                "signal": "NO_SIGNAL",
+            }
+            self.log(f"[{index}/{total}] {tool} SKIPPED: {reason}", "WARN")
+            with self._lock:
+                self.execution_results.append(result)
+            return result
         
-        # NEW: Runtime budget enforcement
+        # ====== PHASE 3: Runtime enforcement ======
         if datetime.now().timestamp() >= self.runtime_deadline:
             from architecture_guards import ArchitectureViolation
             raise ArchitectureViolation(f"Runtime budget exceeded ({self.profile.runtime_budget}s)")
 
         self.log(f"[{index}/{total}] ({category}) {tool}")
-
         started_at = datetime.now()
 
-        try:
-            completed = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+        # ====== PHASE 4: Execution ======
+        rc, stdout, stderr = self._execute_tool_subprocess(command, timeout)
 
-            rc = completed.returncode
-            # Decode bytes to str if needed (some tools return bytes)
-            stdout_raw = completed.stdout if isinstance(completed.stdout, (str, bytes)) else ""
-            stderr_raw = completed.stderr if isinstance(completed.stderr, (str, bytes)) else ""
-            stdout = (stdout_raw.decode(errors="ignore") if isinstance(stdout_raw, bytes) else stdout_raw or "").strip()
-            stderr = (stderr_raw.decode(errors="ignore") if isinstance(stderr_raw, bytes) else stderr_raw or "").strip()
-            
-            signal_stdout = ""
-            effective_stdout = ""
-            has_actionable_output = False
-
-            signal_stdout = self._filter_actionable_stdout(tool, stdout)
-            effective_stdout = signal_stdout if signal_stdout is not None else stdout
-            has_actionable_output = bool(effective_stdout.strip())
-
-            if rc == 0:
-                outcome = (
-                    ToolOutcome.SUCCESS_WITH_FINDINGS if has_actionable_output else ToolOutcome.SUCCESS_NO_FINDINGS
-                )
-                status = "SUCCESS"
-                self.log(f"{tool} {outcome.value}", "SUCCESS")
-            else:
-                outcome = ToolOutcome.EXECUTION_ERROR
-                status = "FAILED"
-                self.log(f"{tool} EXECUTION_ERROR (rc={rc})", "WARN")
-
-        except KeyboardInterrupt:
-            from architecture_guards import ArchitectureViolation
-            raise ArchitectureViolation("Scan interrupted by user")
-
-        except subprocess.TimeoutExpired as e:
-            rc = 124
-            stdout_raw = e.stdout if isinstance(e.stdout, (str, bytes)) else ""
-            stderr_raw = e.stderr if isinstance(e.stderr, (str, bytes)) else ""
-            stdout = (stdout_raw.decode(errors="ignore") if isinstance(stdout_raw, bytes) else stdout_raw or "").strip() if hasattr(e, "stdout") else ""
-            stderr = (stderr_raw.decode(errors="ignore") if isinstance(stderr_raw, bytes) else stderr_raw or "").strip() if hasattr(e, "stderr") else ""
-            signal_stdout = self._filter_actionable_stdout(tool, stdout)
-            effective_stdout = signal_stdout if signal_stdout is not None else stdout
-            has_actionable_output = bool(effective_stdout.strip())
-            outcome = ToolOutcome.TIMEOUT
-            status = "FAILED"
-            self.log(f"{tool} TIMEOUT (rc=124)", "WARN")
-
-        finished_at = datetime.now()
+        failure_reason = self._classify_failure_reason(rc, stderr)
         
-        # Track DNS time consumption against budget
+        # ====== PHASE 5: Classification ======
+        signal_stdout = self._filter_actionable_stdout(tool, stdout)
+        effective_stdout = signal_stdout if signal_stdout is not None else stdout
+        signal = self._classify_signal(tool, effective_stdout, stderr, rc)
+        outcome, status = self._classify_execution_outcome(tool, rc, signal, failure_reason)
+        
+        finished_at = datetime.now()
+        elapsed = (finished_at - started_at).total_seconds()
+        
+        # Track DNS time
         if category == "DNS":
-            elapsed = (finished_at - started_at).total_seconds()
             self.dns_time_spent += min(timeout, elapsed)
+        
+        # Classify signal for feedback (already used for outcome classification)
+
+        # ====== PHASE 6: Result document ======
+        stderr_len = len(stderr) if stderr else 0
+        stderr_truncated = stderr_len > 2000
+        stderr_preview = ""
+        if stderr:
+            stderr_preview = stderr[:2000] + ("... [truncated]" if stderr_truncated else "")
 
         result = {
             "index": index,
@@ -193,23 +252,207 @@ class AutomationScannerV2:
             "reason": (
                 f"Timed out after {timeout}s"
                 if outcome == ToolOutcome.TIMEOUT
-                else f"Exit code {rc}"
+                else failure_reason or f"Exit code {rc}"
             ),
             "return_code": rc,
             "timed_out": outcome == ToolOutcome.TIMEOUT,
+            "failure_reason": failure_reason or "",
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
+            "stderr_preview": stderr_preview,
+            "stderr_length": stderr_len,
+            "stderr_truncated": stderr_truncated,
+            "signal": signal,
         }
 
-        self.execution_results.append(result)
-        
-        # NEW: Parse output into discovery cache for gating
+        output_file = self._save_tool_output(tool, command, stdout, stderr, rc)
+        if output_file:
+            result["output_file"] = output_file
+
+        with self._lock:
+            self.execution_results.append(result)
+
+        # ====== PHASE 7: Parsing (if successful) ======
         if outcome == ToolOutcome.SUCCESS_WITH_FINDINGS:
-            self._parse_discoveries(tool, stdout)
-            # NEW: Extract findings into normalized model
-            self._extract_findings(tool, effective_stdout, stderr)
+            with self._lock:
+                self._parse_discoveries(tool, stdout)
+                self._extract_findings(tool, effective_stdout, stderr)
         
-        self._save_tool_output(tool, command, stdout, stderr, rc)
+        # ====== PHASE 8: Retry logic ======
+        if retries and outcome in {ToolOutcome.EXECUTION_ERROR, ToolOutcome.TIMEOUT}:
+            with self._lock:
+                if self.execution_results:
+                    self.execution_results.pop()
+            for attempt in range(1, retries + 1):
+                self.log(f"{tool} retry {attempt}/{retries} after {outcome.value}", "WARN")
+                result = self._run_tool({**plan_item, "retries": 0}, index, total)
+                outcome = ToolOutcome(result["outcome"])
+                if outcome not in {ToolOutcome.EXECUTION_ERROR, ToolOutcome.TIMEOUT}:
+                    return result
+            return result
+
+        return result
+
+    def _classify_execution_outcome(self, tool: str, rc: int, signal: str, failure_reason: str | None) -> tuple[ToolOutcome, str]:
+        """Classify execution result into outcome type using signal + failure_reason."""
+        # Accept rc=0 and rc=141 (SIGPIPE - nikto closes pipe after printing results)
+        if rc == 0:
+            if signal == "POSITIVE":
+                return ToolOutcome.SUCCESS_WITH_FINDINGS, "SUCCESS"
+            if signal == "NEGATIVE_SIGNAL":
+                return ToolOutcome.SUCCESS_NO_FINDINGS, "SUCCESS"
+            return ToolOutcome.EXECUTED_NO_SIGNAL, "SUCCESS"
+        if rc == 141 and tool == "nikto":
+            if signal == "POSITIVE":
+                return ToolOutcome.SUCCESS_WITH_FINDINGS, "PARTIAL"
+            if signal == "NEGATIVE_SIGNAL":
+                return ToolOutcome.SUCCESS_NO_FINDINGS, "PARTIAL"
+            return ToolOutcome.EXECUTED_NO_SIGNAL, "PARTIAL"
+        if rc == 124:
+            return ToolOutcome.TIMEOUT, "FAILED"
+        if failure_reason in {"tool_not_installed", "permission_denied"}:
+            return ToolOutcome.BLOCKED, "BLOCKED"
+        if failure_reason == "target_unreachable":
+            return ToolOutcome.EXECUTION_ERROR, "FAILED"
+        return ToolOutcome.EXECUTION_ERROR, "FAILED"
+    
+    def _execute_tool_subprocess(self, command: str, timeout: int) -> tuple[int, str, str]:
+        """Execute tool as subprocess. Returns (return_code, stdout, stderr)."""
+        try:
+            completed = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            rc = completed.returncode
+            stdout_raw = completed.stdout if isinstance(completed.stdout, (str, bytes)) else ""
+            stderr_raw = completed.stderr if isinstance(completed.stderr, (str, bytes)) else ""
+            stdout = (stdout_raw.decode(errors="ignore") if isinstance(stdout_raw, bytes) else stdout_raw or "").strip()
+            stderr = (stderr_raw.decode(errors="ignore") if isinstance(stderr_raw, bytes) else stderr_raw or "").strip()
+            return rc, stdout, stderr
+        except subprocess.TimeoutExpired as e:
+            rc = 124
+            stdout = (e.stdout.decode(errors="ignore") if isinstance(e.stdout, bytes) else e.stdout or "").strip() if hasattr(e, "stdout") else ""
+            stderr = (e.stderr.decode(errors="ignore") if isinstance(e.stderr, bytes) else e.stderr or "").strip() if hasattr(e, "stderr") else ""
+            return rc, stdout, stderr
+
+    def _classify_failure_reason(self, rc: int, stderr: str) -> str | None:
+        """Map return code and stderr to a stable failure_reason label."""
+        stderr_lower = (stderr or "").lower()
+        if rc == 124:
+            return "timeout"
+        if "not found" in stderr_lower or "command not found" in stderr_lower or rc == 127:
+            return "tool_not_installed"
+        if "permission denied" in stderr_lower:
+            return "permission_denied"
+        if any(msg in stderr_lower for msg in ["connection refused", "no route to host", "name or service not known", "temporary failure in name resolution", "failed to connect", "connection timed out", "unable to resolve", "could not resolve"]):
+            return "target_unreachable"
+        if rc != 0:
+            return "unknown_error"
+        return None
+
+    def _build_context(self) -> dict:
+        """Aggregate capabilities from profile + cache + error semantics.
+        
+        HTTPS is set via explicit probe; do not overwrite silently later.
+        """
+        ctx = {
+            "web_target": bool(self.profile.is_web_target),
+            "https": self.profile.is_https,
+            "reachable": True,
+            "ports_known": len(self.cache.discovered_ports) > 0,
+            "endpoints_known": self.cache.has_endpoints(),
+            "live_endpoints": self.cache.has_live_endpoints(),
+            "params_known": self.cache.has_params(),
+            "reflections": self.cache.has_reflections(),
+            "command_params": self.cache.has_command_params(),
+            "tech_stack_detected": bool(getattr(self.profile, "detected_cms", None) or getattr(self.profile, "detected_tech", {})),
+        }
+        # Downgrade reachability if repeated network failures
+        if self.error_counters["network_failures"] >= 2:
+            ctx["reachable"] = False
+        return ctx
+
+    def _should_run(self, tool: str, plan_item: dict) -> tuple[DecisionOutcome, str]:
+        """Central decision layer controlling execution.
+
+        Rules:
+        - BLOCKED: missing required prerequisite capabilities (technical blocker)
+        - SKIPPED: cost/budget exceeds remaining or produces nothing new (efficiency)
+        - ALLOW: all checks pass (proceed with execution)
+        
+        Note: DENIED tools are filtered upstream by decision_ledger (policy-level).
+        This layer enforces prerequisites and budget.
+        """
+        meta = {k: plan_item.get(k, set()) for k in ["requires", "optional", "produces"]}
+        worst_case = plan_item.get("worst_case", plan_item.get("timeout", 300))
+        remaining = max(0.0, self.runtime_deadline - datetime.now().timestamp())
+        ctx = self._build_context()
+
+        # Required inputs → BLOCK if missing
+        for req in meta["requires"]:
+            if not ctx.get(req, False):
+                return (DecisionOutcome.BLOCK, f"missing required capability: {req}")
+
+        # Budget rule → SKIP if worst-case exceeds remaining
+        if worst_case > remaining:
+            return (DecisionOutcome.SKIP, f"insufficient runtime budget ({remaining:.0f}s < worst-case {worst_case}s)")
+
+        # Expected new signal? If all produces already present, SKIP
+        if meta["produces"] and all(ctx.get(cap, False) for cap in meta["produces"]):
+            return (DecisionOutcome.SKIP, "no new signal expected (capabilities already present)")
+
+        # Optional inputs missing → ALLOW but note reduced confidence
+        for opt in meta["optional"]:
+            if not ctx.get(opt, False):
+                return (DecisionOutcome.ALLOW, f"optional capability missing: {opt} (reduced confidence)")
+
+        return (DecisionOutcome.ALLOW, "ready")
+
+    def _classify_signal(self, tool: str, stdout: str, stderr: str, rc: int) -> str:
+        """Classify result signal type for planning impact.
+        
+        POSITIVE: tool produced actionable output
+        NO_SIGNAL: tool ran but produced nothing useful
+        NEGATIVE_SIGNAL: tool confirmed absence of something (blocks downstream)
+        """
+        if not stdout:
+            # Tool ran but produced nothing
+            return "NO_SIGNAL"
+
+        lower_stdout = stdout.lower()
+        negative_markers = [
+            "no vulnerabilities found",
+            "no vulnerabilities detected",
+            "no issues found",
+            "no issues detected",
+            "0 critical",
+            "0 high",
+            "no open ports",
+            "no targets were successfully tested",
+        ]
+        if any(marker in lower_stdout for marker in negative_markers):
+            return "NEGATIVE_SIGNAL"
+        
+        # whatweb: no tech stack found ≠ no web service
+        if tool == "whatweb":
+            if any(tech in stdout.lower() for tech in ["apache", "nginx", "iis", "wordpress", "drupal", "php", "java", "python"]):
+                return "POSITIVE"
+            # whatweb with no recognized tech = NO_SIGNAL, not NEGATIVE
+            return "NO_SIGNAL"
+        
+        # nmap: no open ports found = NEGATIVE_SIGNAL (confirmed absence)
+        if tool == "nmap_quick":
+            if " open " in stdout:
+                return "POSITIVE"
+            return "NEGATIVE_SIGNAL"
+        
+        # Default: actionable output = POSITIVE
+        if stdout.strip():
+            return "POSITIVE"
+        return "NO_SIGNAL"
 
     def _save_tool_output(
         self,
@@ -239,15 +482,48 @@ class AutomationScannerV2:
             return None
 
     def _check_https_service(self, host: str, port: int = 443) -> bool:
-        """Check if HTTPS service is responding before running TLS tools."""
+        """Check HTTPS availability using port hints + TLS handshake with lenient fallback."""
+        # Use cached capability if already probed; do not re-infer later.
+        if hasattr(self, "_https_capability"):
+            return bool(self._https_capability)
+        # Fast-path: discovery cache already saw 443 open
         try:
-            from urllib.request import urlopen, Request
-            url = f"https://{host}:{port}"
-            req = Request(url, method="HEAD")
-            urlopen(req, timeout=3)
+            if port in getattr(self.cache, "discovered_ports", set()):
+                return True
+        except Exception:
+            pass
+
+        # Primary: TLS handshake without requiring HTTP response
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with socket.create_connection((host, port or 443), timeout=2) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as tls_sock:
+                    tls_sock.settimeout(2)
+                    tls_sock.do_handshake()
             return True
         except Exception:
-            return False
+            # Fallback: permissive HEAD request (handles servers that reject raw TLS handshake)
+            try:
+                url = f"https://{host}:{port or 443}"
+                req = Request(url, method="HEAD")
+                urlopen(req, timeout=3)
+                return True
+            except Exception:
+                return False
+
+    def _with_https_probe(self, profile: TargetProfile) -> TargetProfile:
+        """Return profile updated with explicit HTTPS probe result."""
+        is_https = profile.is_https or self._check_https_service(profile.host, profile.port)
+        scheme = "https" if is_https else "http"
+        port = profile.port if profile.port not in {80, 443} else (443 if is_https else 80)
+        # TargetProfile is frozen; use object.__setattr__
+        object.__setattr__(profile, "is_https", is_https)
+        object.__setattr__(profile, "scheme", scheme)
+        object.__setattr__(profile, "port", port)
+        self.log(f"HTTPS probe {'passed' if is_https else 'failed'} -> scheme={scheme}, port={port}")
+        return profile
 
     def _filter_actionable_stdout(self, tool: str, stdout: str) -> str:
         """Filter noisy tool output down to actionable signal."""
@@ -282,14 +558,32 @@ class AutomationScannerV2:
                 # Skip headers and trivial output
                 if any(k in ln.lower() for k in ["apache", "nginx", "iis", "wordpress", "drupal", "joomla", "magento", "java", "python", "ruby", "rails", "django", "asp", ".net", "php"]):
                     actionable.append(ln)
-            return "\n".join(actionable) if actionable else stdout
+            # whatweb success (even with empty actionable) should not block downstream tools
+            return "\n".join(actionable)
 
         # Default: keep stdout as-is
         return stdout
 
     def _parse_discoveries(self, tool: str, stdout: str) -> None:
         """NEW: Parse tool output into discovery cache for gating later tools."""
-        if tool == "gobuster" and stdout:
+        if tool == "nmap_quick" and stdout:
+            # Parse nmap output for discovered ports
+            import re
+            port_pattern = r'(\d+)/tcp\s+open\s+(\S+)'
+            ports = []
+            for match in re.finditer(port_pattern, stdout):
+                port, service = match.groups()
+                ports.append((port, service))
+                # Store typed port object in cache (single source of truth)
+                try:
+                    self.cache.add_port(int(port))
+                except Exception:
+                    pass
+            # Count ports for gating
+            if ports:
+                self.log(f"Discovered {len(ports)} open ports via nmap", "INFO")
+        
+        elif tool == "gobuster" and stdout:
             # Parse gobuster output: Status:200, /admin, /api, etc.
             for line in stdout.split("\n"):
                 if "200" in line:
@@ -467,10 +761,10 @@ class AutomationScannerV2:
             tag = "critical" if tool_name == "nuclei_crit" else "high"
             # ENFORCE: Limit to critical/high, no medium/low
             if len(targets) == 1:
-                return f"nuclei -u {targets[0]} -tags {tag} -silent -strict"
+                return f"nuclei -u {targets[0]} -tags {tag} -silent"
             list_file = self.output_dir / f"{tool_name}_targets.txt"
             list_file.write_text("\n".join(targets), encoding="utf-8")
-            return f"nuclei -list {list_file} -tags {tag} -silent -strict"
+            return f"nuclei -list {list_file} -tags {tag} -silent"
 
         if tool_name == "sqlmap":
             targets = self._materialize_targets(tool_name, require_params=True)
@@ -519,11 +813,17 @@ class AutomationScannerV2:
         Extract normalized findings from tool output.
         
         Maps tool output → Finding objects → FindingsRegistry (deduplicated).
+        Uses unified parsers from tool_parsers.py module.
         """
         if not stdout:
             return
         
-        # Nuclei: Parse severity tags [critical], [high], etc.
+        # Use unified parser for supported tools
+        findings = parse_tool_output(tool, stdout, stderr, self.target)
+        for finding in findings:
+            self.findings.add(finding)
+        
+        # Legacy parsers for nuclei/dalfox (keep existing logic)
         if tool.startswith("nuclei"):
             for line in stdout.split("\n"):
                 if "[critical]" in line.lower():
@@ -547,46 +847,6 @@ class AutomationScannerV2:
                         evidence=line[:500]
                     ))
         
-        # Nikto: Look for OSVDB references and version disclosures
-        elif tool == "nikto" and stdout:
-            if "outdated" in stdout.lower() or "version" in stdout.lower():
-                self.findings.add(Finding(
-                    type=FindingType.OUTDATED_SOFTWARE,
-                    severity=Severity.MEDIUM,
-                    location=self.profile.host,
-                    description="Outdated software detected",
-                    tool="nikto",
-                    owasp=map_to_owasp(FindingType.OUTDATED_SOFTWARE),
-                    evidence=stdout[:500]
-                ))
-        
-        # SQLMap: SQLi detection
-        elif tool == "sqlmap" and "sqlmap identified" in stdout.lower():
-            self.findings.add(Finding(
-                type=FindingType.SQLI,
-                severity=Severity.CRITICAL,
-                location=self.profile.host,
-                description="SQL Injection vulnerability detected",
-                tool="sqlmap",
-                cwe="CWE-89",
-                owasp=map_to_owasp(FindingType.SQLI),
-                evidence=stdout[:500]
-            ))
-        
-        # Commix: Command injection
-        elif tool == "commix" and "injectable" in stdout.lower():
-            self.findings.add(Finding(
-                type=FindingType.COMMAND_INJECTION,
-                severity=Severity.CRITICAL,
-                location=self.profile.host,
-                description="Command injection vulnerability detected",
-                tool="commix",
-                cwe="CWE-78",
-                owasp=map_to_owasp(FindingType.COMMAND_INJECTION),
-                evidence=stdout[:500]
-            ))
-        
-        # Dalfox: XSS detection
         elif tool == "dalfox" and "reflected" in stdout.lower():
             self.findings.add(Finding(
                 type=FindingType.XSS,
@@ -598,6 +858,23 @@ class AutomationScannerV2:
                 owasp=map_to_owasp(FindingType.XSS),
                 evidence=stdout[:500]
             ))
+        
+        # Whatweb: Extract technology stack for gating
+        if tool == "whatweb":
+            tech_stack = WhatwebParser.parse(stdout, self.profile.host)
+            cms = tech_stack.get("cms")
+            if cms:
+                self.profile.detected_cms = cms.lower()
+                self.cache.add_param(f"tech_cms_{cms.lower()}")
+            server = tech_stack.get("web_server")
+            if server:
+                self.cache.add_param(f"tech_server_{server.lower()}")
+            for lang in tech_stack.get("languages", []):
+                self.cache.add_param(f"tech_lang_{lang.lower()}")
+            for fw in tech_stack.get("frameworks", []):
+                self.cache.add_param(f"framework_{fw.lower()}")
+            for lib in tech_stack.get("javascript_libs", []):
+                self.cache.add_param(f"js_{lib.lower()}")
 
         elif tool in ("sslscan", "testssl"):
             for line in stdout.split("\n"):
@@ -640,14 +917,14 @@ class AutomationScannerV2:
 
         # Phase definitions: tools grouped by function
         phases = {
-            "DNS": {"tools": {"dig_a", "dig_ns", "dig_mx", "dig_aaaa", "dnsrecon"}},
-            "Subdomains": {"tools": {"findomain", "sublist3r", "assetfinder"}},
-            "Network": {"tools": {"ping", "nmap_quick", "nmap_vuln"}},
-            "WebDetection": {"tools": {"whatweb"}},
-            "SSL": {"tools": {"sslscan", "testssl"}},
-            "WebEnum": {"tools": {"gobuster", "dirsearch"}},
-            "Exploitation": {"tools": {"dalfox", "xsstrike", "sqlmap", "commix", "xsser"}},
-            "Nuclei": {"tools": {"nuclei_crit", "nuclei_high"}},
+                "DNS": {"tools": {"dig_a", "dig_ns", "dig_mx", "dnsrecon"}},
+                "Subdomains": {"tools": {"findomain", "sublist3r", "assetfinder"}},
+                "Network": {"tools": {"ping", "nmap_quick", "nmap_vuln"}},
+                "WebDetection": {"tools": {"whatweb"}},
+                "SSL": {"tools": {"sslscan", "testssl"}},
+                "WebEnum": {"tools": {"gobuster", "dirsearch"}},
+                "Exploitation": {"tools": {"dalfox", "xsstrike", "sqlmap", "commix", "xsser"}},
+                "Nuclei": {"tools": {"nuclei_crit", "nuclei_high"}},
         }
         
         # Track phase success
@@ -666,75 +943,14 @@ class AutomationScannerV2:
                     current_phase = phase
                     break
             
-            if tool_name == "sublist3r" and not self.profile.is_root_domain:
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: only valid for root domains", "WARN")
-                continue
+            # Orchestrator decides strictly via decision layer; tools never self-skip
             
-            # NEW: Gate tools based on discovery cache
-            if tool_name == "commix" and not self.cache.has_command_params():
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: no command-like parameters", "WARN")
-                continue
-            
-            if tool_name == "dalfox" and not self.cache.has_reflections():
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: no reflections found", "WARN")
-                continue
-            
-            if tool_name == "sqlmap" and not self.cache.has_params():
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: no parameters discovered", "WARN")
-                continue
-            
-            if tool_name == "ssrfmap" and not self.cache.has_ssrf_params():
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: no SSRF-prone parameters", "WARN")
-                continue
-            
-            # ENFORCE: CMS tools only if CMS detected
-            if tool_name == "wpscan" and self.profile.detected_cms != "wordpress":
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: WordPress not detected", "WARN")
-                continue
-            
-            if tool_name in {"xsstrike", "xsser"} and not self.cache.has_reflections():
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: no reflection evidence", "WARN")
-                continue
-            
-            # ENFORCE: Web service confirmation before web enum
-            if tool_name in {"gobuster", "dirsearch"} and not self.cache.has_live_endpoints():
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: no confirmed web service", "WARN")
-                continue
-            
-            # ENFORCE: Dalfox discovery phase only if endpoints exist
-            if tool_name == "dalfox" and not self.cache.has_live_endpoints():
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: no live endpoints for testing", "WARN")
-                continue
-            
-            # ENFORCE: TLS tools only if HTTPS service responding
-            if tool_name in {"sslscan", "testssl"} and not self._check_https_service(self.profile.host):
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: HTTPS service not responding", "WARN")
-                continue
-            
-            # ENFORCE: nosqlmap only if NoSQL headers detected
-            if tool_name == "nosqlmap":
-                has_nosql = any("NoSQL" in str(p).lower() or "mongo" in str(p).lower() 
-                               for p in self.cache.params)
-                if not has_nosql:
-                    self.log(f"[{i}/{total}] {tool_name} SKIPPED: no NoSQL indicators", "WARN")
-                    continue
-            
-            # ENFORCE: OS detection only once per host
-            if tool_name == "nmap_os" and self.profile.detected_os is not None:
-                self.log(f"[{i}/{total}] {tool_name} SKIPPED: OS already detected ({self.profile.detected_os})", "WARN")
-                continue
-            
-            self._run_tool(
-                {"tool": tool_name, "command": scoped_cmd, **meta},
-                i,
-                total,
-            )
-            
-            # Mark phase as successful if tool succeeded
-            if current_phase:
-                for result in self.execution_results[-1:]:  # Check last result
-                    if result["outcome"] == "SUCCESS_WITH_FINDINGS":
-                        phase_success[current_phase] = True
+            plan_item = {"tool": tool_name, "command": scoped_cmd, **meta}
+            result = self._run_tool(plan_item, i, total)
+            if current_phase and result and result.get("outcome") == ToolOutcome.SUCCESS_WITH_FINDINGS.value:
+                phase_success[current_phase] = True
+
+        # No parallel execution in strict orchestrator mode
 
         self.log(f"Discovery summary: {self.cache.summary()}", "INFO")
         self.log(f"Findings summary: {self.findings.summary()}", "SUCCESS")
@@ -742,13 +958,9 @@ class AutomationScannerV2:
         if self.findings.has_critical():
             self.log("⚠️  CRITICAL vulnerabilities found!", "CRITICAL")
         
-        self.log("Scan complete - all tools executed via approved path", "SUCCESS")
+        self.log("Scan complete - orchestrator finished (see execution results for skips/blocks)", "SUCCESS")
 
         self._write_report()
-
-    def run_gate_scan(self) -> None:
-        # Deprecated but retained for compatibility
-        self.run_full_scan()
 
     def _write_report(self) -> None:
         plan = self.executor.get_execution_plan()
@@ -764,6 +976,23 @@ class AutomationScannerV2:
                     safe_meta[k] = v
             plan_serialized.append({"tool": t, "command": c, **safe_meta})
 
+        # NEW: Apply intelligence layer for confidence scoring and correlation
+        all_findings = list(self.findings.get_all())
+        
+        # Filter false positives
+        filtered_findings = self.intelligence.filter_false_positives(all_findings)
+        
+        # Correlate related findings
+        correlated_findings = self.intelligence.correlate_findings(filtered_findings)
+        
+        # Generate intelligence report
+        intelligence_report = self.intelligence.generate_intelligence_report(correlated_findings)
+        
+        # Update findings registry with filtered findings
+        self.findings = FindingsRegistry()
+        for cf in correlated_findings:
+            self.findings.add(cf.primary_finding)
+
         report = {
             "profile": self.profile.to_dict(),
             "ledger": self.ledger.to_dict(),
@@ -778,6 +1007,7 @@ class AutomationScannerV2:
                 "params": len(self.cache.params),
                 "reflections": len(self.cache.reflections),
                 "subdomains": len(self.cache.subdomains),
+                "ports": len(self.cache.discovered_ports),
             },
             "enforcement": {
                 "all_executed_in_ledger": True,
@@ -789,11 +1019,28 @@ class AutomationScannerV2:
                 "started": self.start_time.isoformat(),
                 "finished": datetime.now().isoformat(),
             },
+            # NEW: Intelligence analysis results
+            "intelligence": intelligence_report,
         }
 
         report_file = self.output_dir / "execution_report.json"
         with report_file.open("w", encoding="utf-8") as f:
             json.dump(report, f, indent=2)
+
+        # NEW: Generate HTML report
+        try:
+            html_file = self.output_dir / "security_report.html"
+            HTMLReportGenerator.generate(
+                target=self.profile.host,
+                correlation_id=self.correlation_id,
+                scan_date=self.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                correlated_findings=correlated_findings,
+                intelligence_report=intelligence_report,
+                output_path=html_file,
+            )
+            self.log(f"HTML report generated: {html_file}", "SUCCESS")
+        except Exception as e:
+            self.log(f"HTML report generation failed: {e}", "WARN")
 
         # Human-friendly findings summary
         self._write_findings_summary()
@@ -905,24 +1152,15 @@ def main() -> None:
         action="store_true",
         help="Skip tool installation checks",
     )
-    parser.add_argument(
-        "--mode",
-        choices=["full", "gate"],
-        default="full",
-    )
     args = parser.parse_args()
 
     scanner = AutomationScannerV2(
         target=args.target,
         output_dir=args.output,
         skip_tool_check=args.skip_install,
-        mode=args.mode,
     )
 
-    if args.mode == "gate":
-        scanner.run_gate_scan()
-    else:
-        scanner.run_full_scan()
+    scanner.run_full_scan()
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ class ToolManager:
         self.installed_tools = {}
         self.missing_tools = {}
         self.tool_database = self._load_tool_database()
+        self._warned: set[str] = set()
     
     def _detect_distro(self):
         """Detect Linux distribution"""
@@ -245,7 +246,9 @@ class ToolManager:
             else:
                 self.missing_tools[tool] = info
                 missing_count += 1
-                print(f"✗ {tool:<20} ({info['category']:<15}) - MISSING")
+                if tool not in self._warned:
+                    print(f"✗ {tool:<20} ({info['category']:<15}) - MISSING")
+                    self._warned.add(tool)
         
         print(f"\n[*] Summary: {installed_count} installed, {missing_count} missing")
         return installed_count, missing_count
@@ -296,7 +299,9 @@ class ToolManager:
                     del self.missing_tools[tool_name]
                 return True
             else:
-                print(f"[-] Failed to install {tool_name}")
+                if tool_name not in self._warned:
+                    print(f"[-] Failed to install {tool_name}")
+                    self._warned.add(tool_name)
                 return False
         except Exception as e:
             print(f"[-] Error installing {tool_name}: {str(e)}")

@@ -55,6 +55,16 @@ class DiscoveryCache:
         for param in params:
             self.add_param(param)
     
+    def add_live_endpoint(self, path: str, source_tool: str = "unknown"):
+        """Log live endpoint (HTTP 200 confirmed)."""
+        clean_path, params = self._normalize_endpoint(path)
+        if not clean_path:
+            return
+        self.live_endpoints.add(clean_path)
+        self.endpoints.add(clean_path)  # Also add to general endpoints
+        for param in params:
+            self.add_param(param)
+    
     def add_param(self, param: str):
         """Log discovered parameter (e.g., id, search, q)"""
         if param and param.strip():
@@ -152,7 +162,7 @@ class DiscoveryCache:
         )
     
     def add_port(self, port: int):
-        """Log discovered port (from DNS, HTTP redirects, nmap, etc.)"""
+        """Log discovered port (from DNS, HTTP redirects, nmap, etc.). Single source of truth."""
         if 1 <= port <= 65535:
             self.discovered_ports.add(port)
     
