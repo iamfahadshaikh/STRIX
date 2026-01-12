@@ -1,0 +1,6 @@
+# Core HTTP client and transport
+requests>=2.31.0,<3
+urllib3>=2.0.0,<3
+
+# Optional: YAML parsing used in API discovery if available
+PyYAML>=6.0.1,<7
