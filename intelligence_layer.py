@@ -172,7 +172,7 @@ class IntelligenceEngine:
         
         return correlated
     
-    def filter_false_positives(self, findings: List[Finding]) -> List[Finding]:
+    def filter_false_positives(self, findings: List) -> List:
         """
         Filter out likely false positives.
         
@@ -184,24 +184,30 @@ class IntelligenceEngine:
         filtered = []
         
         for finding in findings:
+            # Handle both dict and Finding objects
+            desc = finding.get("description", "") if isinstance(finding, dict) else finding.description
+            evidence = finding.get("evidence", "") if isinstance(finding, dict) else finding.evidence
+            severity = finding.get("severity", "") if isinstance(finding, dict) else finding.severity
+            tool = finding.get("tool", "") if isinstance(finding, dict) else finding.tool
+            
             # Check noise patterns
-            if any(noise in finding.description.lower() for noise in self.noise_patterns):
+            if any(noise in desc.lower() for noise in self.noise_patterns):
                 continue
             
             # Check CDN indicators (may be CDN config, not target)
-            if any(cdn in finding.evidence.lower() for cdn in self.cdn_indicators):
+            if any(cdn in evidence.lower() for cdn in self.cdn_indicators):
                 # Don't skip critical findings even if CDN detected
-                if finding.severity not in [Severity.CRITICAL, Severity.HIGH]:
+                if severity not in ["CRITICAL", "HIGH", Severity.CRITICAL, Severity.HIGH]:
                     continue
             
             # Check WAF indicators
-            if any(waf in finding.evidence.lower() for waf in self.waf_indicators):
+            if any(waf in evidence.lower() for waf in self.waf_indicators):
                 # WAF-blocked requests are FPs
-                if 'blocked' in finding.evidence.lower():
+                if 'blocked' in evidence.lower():
                     continue
             
             # Low severity + single tool = likely FP
-            if finding.severity == Severity.LOW and finding.tool in ['nikto', 'whatweb']:
+            if severity in ["LOW", Severity.LOW] and tool in ['nikto', 'whatweb']:
                 continue
             
             filtered.append(finding)

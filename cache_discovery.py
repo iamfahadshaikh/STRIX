@@ -31,6 +31,7 @@ class DiscoveryCache:
     command_params: Set[str] = field(default_factory=set)
     ssrf_params: Set[str] = field(default_factory=set)
     discovered_ports: Set[int] = field(default_factory=set)  # Consolidate all ports
+    signals: Set[str] = field(default_factory=set)  # Discovery signals (e.g., tls_evaluated, ssl_evaluated)
     
     def _normalize_endpoint(self, path: str) -> tuple[str, Set[str]]:
         """Normalize a path/url and extract any query param names."""
@@ -118,6 +119,15 @@ class DiscoveryCache:
     def has_subdomains(self) -> bool:
         """Check if any subdomains enumerated"""
         return len(self.subdomains) > 0
+    
+    def add_signal(self, signal: str):
+        """Add a discovery signal (e.g., tls_evaluated, ssl_evaluated)"""
+        if signal and signal.strip():
+            self.signals.add(signal.strip())
+    
+    def has_signal(self, signal: str) -> bool:
+        """Check if a specific discovery signal is present"""
+        return signal in self.signals
     
     def get_endpoints_for_tool(self, tool: str) -> list[str]:
         """
