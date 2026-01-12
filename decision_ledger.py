@@ -153,7 +153,7 @@ class DecisionLedger:
             "profile": str(self.profile),
             "decisions": {
                 name: {
-                    "decision": decision.decision.value,
+                    "decision": decision.decision.value if hasattr(decision.decision, 'value') else str(decision.decision),
                     "reason": decision.reason,
                     "prerequisites": sorted(decision.prerequisites) if isinstance(decision.prerequisites, set) else decision.prerequisites,
                     "priority": decision.priority,
@@ -172,6 +172,130 @@ class DecisionLedger:
         allowed = len(self.get_allowed_tools())
         denied = len(self.get_denied_tools())
         return f"DecisionLedger({allowed} allowed, {denied} denied)"
+
+    def record_tool_decision(self, tool_name: str, decision: Decision, reason: str) -> None:
+        """Update or insert a tool decision even after build time (used for runtime gating)."""
+        existing = self.decisions.get(tool_name)
+        prerequisites = existing.prerequisites if existing else []
+        priority = existing.priority if existing else 0
+        timeout = existing.timeout if existing else 300
+        self.decisions[tool_name] = ToolDecision(
+            tool_name=tool_name,
+            decision=decision,
+            reason=reason,
+            prerequisites=prerequisites,
+            priority=priority,
+            timeout=timeout,
+        )
+
+    # ===== CRAWL-BASED GATING (NEW) =====
+    # Non-invasive: adds new methods without touching existing logic
+    
+    def should_run_payload_tool_with_crawl(self, tool_name: str, crawl_adapter) -> bool:
+        """
+        Per-tool gating with crawl signals (IMMUTABLE-SAFE)
+        
+        Does NOT modify ledger - only queries crawl signals.
+        Ledger remains immutable after build().
+        
+        Args:
+            tool_name: Tool identifier (xsstrike, sqlmap, etc.)
+            crawl_adapter: CrawlAdapter with crawl results
+            
+        Returns:
+            bool: True if tool should run (based on ledger decision AND crawl signals)
+            
+        Usage:
+            if ledger.should_run_payload_tool_with_crawl("xsstrike", adapter):
+                # Run xsstrike on crawled endpoints
+        """
+        # First check: ledger already says NO -> don't run
+        if not self.allows(tool_name):
+            return False
+        
+        # Second check: crawl signals say NO -> don't run
+        gating = crawl_adapter.gating_signals
+        if not gating:
+            # No crawl data: use ledger decision
+            return True
+
+        tool_lower = tool_name.lower()
+
+        # XSS tools: need reflectable params or forms
+        if "xss" in tool_lower or tool_lower == "dalfox":
+            return gating['reflection_count'] > 0 or gating['has_forms']
+
+        # SQL injection: need any parameters
+        elif "sql" in tool_lower:
+            return gating['parameter_count'] > 0
+
+        # Command injection: need any parameters
+        elif "commix" in tool_lower:
+            return gating['parameter_count'] > 0
+
+        # Template-based (nuclei always runs if ledger allows)
+        elif "nuclei" in tool_lower:
+            return True
+
+        # Default: use ledger decision
+        else:
+            return self.allows(tool_name)
+
+    def get_crawl_gating_summary(self, crawl_adapter) -> dict:
+        """
+        Get crawl-gated decisions for all tools (for logging/summary)
+        
+        Args:
+            crawl_adapter: CrawlAdapter with crawl results
+            
+        Returns:
+            dict: {tool_name: {decision, reason}}
+        """
+        gating = crawl_adapter.gating_signals
+        summary = {}
+
+        logger = __import__('logging').getLogger(__name__)
+
+        # Check each major tool (only those in ledger)
+        for tool in ["xsstrike", "dalfox", "sqlmap", "commix"]:
+            if tool not in self.decisions:
+                continue
+                
+            allowed_by_ledger = self.allows(tool)
+            allowed_by_crawl = self.should_run_payload_tool_with_crawl(tool, crawl_adapter)
+            can_run = allowed_by_ledger and allowed_by_crawl
+
+            if can_run:
+                if tool in ["xsstrike", "dalfox"]:
+                    reason = f"XSS testing ({gating['reflection_count']} reflection targets)"
+                elif tool == "sqlmap":
+                    reason = f"SQL injection ({gating['parameter_count']} parameters)"
+                elif tool == "commix":
+                    reason = f"Command injection ({gating['parameter_count']} parameters)"
+                else:
+                    reason = "Testing enabled"
+            else:
+                if not allowed_by_ledger:
+                    reason = f"Blocked by ledger"
+                elif not allowed_by_crawl:
+                    if tool in ["xsstrike", "dalfox"]:
+                        reason = f"No reflections ({gating['reflection_count']} found)"
+                    else:
+                        reason = f"No parameters ({gating['parameter_count']} found)"
+                else:
+                    reason = "Disabled"
+
+            summary[tool] = {
+                'can_run': can_run,
+                'reason': reason,
+                'ledger_allows': allowed_by_ledger,
+                'crawl_allows': allowed_by_crawl
+            }
+            
+            status = "✓" if can_run else "✗"
+            logger.info(f"[Crawl Gating] {tool}: {status} - {reason}")
+
+        return summary
 
 
 class DecisionEngine:

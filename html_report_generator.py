@@ -7,7 +7,7 @@ and compliance mapping.
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from intelligence_layer import CorrelatedFinding, IntelligenceEngine
 from findings_model import Severity
@@ -135,6 +135,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <p style="color: #666; margin-bottom: 20px;">Fix these vulnerabilities in order of priority (exploitability × confidence × attack surface):</p>
             {remediation_queue_html}
         </div>
+
+        <div class="section">
+            <h2>🧭 Vulnerability-Centric View</h2>
+            {vuln_section_html}
+        </div>
+
+        <div class="section">
+            <h2>🏦 Business Risk Aggregation</h2>
+            {risk_section_html}
+        </div>
+
+        <div class="section">
+            <h2>📌 Coverage Gaps</h2>
+            {coverage_section_html}
+        </div>
     </div>
 </body>
 </html>
@@ -151,7 +166,10 @@ class HTMLReportGenerator:
         scan_date: str,
         correlated_findings: List[CorrelatedFinding],
         intelligence_report: Dict[str, Any],
-        output_path: Path
+        output_path: Path,
+        vulnerability_report: Optional[Dict[str, Any]] = None,
+        risk_report: Optional[Dict[str, Any]] = None,
+        coverage_report: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Generate HTML report from intelligence data."""
         
@@ -183,6 +201,10 @@ class HTMLReportGenerator:
         remediation_queue_html = HTMLReportGenerator._render_remediation_queue(
             correlated_findings[:10]
         )
+
+        vuln_section_html = HTMLReportGenerator._render_vulnerabilities(vulnerability_report)
+        risk_section_html = HTMLReportGenerator._render_risk(risk_report)
+        coverage_section_html = HTMLReportGenerator._render_coverage(coverage_report)
         
         # Fill template
         html = HTML_TEMPLATE.format(
@@ -198,7 +220,10 @@ class HTMLReportGenerator:
             top_findings_html=top_findings_html,
             severity_chart_html=severity_chart_html,
             compliance_html=compliance_html,
-            remediation_queue_html=remediation_queue_html
+            remediation_queue_html=remediation_queue_html,
+            vuln_section_html=vuln_section_html,
+            risk_section_html=risk_section_html,
+            coverage_section_html=coverage_section_html
         )
         
         # Write to file
@@ -369,3 +394,78 @@ class HTMLReportGenerator:
             'Outdated Software': 'Update to latest stable version, apply security patches.',
         }
         return remediation_map.get(finding_type, 'Review security best practices for this vulnerability type.')
+
+    @staticmethod
+    def _render_vulnerabilities(vuln_report: Optional[Dict[str, Any]]) -> str:
+        if not vuln_report:
+            return "<p>No vulnerability-centric data available.</p>"
+
+        by_sev = vuln_report.get("by_severity", {})
+        vulns = vuln_report.get("vulnerabilities", [])[:10]
+
+        sev_cards = []
+        for sev, items in by_sev.items():
+            sev_cards.append(
+                f"<div class=\"stat-card\"><div class=\"label\">{sev}</div><div class=\"value\">{len(items)}</div></div>"
+            )
+
+        vuln_cards = []
+        for v in vulns:
+            tools = ''.join([f"<span class='tool-tag'>{t}</span>" for t in v.get("tools", [])])
+            vuln_cards.append(f"""
+            <div class="finding-card {v.get('severity','').lower()}">
+                <div class="finding-header">
+                    <div class="finding-title">{v.get('type','UNKNOWN')} @ {v.get('endpoint','')}</div>
+                    <span class="badge badge-{v.get('severity','medium').lower()}">{v.get('severity','MEDIUM')}</span>
+                </div>
+                <div class="finding-meta">Param: {v.get('parameter','-')} • Confidence: {v.get('confidence',0)} • OWASP: {v.get('owasp','n/a')}</div>
+                <div class="tools-list">{tools}</div>
+            </div>
+            """)
+
+        return f"""
+        <div class="stats-grid">{''.join(sev_cards)}</div>
+        {''.join(vuln_cards) or '<p>No vulnerabilities reported.</p>'}
+        """
+
+    @staticmethod
+    def _render_risk(risk_report: Optional[Dict[str, Any]]) -> str:
+        if not risk_report:
+            return "<p>No risk aggregation available.</p>"
+
+        app = risk_report.get("application_risk", {})
+        per_owasp = risk_report.get("per_owasp_category", {})
+
+        owasp_rows = []
+        for owasp, data in per_owasp.items():
+            owasp_rows.append(
+                f"<div class='compliance-item'><span>{owasp}</span><span><strong>{data.get('critical',0)}/{data.get('high',0)}/{data.get('medium',0)}</strong></span></div>"
+            )
+
+        return f"""
+        <div class="stats-grid">
+            <div class="stat-card"><div class="label">Risk Rating</div><div class="value">{app.get('risk_rating','UNKNOWN')}</div></div>
+            <div class="stat-card"><div class="label">Business Score</div><div class="value">{app.get('business_risk_score',0)}</div></div>
+            <div class="stat-card"><div class="label">Total Findings</div><div class="value">{app.get('total_findings',0)}</div></div>
+        </div>
+        <div class="compliance-card"><h3>OWASP Concentration</h3>{''.join(owasp_rows) or '<p>No OWASP aggregation.</p>'}</div>
+        """
+
+    @staticmethod
+    def _render_coverage(coverage_report: Optional[Dict[str, Any]]) -> str:
+        if not coverage_report:
+            return "<p>No coverage report available.</p>"
+
+        missed = coverage_report.get("missing", {})
+        summary_items = []
+        for area, details in missed.items():
+            summary_items.append(
+                f"<div class='compliance-item'><span>{area}</span><span><strong>{len(details)}</strong></span></div>"
+            )
+
+        return f"""
+        <div class="compliance-card">
+            <h3>Coverage Gaps</h3>
+            {''.join(summary_items) or '<p>No gaps logged.</p>'}
+        </div>
+        """
