@@ -237,11 +237,10 @@ class ToolManager:
             
             # Subdomain Tools
             'findomain': {
-                'apt': None,  # Install from GitHub releases
+                'apt': 'findomain',  # Now available via apt on Kali
                 'pip': None,
-                'go': None,  # Rust binary, use GitHub release
+                'go': None,
                 'brew': 'findomain',
-                'custom': 'wget -q https://github.com/Findomain/Findomain/releases/latest/download/findomain-linux -O /usr/local/bin/findomain 2>/dev/null && chmod +x /usr/local/bin/findomain',
                 'category': 'Subdomains',
                 'description': 'Subdomain enumeration'
             },
