@@ -52,6 +52,7 @@ class ToolManager:
                 'pip': None,
                 'brew': 'tomnomnom/tap/assetfinder',
                 'go': 'github.com/tomnomnom/assetfinder@latest',
+                'custom': 'apt-get install -y golang-go 2>/dev/null && go install github.com/tomnomnom/assetfinder@latest && export PATH=$PATH:/root/go/bin',
                 'category': 'DNS',
                 'description': 'Subdomain discovery tool'
             },
@@ -147,6 +148,7 @@ class ToolManager:
                 'apt': None,
                 'pip': 'sslyze',
                 'brew': None,
+                'custom': 'apt-get install -y pipx 2>/dev/null && pipx install sslyze && export PATH="$PATH:/root/.local/bin"',
                 'category': 'SSL/TLS',
                 'description': 'SSL/TLS analyzer'
             },
@@ -197,9 +199,10 @@ class ToolManager:
             },
             'dalfox': {
                 'apt': None,
-                'pip': 'dalfox',
+                'pip': None,
                 'go': 'github.com/hahwul/dalfox/v2@latest',
                 'brew': None,
+                'custom': 'apt-get install -y golang-go 2>/dev/null && go install github.com/hahwul/dalfox/v2@latest && export PATH=$PATH:/root/go/bin',
                 'category': 'Vulnerabilities',
                 'description': 'XSS vulnerability scanner'
             },
@@ -238,6 +241,7 @@ class ToolManager:
                 'pip': None,
                 'go': None,  # Rust binary, use GitHub release
                 'brew': 'findomain',
+                'custom': 'wget -q https://github.com/Findomain/Findomain/releases/download/6.1.0/findomain-linux.zip -O /tmp/findomain.zip 2>/dev/null && unzip -q /tmp/findomain.zip -d /tmp 2>/dev/null && chmod +x /tmp/findomain && mv /tmp/findomain /usr/local/bin/ && rm /tmp/findomain.zip',
                 'category': 'Subdomains',
                 'description': 'Subdomain enumeration'
             },
@@ -331,6 +335,9 @@ class ToolManager:
         
         # Debian/Ubuntu/Kali/generic Linux systems
         if self.distro in ['ubuntu', 'debian', 'kali', 'linux']:
+            # Check for custom installation command first (handles complex cases like Go + export PATH)
+            if tool_info.get('custom'):
+                return tool_info['custom']
             if tool_info.get('apt'):
                 return f"apt-get install -y {tool_info['apt']}"
             elif tool_info.get('pip'):
@@ -352,6 +359,8 @@ class ToolManager:
         
         # Fallback for any other Linux-like systems: try apt, pip, then go
         else:
+            if tool_info.get('custom'):
+                return tool_info['custom']
             if tool_info.get('apt'):
                 return f"apt-get install -y {tool_info['apt']}"
             elif tool_info.get('pip'):
