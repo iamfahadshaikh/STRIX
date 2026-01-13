@@ -58,7 +58,8 @@ class CrawlerMandatoryGate:
 
     # Discovery tools that can run WITHOUT crawler
     DISCOVERY_TOOLS = [
-        "nuclei",  # passive scan mode
+        "nuclei_crit",  # passive scan mode - critical templates
+        "nuclei_high",  # passive scan mode - high severity templates
         "nmap",
         "whatweb",
         "wafw00f",

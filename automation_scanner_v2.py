@@ -5,6 +5,7 @@ import json
 import socket
 import ssl
 import subprocess
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -1636,7 +1637,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Architecture-driven security scanner v2"
     )
-    parser.add_argument("target", help="Target domain or URL")
+    parser.add_argument("target", nargs='?', default=None, help="Target domain or URL (optional if using --check-tools, --install-missing, or --install-interactive)")
     parser.add_argument(
         "-o",
         "--output",
@@ -1651,14 +1652,58 @@ def main() -> None:
     parser.add_argument(
         "--install-missing",
         action="store_true",
-        help="Attempt to auto-install all missing tools non-interactively before scanning",
+        help="Auto-install all missing tools non-interactively, then scan target",
     )
     parser.add_argument(
         "--install-interactive",
         action="store_true",
-        help="Open an interactive prompt to install missing tools, then continue",
+        help="Interactively install missing tools, then scan target",
+    )
+    parser.add_argument(
+        "--check-tools",
+        action="store_true",
+        help="Check tools status and exit (no scanning)",
     )
     args = parser.parse_args()
+
+    # If --check-tools requested, run interactive tool checker and exit
+    if args.check_tools:
+        try:
+            from tool_checker import InteractiveToolChecker
+            checker = InteractiveToolChecker()
+            checker.run()
+        except Exception as e:
+            print(f"[!] Tool checker failed: {e}")
+            sys.exit(1)
+        return
+
+    # If --install-missing requested without target, just install and exit
+    if args.install_missing and not args.target:
+        try:
+            tool_mgr = ToolManager()
+            print("\n[*] Installing all missing tools...\n")
+            ok, failed = tool_mgr.install_missing_tools_non_interactive(list(tool_mgr.tool_database.keys()))
+            print(f"\n[*] Installation complete: {ok} installed, {failed} failed\n")
+        except Exception as e:
+            print(f"[!] Tool installation failed: {e}")
+            sys.exit(1)
+        return
+
+    # If --install-interactive requested without target, run checker and exit
+    if args.install_interactive and not args.target:
+        try:
+            from tool_checker import InteractiveToolChecker
+            checker = InteractiveToolChecker()
+            checker.run()
+        except Exception as e:
+            print(f"[!] Tool checker failed: {e}")
+            sys.exit(1)
+        return
+
+    # Require target for actual scanning
+    if not args.target:
+        parser.print_help()
+        sys.exit(1)
 
     scanner = AutomationScannerV2(
         target=args.target,
@@ -1666,16 +1711,16 @@ def main() -> None:
         skip_tool_check=args.skip_install,
     )
 
-    # Optional pre-flight installers
+    # Optional pre-flight installers (when target is provided)
     if scanner.tool_manager and (args.install_missing or args.install_interactive):
         try:
-            # Prefer installing what the ledger will need (mapped to canonical)
-            needed = list(scanner.ledger.get_allowed_tools())
             if args.install_missing:
+                print("\n[*] Pre-flight: Installing missing tools...\n")
+                needed = list(scanner.ledger.get_allowed_tools())
                 ok, failed = scanner.tool_manager.install_missing_tools_non_interactive(needed)
                 scanner.log(f"Pre-flight installation complete: {ok} installed, {failed} failed", "INFO")
             if args.install_interactive:
-                # Scan full database to show the user a complete picture
+                print("\n[*] Pre-flight: Interactive tool installation...\n")
                 scanner.tool_manager.scan_all_tools()
                 scanner.tool_manager.install_missing_tools_interactive()
         except Exception as e:
