@@ -1648,6 +1648,16 @@ def main() -> None:
         action="store_true",
         help="Skip tool installation checks",
     )
+    parser.add_argument(
+        "--install-missing",
+        action="store_true",
+        help="Attempt to auto-install all missing tools non-interactively before scanning",
+    )
+    parser.add_argument(
+        "--install-interactive",
+        action="store_true",
+        help="Open an interactive prompt to install missing tools, then continue",
+    )
     args = parser.parse_args()
 
     scanner = AutomationScannerV2(
@@ -1655,6 +1665,21 @@ def main() -> None:
         output_dir=args.output,
         skip_tool_check=args.skip_install,
     )
+
+    # Optional pre-flight installers
+    if scanner.tool_manager and (args.install_missing or args.install_interactive):
+        try:
+            # Prefer installing what the ledger will need (mapped to canonical)
+            needed = list(scanner.ledger.get_allowed_tools())
+            if args.install_missing:
+                ok, failed = scanner.tool_manager.install_missing_tools_non_interactive(needed)
+                scanner.log(f"Pre-flight installation complete: {ok} installed, {failed} failed", "INFO")
+            if args.install_interactive:
+                # Scan full database to show the user a complete picture
+                scanner.tool_manager.scan_all_tools()
+                scanner.tool_manager.install_missing_tools_interactive()
+        except Exception as e:
+            scanner.log(f"Tool installation step failed: {e}", "WARN")
 
     scanner.run_full_scan()
 
