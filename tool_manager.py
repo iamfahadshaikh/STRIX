@@ -268,6 +268,18 @@ class ToolManager:
         """Check if a tool is installed"""
         try:
             binary = self.tool_aliases.get(tool_name, tool_name)
+            # Special case: testssl may be installed as testssl.sh
+            if tool_name == 'testssl':
+                # Try both testssl and testssl.sh
+                for cmd in ['testssl', 'testssl.sh']:
+                    result = subprocess.run(
+                        ['which', cmd] if self.os_type == "Linux" else ['where', cmd],
+                        capture_output=True
+                    )
+                    if result.returncode == 0:
+                        return True
+                return False
+            
             result = subprocess.run(
                 ['which', binary] if self.os_type == "Linux" else ['where', binary],
                 capture_output=True
