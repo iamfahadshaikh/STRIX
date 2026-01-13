@@ -47,14 +47,16 @@ class DiscoveryCache:
             clean_path = clean_path.rstrip("/")
         return clean_path, params
 
-    def add_endpoint(self, path: str):
-        """Log discovered endpoint (e.g., /admin, /api/users) and capture params."""
+    def add_endpoint(self, path: str, source_tool: str | None = None, confidence: float | None = None, **kwargs):
+        """Log discovered endpoint (e.g., /admin, /api/users) and capture params.
+        Optional metadata (source_tool, confidence, kwargs) is accepted and ignored for now.
+        """
         clean_path, params = self._normalize_endpoint(path)
         if not clean_path:
             return
         self.endpoints.add(clean_path)
         for param in params:
-            self.add_param(param)
+            self.add_param(param, source_tool=source_tool, confidence=confidence)
     
     def add_live_endpoint(self, path: str, source_tool: str = "unknown"):
         """Log live endpoint (HTTP 200 confirmed)."""
@@ -66,8 +68,10 @@ class DiscoveryCache:
         for param in params:
             self.add_param(param)
     
-    def add_param(self, param: str):
-        """Log discovered parameter (e.g., id, search, q)"""
+    def add_param(self, param: str, source_tool: str | None = None, confidence: float | None = None, **kwargs):
+        """Log discovered parameter (e.g., id, search, q)
+        Optional metadata (source_tool, confidence, kwargs) is accepted and ignored for now.
+        """
         if param and param.strip():
             normalized = param.strip()
             self.params.add(normalized)

@@ -19,6 +19,19 @@ class ToolManager:
         self.missing_tools = {}
         self.tool_database = self._load_tool_database()
         self._warned: set[str] = set()
+        # Map orchestrator/ledger tool names to canonical binaries/packages
+        self.tool_aliases = {
+            # Ledger pseudo-tools → real binaries
+            'nmap_quick': 'nmap',
+            'nmap_vuln': 'nmap',
+            'dig_a': 'dig',
+            'dig_ns': 'dig',
+            'dig_mx': 'dig',
+            'nuclei_crit': 'nuclei',
+            'nuclei_high': 'nuclei',
+            # testssl binary name
+            'testssl': 'testssl.sh',
+        }
     
     def _detect_distro(self):
         """Detect Linux distribution"""
@@ -153,6 +166,27 @@ class ToolManager:
                 'category': 'Web',
                 'description': 'Web technology identifier'
             },
+            'gobuster': {
+                'apt': 'gobuster',
+                'pip': None,
+                'brew': 'gobuster',
+                'category': 'Web',
+                'description': 'Directory and DNS brute forcing tool'
+            },
+            'dirsearch': {
+                'apt': 'dirsearch',
+                'pip': 'dirsearch',
+                'brew': None,
+                'category': 'Web',
+                'description': 'Web path scanner'
+            },
+            'nikto': {
+                'apt': 'nikto',
+                'pip': None,
+                'brew': 'nikto',
+                'category': 'Web',
+                'description': 'Web server scanner'
+            },
             # Vulnerability Scanners
             'xsstrike': {
                 'apt': None,
@@ -190,6 +224,13 @@ class ToolManager:
                 'category': 'Vulnerabilities',
                 'description': 'SQL injection tester'
             },
+            'arjun': {
+                'apt': None,
+                'pip': 'arjun',
+                'brew': None,
+                'category': 'Vulnerabilities',
+                'description': 'HTTP parameter discovery'
+            },
             
             # Subdomain Tools
             'findomain': {
@@ -214,20 +255,29 @@ class ToolManager:
                 'category': 'Subdomains',
                 'description': 'Email and metadata harvester'
             },
+            'nuclei': {
+                'apt': 'nuclei',
+                'pip': None,
+                'brew': 'nuclei',
+                'category': 'Vulnerabilities',
+                'description': 'Fast vulnerability scanner with templates'
+            },
         }
     
     def check_tool_installed(self, tool_name):
         """Check if a tool is installed"""
         try:
+            binary = self.tool_aliases.get(tool_name, tool_name)
             result = subprocess.run(
-                ['which', tool_name] if self.os_type == "Linux" else ['where', tool_name],
+                ['which', binary] if self.os_type == "Linux" else ['where', binary],
                 capture_output=True
             )
             return result.returncode == 0
         except:
             # Alternative check for Python packages
             try:
-                __import__(tool_name)
+                pkg = self.tool_aliases.get(tool_name, tool_name)
+                __import__(pkg)
                 return True
             except ImportError:
                 return False
@@ -255,10 +305,17 @@ class ToolManager:
     
     def get_install_command(self, tool_name):
         """Get installation command for a tool"""
-        if tool_name not in self.tool_database:
+        canonical = self.tool_aliases.get(tool_name, tool_name)
+        tool_info = self.tool_database.get(canonical) or self.tool_database.get(tool_name)
+        # If still not found, try reverse alias lookup (e.g., testssl.sh -> testssl)
+        if not tool_info:
+            for k, v in self.tool_aliases.items():
+                if v == tool_name:
+                    tool_info = self.tool_database.get(k)
+                    if tool_info:
+                        break
+        if not tool_info:
             return None
-        
-        tool_info = self.tool_database[tool_name]
         
         if self.distro in ['ubuntu', 'debian', 'kali']:
             if tool_info.get('apt'):
@@ -306,6 +363,46 @@ class ToolManager:
         except Exception as e:
             print(f"[-] Error installing {tool_name}: {str(e)}")
             return False
+
+    def install_missing_tools_non_interactive(self, preferred_tools: list[str] | None = None) -> tuple[int, int]:
+        """Install all missing tools without prompts.
+
+        If preferred_tools is provided, limit installation to that set (after aliasing).
+        Returns (success_count, failed_count).
+        """
+        success = 0
+        failed = 0
+        if preferred_tools:
+            # Build a set of canonical tool names to install
+            targets = set()
+            for t in preferred_tools:
+                targets.add(self.tool_aliases.get(t, t))
+        else:
+            targets = set(self.tool_database.keys())
+
+        for tool in sorted(targets):
+            try:
+                if self.check_tool_installed(tool):
+                    continue
+                cmd = self.get_install_command(tool)
+                if not cmd:
+                    if tool not in self._warned:
+                        print(f"[!] No installer for {tool}")
+                        self._warned.add(tool)
+                    failed += 1
+                    continue
+                print(f"[*] Installing {tool}...")
+                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if res.returncode == 0:
+                    print(f"[+] {tool} installed")
+                    success += 1
+                else:
+                    print(f"[-] Failed to install {tool}: {res.stderr.strip() or res.stdout.strip()}")
+                    failed += 1
+            except Exception as e:
+                print(f"[-] Error installing {tool}: {e}")
+                failed += 1
+        return success, failed
     
     def install_missing_tools_interactive(self):
         """Prompt user to install missing tools"""
