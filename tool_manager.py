@@ -145,10 +145,10 @@ class ToolManager:
                 'description': 'SSL/TLS toolkit'
             },
             'sslyze': {
-                'apt': None,
+                'apt': 'sslyze',  # Now available via apt on Kali
                 'pip': 'sslyze',
                 'brew': None,
-                'custom': 'apt-get install -y pipx 2>/dev/null && pipx install sslyze && export PATH="$PATH:/root/.local/bin"',
+                'custom': 'apt-get install -y sslyze 2>/dev/null || (apt-get install -y pipx 2>/dev/null && pipx install sslyze && pipx ensurepath)',
                 'category': 'SSL/TLS',
                 'description': 'SSL/TLS analyzer'
             },
@@ -241,7 +241,7 @@ class ToolManager:
                 'pip': None,
                 'go': None,  # Rust binary, use GitHub release
                 'brew': 'findomain',
-                'custom': 'wget -q https://github.com/Findomain/Findomain/releases/download/6.1.0/findomain-linux.zip -O /tmp/findomain.zip 2>/dev/null && unzip -q /tmp/findomain.zip -d /tmp 2>/dev/null && chmod +x /tmp/findomain && mv /tmp/findomain /usr/local/bin/ && rm /tmp/findomain.zip',
+                'custom': 'wget -q https://github.com/Findomain/Findomain/releases/latest/download/findomain-linux -O /usr/local/bin/findomain 2>/dev/null && chmod +x /usr/local/bin/findomain',
                 'category': 'Subdomains',
                 'description': 'Subdomain enumeration'
             },
@@ -269,7 +269,7 @@ class ToolManager:
         }
     
     def check_tool_installed(self, tool_name):
-        """Check if a tool is installed"""
+        """Check if a tool is installed - checks standard PATH, Go bins, and pipx paths"""
         try:
             binary = self.tool_aliases.get(tool_name, tool_name)
             # Special case: testssl may be installed as testssl.sh
@@ -284,11 +284,37 @@ class ToolManager:
                         return True
                 return False
             
+            # First try standard which/where
             result = subprocess.run(
                 ['which', binary] if self.os_type == "Linux" else ['where', binary],
                 capture_output=True
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return True
+            
+            # Check Go bin directory for Go-installed tools (assetfinder, dalfox)
+            if self.os_type == "Linux":
+                go_bin_paths = [
+                    os.path.expanduser('~/go/bin'),
+                    os.path.expanduser('/root/go/bin'),
+                    '/usr/local/go/bin'
+                ]
+                for go_bin in go_bin_paths:
+                    tool_path = os.path.join(go_bin, binary)
+                    if os.path.isfile(tool_path) and os.access(tool_path, os.X_OK):
+                        return True
+                
+                # Check pipx installed tools path (sslyze, etc)
+                pipx_paths = [
+                    os.path.expanduser('~/.local/bin'),
+                    os.path.expanduser('/root/.local/bin'),
+                ]
+                for pipx_bin in pipx_paths:
+                    tool_path = os.path.join(pipx_bin, binary)
+                    if os.path.isfile(tool_path) and os.access(tool_path, os.X_OK):
+                        return True
+            
+            return False
         except:
             # Alternative check for Python packages
             try:
