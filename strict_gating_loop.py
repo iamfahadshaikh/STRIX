@@ -240,7 +240,7 @@ class StrictGatingLoop:
 
     def get_all_targets(self) -> Dict[str, ToolTargets]:
         """Get targeting for all major payload tools"""
-        tools = ["dalfox", "sqlmap", "commix", "nuclei"]
+        tools = ["dalfox", "sqlmap", "commix", "nuclei_crit", "nuclei_high"]
         result = {}
         for tool in tools:
             result[tool] = self.gate_tool(tool)

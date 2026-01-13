@@ -329,25 +329,38 @@ class ToolManager:
         if not tool_info:
             return None
         
-        if self.distro in ['ubuntu', 'debian', 'kali']:
+        # Debian/Ubuntu/Kali/generic Linux systems
+        if self.distro in ['ubuntu', 'debian', 'kali', 'linux']:
             if tool_info.get('apt'):
-                return f"sudo apt-get install -y {tool_info['apt']}"
+                return f"apt-get install -y {tool_info['apt']}"
             elif tool_info.get('pip'):
-                    # Prefer --break-system-packages on Kali/PEP668-managed envs
-                    # to avoid installation blocking. Falls back to standard pip3.
-                    # We also try pipx if available for CLI tools.
-                    return (
-                        f"pip3 install {tool_info['pip']} --break-system-packages || "
-                        f"pip3 install {tool_info['pip']}"
-                    )
+                # Try pip3 with --break-system-packages first (PEP 668), then fallback
+                return (
+                    f"pip3 install {tool_info['pip']} --break-system-packages 2>/dev/null || "
+                    f"pip3 install {tool_info['pip']} 2>/dev/null || "
+                    f"pip install {tool_info['pip']}"
+                )
             elif tool_info.get('go'):
                 return f"go install {tool_info['go']}"
         
+        # macOS
         elif self.distro == 'macos':
             if tool_info.get('brew'):
                 return f"brew install {tool_info['brew']}"
             elif tool_info.get('pip'):
                 return f"pip3 install {tool_info['pip']}"
+        
+        # Fallback for any other Linux-like systems: try apt, pip, then go
+        else:
+            if tool_info.get('apt'):
+                return f"apt-get install -y {tool_info['apt']}"
+            elif tool_info.get('pip'):
+                return (
+                    f"pip3 install {tool_info['pip']} --break-system-packages 2>/dev/null || "
+                    f"pip3 install {tool_info['pip']}"
+                )
+            elif tool_info.get('go'):
+                return f"go install {tool_info['go']}"
         
         return None
     
