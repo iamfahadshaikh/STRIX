@@ -1,0 +1,55 @@
+================================================================================
+PRODUCTION-GRADE WHATWEB COMMANDS
+================================================================================
+
+This is the only correct, deterministic, parseable WhatWeb command set.
+Everything else is noise, duplication, or breaks determinism.
+
+================================================================================
+PRIMARY WHATWEB SCAN (HTTPS - Balanced, Deterministic, Parseable)
+================================================================================
+
+whatweb https://example.com \
+  --aggression 3 \
+  --follow-redirects \
+  --max-redirects 5 \
+  --timeout 10 \
+  --no-errors \
+  --single-line \
+  --no-color
+
+# This performs:
+# - Aggressive fingerprinting (level 3)
+# - Follows HTTP redirects up to 5 times
+# - 10 second timeout per request
+# - Suppresses error output
+# - Single-line output (parseable)
+# - No color codes (machine-readable)
+
+================================================================================
+HTTP FALLBACK COMMAND (ONLY if HTTPS probe fails)
+================================================================================
+
+whatweb http://example.com \
+  --aggression 3 \
+  --follow-redirects \
+  --max-redirects 5 \
+  --timeout 10 \
+  --no-errors \
+  --single-line \
+  --no-color
+
+# Use only when HTTPS fails to establish connection.
+# This captures technology stack even on non-HTTPS targets.
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+1. DETERMINISM: Always use --single-line for consistent parsing
+2. NO COLOR: --no-color ensures output is machine-readable
+3. REDIRECT FOLLOW: --follow-redirects ensures landing page detection
+4. TIMEOUT: 10 seconds prevents hangs on slow/unresponsive targets
+5. AGGRESSION: Level 3 balances fingerprinting depth vs. noise
+
+================================================================================

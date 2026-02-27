@@ -1,0 +1,234 @@
+test_openapi_3_parsing (__main__.TestAPIDiscovery.test_openapi_3_parsing)
+Test OpenAPI 3.0 schema parsing ... ok
+test_parameter_extraction (__main__.TestAPIDiscovery.test_parameter_extraction)
+Test parameter extraction from schema ... ok
+test_swagger_2_parsing (__main__.TestAPIDiscovery.test_swagger_2_parsing)
+Test Swagger 2.0 schema parsing ... ok
+test_add_credentials (__main__.TestAuthAdapter.test_add_credentials)
+Test credential registration ... ok
+test_auth_headers_generation (__main__.TestAuthAdapter.test_auth_headers_generation)
+Test HTTP header generation ... ok
+test_authenticated_finding_marking (__main__.TestAuthAdapter.test_authenticated_finding_marking)
+Test marking findings as authenticated ... ok
+test_basic_auth_header (__main__.TestAuthAdapter.test_basic_auth_header)
+Test Basic authentication header ... ok
+test_bearer_token_header (__main__.TestAuthAdapter.test_bearer_token_header)
+Test Bearer token header ... ok
+test_multiple_credentials (__main__.TestAuthAdapter.test_multiple_credentials)
+Test multiple credential sets ... ok
+test_privilege_escalation_detection (__main__.TestAuthAdapter.test_privilege_escalation_detection)
+Test privilege escalation path detection ... ok
+test_confirmed_status (__main__.TestFindingCorrelator.test_confirmed_status)
+Test CONFIRMED status with confirmed payload ... ERROR
+test_deduplication_key (__main__.TestFindingCorrelator.test_deduplication_key)
+Test deduplication by (endpoint, parameter, type) ... ERROR
+test_false_positive_detection (__main__.TestFindingCorrelator.test_false_positive_detection)
+Test conflicting evidence detection ... ERROR
+test_get_corroborated_findings (__main__.TestFindingCorrelator.test_get_corroborated_findings)
+Test filtering for multi-tool findings ... ERROR
+test_multi_tool_corroboration (__main__.TestFindingCorrelator.test_multi_tool_corroboration)
+Test multi-tool corroboration increases confidence ... ERROR
+test_owasp_mapping (__main__.TestFindingCorrelator.test_owasp_mapping)
+Test OWASP category linking ... ERROR
+test_single_tool_finding (__main__.TestFindingCorrelator.test_single_tool_finding)
+Test adding single tool finding ... ok
+test_auth_with_risk_scoring (__main__.TestIntegration.test_auth_with_risk_scoring)
+Test authenticated findings receive higher risk scores ... ok
+test_correlation_to_risk_workflow (__main__.TestIntegration.test_correlation_to_risk_workflow)
+Test full workflow: correlate findings -> apply risk scoring ... ERROR
+test_corroboration_boost (__main__.TestRiskEngine.test_corroboration_boost)
+Test that multiple tools boost score ... ok
+test_get_findings_by_severity (__main__.TestRiskEngine.test_get_findings_by_severity)
+Test filtering findings by severity ... ok
+test_payload_evidence_registration (__main__.TestRiskEngine.test_payload_evidence_registration)
+Test registering successful payloads ... ok
+test_privilege_level_multiplier (__main__.TestRiskEngine.test_privilege_level_multiplier)
+Test that ADMIN findings score higher than USER ... ok
+test_risk_calculation_critical (__main__.TestRiskEngine.test_risk_calculation_critical)
+Test CRITICAL risk calculation ... ok
+test_risk_calculation_high (__main__.TestRiskEngine.test_risk_calculation_high)
+Test HIGH risk calculation ... ok
+test_risk_calculation_low (__main__.TestRiskEngine.test_risk_calculation_low)
+Test LOW risk calculation ... FAIL
+
+======================================================================
+ERROR: test_confirmed_status (__main__.TestFindingCorrelator.test_confirmed_status)
+Test CONFIRMED status with confirmed payload
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 75, in test_confirmed_status
+    self.correlator.add_report(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        tool="sqlmap",
+        ^^^^^^^^^^^^^^
+    ...<5 lines>...
+        confirmed=True
+        ^^^^^^^^^^^^^^
+    )
+    ^
+TypeError: FindingCorrelator.add_report() got an unexpected keyword argument 'confirmed'
+
+======================================================================
+ERROR: test_deduplication_key (__main__.TestFindingCorrelator.test_deduplication_key)
+Test deduplication by (endpoint, parameter, type)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 141, in test_deduplication_key
+    self.correlator.add_report(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        tool="tool2",
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        success_indicator=True
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 234, in add_report
+    finding.add_report(report)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in add_report
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+       ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           for r in self.tool_reports):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in <genexpr>
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'bool' object has no attribute 'lower'
+
+======================================================================
+ERROR: test_false_positive_detection (__main__.TestFindingCorrelator.test_false_positive_detection)
+Test conflicting evidence detection
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 100, in test_false_positive_detection
+    self.correlator.add_report(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        tool="tool2",
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        success_indicator=False
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 234, in add_report
+    finding.add_report(report)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in add_report
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+       ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           for r in self.tool_reports):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in <genexpr>
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'bool' object has no attribute 'lower'
+
+======================================================================
+ERROR: test_get_corroborated_findings (__main__.TestFindingCorrelator.test_get_corroborated_findings)
+Test filtering for multi-tool findings
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 184, in test_get_corroborated_findings
+    self.correlator.add_report(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        tool="tool2",
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        success_indicator=True
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 234, in add_report
+    finding.add_report(report)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in add_report
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+       ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           for r in self.tool_reports):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in <genexpr>
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'bool' object has no attribute 'lower'
+
+======================================================================
+ERROR: test_multi_tool_corroboration (__main__.TestFindingCorrelator.test_multi_tool_corroboration)
+Test multi-tool corroboration increases confidence
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 59, in test_multi_tool_corroboration
+    self.correlator.add_report(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        tool="nuclei",
+        ^^^^^^^^^^^^^^
+    ...<4 lines>...
+        success_indicator=True
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 234, in add_report
+    finding.add_report(report)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in add_report
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+       ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           for r in self.tool_reports):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in <genexpr>
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'bool' object has no attribute 'lower'
+
+======================================================================
+ERROR: test_owasp_mapping (__main__.TestFindingCorrelator.test_owasp_mapping)
+Test OWASP category linking
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 127, in test_owasp_mapping
+    self.assertIn("A03_INJECTION", findings[0].owasp_categories)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CorrelatedFinding' object has no attribute 'owasp_categories'. Did you mean: 'owasp_category'?
+
+======================================================================
+ERROR: test_correlation_to_risk_workflow (__main__.TestIntegration.test_correlation_to_risk_workflow)
+Test full workflow: correlate findings -> apply risk scoring
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 575, in test_correlation_to_risk_workflow
+    correlator.add_report(
+    ~~~~~~~~~~~~~~~~~~~~~^
+        tool="nuclei",
+        ^^^^^^^^^^^^^^
+    ...<4 lines>...
+        success_indicator=True
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 234, in add_report
+    finding.add_report(report)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in add_report
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+       ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           for r in self.tool_reports):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/finding_correlator.py", line 109, in <genexpr>
+    if any(r.success_indicator and "confirmed" in r.success_indicator.lower()
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'bool' object has no attribute 'lower'
+
+======================================================================
+FAIL: test_risk_calculation_low (__main__.TestRiskEngine.test_risk_calculation_low)
+Test LOW risk calculation
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/mnt/c/Users/FahadShaikh/Desktop/something/VAPT-Automated-Engine/test_phase3_components.py", line 466, in test_risk_calculation_low
+    self.assertIn(finding.risk_severity, ["LOW", "INFO"])
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'MEDIUM' not found in ['LOW', 'INFO']
+
+----------------------------------------------------------------------
+Ran 26 tests in 0.032s
+
+FAILED (failures=1, errors=7)

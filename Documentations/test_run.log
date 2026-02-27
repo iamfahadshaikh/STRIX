@@ -1,0 +1,39 @@
+[18:31:05] [INFO] Target Profile: testphp.vulnweb.com
+[18:31:05] [INFO] Target Type: TargetType.SUBDOMAIN
+[18:31:05] [INFO] Runtime Budget: 900s (15.0m)
+[18:31:05] [INFO] Output directory: scan_results_testphp.vulnweb.com_20260108_183105
+[18:31:05] [INFO] Correlation ID: 20260108_183105
+
+================================================================================
+ARCHITECTURE-DRIVEN SECURITY SCANNER
+Target: testphp.vulnweb.com
+Type: TargetType.SUBDOMAIN
+Tools Approved: 17
+Tools Denied: 8
+Start Time: 2026-01-08T18:31:05.861255
+================================================================================
+[18:31:10] [INFO] Execution Plan: 10 tools planned
+[18:31:10] [INFO] Execution Path: SubdomainExecutor
+[18:31:10] [INFO] [1/10] (DNS) dig_a
+[18:31:10] [SUCCESS] dig_a SUCCESS_WITH_FINDINGS
+[18:31:10] [INFO] [2/10] (DNS) dig_aaaa
+[18:31:10] [SUCCESS] dig_aaaa SUCCESS_NO_FINDINGS
+[18:31:10] [INFO] [3/10] (Network) ping
+[18:31:11] [SUCCESS] ping SUCCESS_WITH_FINDINGS
+[18:31:11] [INFO] [4/10] (Network) nmap_quick
+[18:31:18] [SUCCESS] nmap_quick SUCCESS_WITH_FINDINGS
+[18:31:18] [INFO] [5/10] (Web) whatweb
+[18:31:35] [SUCCESS] whatweb SUCCESS_NO_FINDINGS
+[18:31:35] [INFO] [6/10] (Web) nikto
+[18:31:56] [SUCCESS] nikto SUCCESS_WITH_FINDINGS
+[18:31:59] [WARN] [7/10] sslscan SKIPPED: HTTPS service not responding
+[18:31:59] [WARN] [8/10] gobuster SKIPPED: no confirmed web service
+[18:31:59] [INFO] [9/10] (Nuclei) nuclei_crit
+[18:31:59] [WARN] nuclei_crit EXECUTION_ERROR (rc=2)
+[18:31:59] [INFO] [10/10] (Nuclei) nuclei_high
+[18:31:59] [WARN] nuclei_high EXECUTION_ERROR (rc=2)
+[18:31:59] [INFO] Discovery summary: Endpoints: 0, Live: 0, Params: 0, CmdParams: 0, SSRFParams: 0, Reflections: 0, Subdomains: 0, Ports: 0
+[18:31:59] [SUCCESS] Findings summary: Critical: 0, High: 0, Medium: 0, Low: 1, Info: 0
+[18:31:59] [SUCCESS] Scan complete - all tools executed via approved path
+[18:31:59] [WARN] HTML report generation failed: HTMLReportGenerator.generate() got an unexpected keyword argument 'findings'
+[18:31:59] [SUCCESS] Report saved: scan_results_testphp.vulnweb.com_20260108_183105/execution_report.json

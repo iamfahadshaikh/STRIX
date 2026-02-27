@@ -1,0 +1,37 @@
+[15:07:40] [INFO] Target Profile: dev-erp.sisschools.org
+[15:07:40] [INFO] Target Type: subdomain
+[15:07:40] [INFO] Runtime Budget: 1800s (30.0m)
+[15:07:40] [INFO] Output directory: scan_results_dev-erp.sisschools.org_20260107_150740
+[15:07:40] [INFO] Correlation ID: 20260107_150740
+[15:07:40] [INFO] Gate mode deprecated - running full scan
+
+================================================================================
+ARCHITECTURE-DRIVEN SECURITY SCANNER
+Target: dev-erp.sisschools.org
+Type: TargetType.SUBDOMAIN
+Tools Approved: 13
+Tools Denied: 12
+Start Time: 2026-01-07T15:07:40.402790
+================================================================================
+[15:07:40] [INFO] Execution Plan: 9 tools planned
+[15:07:40] [INFO] Execution Path: SubdomainExecutor
+[15:07:40] [INFO] [1/9] (DNS) dig_a
+[15:07:40] [SUCCESS] dig_a SUCCESS_WITH_FINDINGS
+[15:07:40] [INFO] [2/9] (DNS) dig_aaaa
+[15:07:40] [SUCCESS] dig_aaaa SUCCESS_NO_FINDINGS
+[15:07:40] [INFO] [3/9] (Network) ping
+[15:07:50] [WARN] ping TIMEOUT (rc=124)
+[15:07:50] [INFO] [4/9] (Network) nmap_quick
+[15:07:53] [SUCCESS] nmap_quick SUCCESS_WITH_FINDINGS
+[15:07:53] [INFO] [5/9] (Web) whatweb
+[15:08:05] [SUCCESS] whatweb SUCCESS_WITH_FINDINGS
+[15:08:05] [INFO] [6/9] (Web) nikto
+[15:10:05] [WARN] nikto TIMEOUT (rc=124)
+[15:10:05] [INFO] [7/9] (SSL) sslscan
+[15:10:24] [SUCCESS] sslscan SUCCESS_WITH_FINDINGS
+[15:10:24] [INFO] [8/9] (Web) gobuster
+[15:10:24] [WARN] gobuster EXECUTION_ERROR (rc=1)
+[15:10:24] [INFO] [9/9] (Nuclei) nuclei_crit
+[15:10:27] [WARN] nuclei_crit EXECUTION_ERROR (rc=1)
+[15:10:27] [SUCCESS] Scan complete - all tools executed via approved path
+[15:10:27] [SUCCESS] Report saved: scan_results_dev-erp.sisschools.org_20260107_150740/execution_report.json
