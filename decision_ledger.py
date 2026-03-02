@@ -364,7 +364,7 @@ class DecisionEngine:
         ledger.add_decision("gobuster", Decision.ALLOW, "Directory enumeration (all targets)", priority=16, timeout=9999)
         ledger.add_decision("dirb", Decision.ALLOW, "Directory enumeration fallback", priority=16, timeout=300)
         ledger.add_decision("dirsearch", Decision.ALLOW, "Directory/file search", priority=15)
-        ledger.add_decision("nikto", Decision.ALLOW, "Baseline web scan (all targets)", priority=14, timeout=9999)
+        ledger.add_decision("nikto", Decision.ALLOW, "Baseline web scan (all targets)", priority=14, timeout=400)
         
         # ============ CMS-SPECIFIC TOOLS ============
         if profile.has_wordpress:
