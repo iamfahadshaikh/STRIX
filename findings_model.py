@@ -130,6 +130,7 @@ class FindingsRegistry:
     
     def to_dict(self) -> dict:
         """Export to dict for JSON serialization"""
+        from enum import Enum
         return {
             "total": len(self._findings),
             "by_severity": {s.value: len(f) for s, f in self._by_severity.items()},
@@ -140,7 +141,7 @@ class FindingsRegistry:
                     "location": f.location,
                     "description": f.description,
                     "cwe": f.cwe,
-                    "owasp": f.owasp,
+                    "owasp": f.owasp.value if isinstance(f.owasp, Enum) else f.owasp,
                     "tool": f.tool,
                     "evidence": f.evidence[:200],  # Truncate
                     "remediation": f.remediation,

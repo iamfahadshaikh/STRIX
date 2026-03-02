@@ -110,6 +110,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <div class="section">
+            <h2>🧪 Discovery Summary</h2>
+            {discovery_section_html}
+        </div>
+
+        <div class="section">
+            <h2>📝 Findings Summary</h2>
+            {findings_summary_section_html}
+        </div>
+
+        <div class="section">
             <h2>🎯 Top 10 Critical Findings</h2>
             {top_findings_html}
         </div>
@@ -170,25 +180,34 @@ class HTMLReportGenerator:
         vulnerability_report: Optional[Dict[str, Any]] = None,
         risk_report: Optional[Dict[str, Any]] = None,
         coverage_report: Optional[Dict[str, Any]] = None,
+        discovery_summary: Optional[Dict[str, Any]] = None,
+        findings_summary: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Generate HTML report from intelligence data."""
         
-        # Extract stats
-        total_findings = intelligence_report['total_findings']
+        # Extract stats (robust to missing keys)
+        total_findings = intelligence_report.get('total_findings', len(correlated_findings))
         severity_counts = {}
         for cf in correlated_findings:
-            sev = cf.primary_finding.severity.value
+            # Support both object-based and dict-based findings
+            if isinstance(cf, dict):
+                sev_raw = cf.get('severity', 'INFO')
+                sev = sev_raw.value if hasattr(sev_raw, 'value') else str(sev_raw)
+            else:
+                sev = cf.primary_finding.severity.value
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
         
         critical_count = severity_counts.get('CRITICAL', 0)
         high_count = severity_counts.get('HIGH', 0)
         medium_count = severity_counts.get('MEDIUM', 0)
-        avg_confidence = int(intelligence_report['confidence_stats']['average'] * 100)
-        multi_tool_count = intelligence_report['multi_tool_confirmed']
+        avg_confidence = int(
+            float(intelligence_report.get('confidence_stats', {}).get('average', 0.0)) * 100
+        )
+        multi_tool_count = int(intelligence_report.get('multi_tool_confirmed', 0))
         
         # Top 10 findings
         top_findings_html = HTMLReportGenerator._render_top_findings(
-            intelligence_report['top_10_critical']
+            intelligence_report.get('top_10_critical', [])
         )
         
         # Severity chart
@@ -201,6 +220,9 @@ class HTMLReportGenerator:
         remediation_queue_html = HTMLReportGenerator._render_remediation_queue(
             correlated_findings[:10]
         )
+
+        discovery_section_html = HTMLReportGenerator._render_discovery_summary(discovery_summary)
+        findings_summary_section_html = HTMLReportGenerator._render_findings_summary(findings_summary)
 
         vuln_section_html = HTMLReportGenerator._render_vulnerabilities(vulnerability_report)
         risk_section_html = HTMLReportGenerator._render_risk(risk_report)
@@ -217,6 +239,8 @@ class HTMLReportGenerator:
             medium_count=medium_count,
             avg_confidence=avg_confidence,
             multi_tool_count=multi_tool_count,
+            discovery_section_html=discovery_section_html,
+            findings_summary_section_html=findings_summary_section_html,
             top_findings_html=top_findings_html,
             severity_chart_html=severity_chart_html,
             compliance_html=compliance_html,
@@ -238,7 +262,6 @@ class HTMLReportGenerator:
         html = []
         for idx, finding in enumerate(top_findings, 1):
             severity_class = finding['severity'].lower()
-            tools_html = ''.join([f'<span class="tool-tag">{tool}</span>' for tool in finding['tools']])
             confidence_pct = int(finding['confidence'] * 100)
             
             html.append(f"""
@@ -256,8 +279,6 @@ class HTMLReportGenerator:
                     <div class="confidence-meter">
                         <div class="confidence-fill" style="width: {confidence_pct}%"></div>
                     </div>
-                    <strong>Confirmed by:</strong>
-                    <div class="tools-list">{tools_html}</div>
                 </div>
                 <div class="finding-description">{finding['description']}</div>
             </div>
@@ -294,12 +315,18 @@ class HTMLReportGenerator:
         cwe_counts = {}
         
         for cf in correlated_findings:
-            owasp = cf.primary_finding.owasp or "Unmapped"
-            owasp_counts[owasp] = owasp_counts.get(owasp, 0) + 1
-            
-            if cf.primary_finding.cwe:
-                cwe = cf.primary_finding.cwe
-                cwe_counts[cwe] = cwe_counts.get(cwe, 0) + 1
+            if isinstance(cf, dict):
+                owasp = cf.get('owasp') or "Unmapped"
+                owasp_counts[owasp] = owasp_counts.get(owasp, 0) + 1
+                cwe_val = cf.get('cwe')
+                if cwe_val:
+                    cwe_counts[cwe_val] = cwe_counts.get(cwe_val, 0) + 1
+            else:
+                owasp = cf.primary_finding.owasp or "Unmapped"
+                owasp_counts[owasp] = owasp_counts.get(owasp, 0) + 1
+                if cf.primary_finding.cwe:
+                    cwe = cf.primary_finding.cwe
+                    cwe_counts[cwe] = cwe_counts.get(cwe, 0) + 1
         
         # OWASP card
         owasp_items = '\n'.join([
@@ -314,16 +341,20 @@ class HTMLReportGenerator:
         ])
         
         # PCI-DSS mapping (simplified)
+        def _type_str(cf) -> str:
+            if isinstance(cf, dict):
+                return str(cf.get('type', '')).lower()
+            return cf.primary_finding.type.value.lower()
         pci_items = """
-        <div class="compliance-item"><span>Req 6.5.1 (Injection)</span><span><strong>{sqli_count}</strong></span></div>
-        <div class="compliance-item"><span>Req 6.5.7 (XSS)</span><span><strong>{xss_count}</strong></span></div>
-        <div class="compliance-item"><span>Req 6.5.9 (Access Control)</span><span><strong>{ac_count}</strong></span></div>
-        <div class="compliance-item"><span>Req 6.5.10 (Auth)</span><span><strong>{auth_count}</strong></span></div>
+        <div class=\"compliance-item\"><span>Req 6.5.1 (Injection)</span><span><strong>{sqli_count}</strong></span></div>
+        <div class=\"compliance-item\"><span>Req 6.5.7 (XSS)</span><span><strong>{xss_count}</strong></span></div>
+        <div class=\"compliance-item\"><span>Req 6.5.9 (Access Control)</span><span><strong>{ac_count}</strong></span></div>
+        <div class=\"compliance-item\"><span>Req 6.5.10 (Auth)</span><span><strong>{auth_count}</strong></span></div>
         """.format(
-            sqli_count=sum(1 for cf in correlated_findings if 'sqli' in cf.primary_finding.type.value.lower()),
-            xss_count=sum(1 for cf in correlated_findings if 'xss' in cf.primary_finding.type.value.lower()),
-            ac_count=sum(1 for cf in correlated_findings if 'idor' in cf.primary_finding.type.value.lower()),
-            auth_count=sum(1 for cf in correlated_findings if 'auth' in cf.primary_finding.type.value.lower())
+            sqli_count=sum(1 for cf in correlated_findings if 'sqli' in _type_str(cf)),
+            xss_count=sum(1 for cf in correlated_findings if 'xss' in _type_str(cf)),
+            ac_count=sum(1 for cf in correlated_findings if 'idor' in _type_str(cf)),
+            auth_count=sum(1 for cf in correlated_findings if 'auth' in _type_str(cf))
         )
         
         return f"""
@@ -349,32 +380,58 @@ class HTMLReportGenerator:
         
         html = []
         for idx, cf in enumerate(priority_findings, 1):
-            finding = cf.primary_finding
-            severity_class = finding.severity.value.lower()
-            
-            # Simple remediation suggestion based on type
-            remediation = HTMLReportGenerator._get_remediation(finding.type.value)
-            
-            html.append(f"""
-            <div class="finding-card {severity_class}">
-                <div class="finding-header">
-                    <div class="finding-title">Priority #{idx}: {finding.type.value}</div>
-                    <div>
-                        <span class="badge badge-{severity_class}">{finding.severity.value}</span>
-                        <span class="badge badge-exploit">Exploit: {cf.exploitability}</span>
+            if isinstance(cf, dict):
+                severity_raw = cf.get('severity', 'MEDIUM')
+                severity_class = (severity_raw.value if hasattr(severity_raw, 'value') else str(severity_raw)).lower()
+                f_type = str(cf.get('type', 'UNKNOWN'))
+                location = cf.get('location', '')
+                description = cf.get('description', '')
+                conf_val = cf.get('confidence', 0)
+                conf_pct = int(float(conf_val) * 100) if float(conf_val) <= 1 else int(float(conf_val))
+                remediation = HTMLReportGenerator._get_remediation(f_type)
+                html.append(f"""
+                <div class=\"finding-card {severity_class}\">
+                    <div class=\"finding-header\">
+                        <div class=\"finding-title\">Priority #{idx}: {f_type}</div>
+                        <div>
+                            <span class=\"badge badge-{severity_class}\">{severity_raw}</span>
+                            <span class=\"badge badge-exploit\">Exploit: n/a</span>
+                        </div>
+                    </div>
+                    <div class=\"finding-meta\">
+                        <strong>Location:</strong> {location}<br>
+                        <strong>Confidence:</strong> {conf_pct}%
+                    </div>
+                    <div class=\"finding-description\">
+                        <strong>Issue:</strong> {description}<br>
+                        <strong>Remediation:</strong> {remediation}
                     </div>
                 </div>
-                <div class="finding-meta">
-                    <strong>Location:</strong> {finding.location}<br>
-                    <strong>Attack Surface:</strong> {cf.attack_surface_score:.1f}/10<br>
-                    <strong>Confidence:</strong> {int(cf.confidence.score * 100)}%
+                """)
+            else:
+                finding = cf.primary_finding
+                severity_class = finding.severity.value.lower()
+                remediation = HTMLReportGenerator._get_remediation(finding.type.value)
+                html.append(f"""
+                <div class=\"finding-card {severity_class}\">
+                    <div class=\"finding-header\">
+                        <div class=\"finding-title\">Priority #{idx}: {finding.type.value}</div>
+                        <div>
+                            <span class=\"badge badge-{severity_class}\">{finding.severity.value}</span>
+                            <span class=\"badge badge-exploit\">Exploit: {cf.exploitability}</span>
+                        </div>
+                    </div>
+                    <div class=\"finding-meta\">
+                        <strong>Location:</strong> {finding.location}<br>
+                        <strong>Attack Surface:</strong> {cf.attack_surface_score:.1f}/10<br>
+                        <strong>Confidence:</strong> {int(cf.confidence.score * 100)}%
+                    </div>
+                    <div class=\"finding-description\">
+                        <strong>Issue:</strong> {finding.description}<br>
+                        <strong>Remediation:</strong> {remediation}
+                    </div>
                 </div>
-                <div class="finding-description">
-                    <strong>Issue:</strong> {finding.description}<br>
-                    <strong>Remediation:</strong> {remediation}
-                </div>
-            </div>
-            """)
+                """)
         
         return '\n'.join(html)
     
@@ -411,7 +468,6 @@ class HTMLReportGenerator:
 
         vuln_cards = []
         for v in vulns:
-            tools = ''.join([f"<span class='tool-tag'>{t}</span>" for t in v.get("tools", [])])
             vuln_cards.append(f"""
             <div class="finding-card {v.get('severity','').lower()}">
                 <div class="finding-header">
@@ -419,7 +475,6 @@ class HTMLReportGenerator:
                     <span class="badge badge-{v.get('severity','medium').lower()}">{v.get('severity','MEDIUM')}</span>
                 </div>
                 <div class="finding-meta">Param: {v.get('parameter','-')} • Confidence: {v.get('confidence',0)} • OWASP: {v.get('owasp','n/a')}</div>
-                <div class="tools-list">{tools}</div>
             </div>
             """)
 
@@ -467,5 +522,50 @@ class HTMLReportGenerator:
         <div class="compliance-card">
             <h3>Coverage Gaps</h3>
             {''.join(summary_items) or '<p>No gaps logged.</p>'}
+        </div>
+        """
+
+    @staticmethod
+    def _render_discovery_summary(discovery_summary: Optional[Dict[str, Any]]) -> str:
+        if not discovery_summary:
+            return "<p>No discovery summary available.</p>"
+
+        return f"""
+        <div class="stats-grid">
+            <div class="stat-card"><div class="label">Endpoints</div><div class="value">{discovery_summary.get('endpoints', 0)}</div></div>
+            <div class="stat-card"><div class="label">Live Endpoints</div><div class="value">{discovery_summary.get('live_endpoints', 0)}</div></div>
+            <div class="stat-card"><div class="label">Parameters</div><div class="value">{discovery_summary.get('params', 0)}</div></div>
+            <div class="stat-card"><div class="label">Command Params</div><div class="value">{discovery_summary.get('command_params', 0)}</div></div>
+            <div class="stat-card"><div class="label">SSRF Params</div><div class="value">{discovery_summary.get('ssrf_params', 0)}</div></div>
+            <div class="stat-card"><div class="label">Reflections</div><div class="value">{discovery_summary.get('reflections', 0)}</div></div>
+            <div class="stat-card"><div class="label">Subdomains</div><div class="value">{discovery_summary.get('subdomains', 0)}</div></div>
+            <div class="stat-card"><div class="label">Open Ports</div><div class="value">{discovery_summary.get('ports', 0)}</div></div>
+        </div>
+        """
+
+    @staticmethod
+    def _render_findings_summary(findings_summary: Optional[Dict[str, Any]]) -> str:
+        if not findings_summary:
+            return "<p>No findings summary available.</p>"
+
+        owasp = findings_summary.get("owasp", {}) or {}
+        owasp_rows = []
+        for category, count in sorted(owasp.items(), key=lambda item: (-item[1], item[0]))[:10]:
+            owasp_rows.append(
+                f"<div class='compliance-item'><span>{category}</span><span><strong>{count}</strong></span></div>"
+            )
+
+        return f"""
+        <div class="stats-grid">
+            <div class="stat-card"><div class="label">Critical</div><div class="value severity-critical">{findings_summary.get('critical', 0)}</div></div>
+            <div class="stat-card"><div class="label">High</div><div class="value severity-high">{findings_summary.get('high', 0)}</div></div>
+            <div class="stat-card"><div class="label">Medium</div><div class="value severity-medium">{findings_summary.get('medium', 0)}</div></div>
+            <div class="stat-card"><div class="label">Low</div><div class="value severity-low">{findings_summary.get('low', 0)}</div></div>
+            <div class="stat-card"><div class="label">Info</div><div class="value">{findings_summary.get('info', 0)}</div></div>
+            <div class="stat-card"><div class="label">Total</div><div class="value">{findings_summary.get('total', 0)}</div></div>
+        </div>
+        <div class="compliance-card">
+            <h3>OWASP Mapping Distribution</h3>
+            {''.join(owasp_rows) or '<p>No OWASP-mapped findings.</p>'}
         </div>
         """

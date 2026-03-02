@@ -14,35 +14,7 @@ logger = logging.getLogger(__name__)
 class DiscoverySignalParser:
     """Parse stdout from discovery tools into structured signals"""
     
-    @staticmethod
-    def parse_dig_output(stdout: str) -> Dict[str, any]:
-        """Parse dig output"""
-        signals = set()
-        parsed_data = {}
-        
-        if not stdout:
-            return {"signals": signals, "parsed": parsed_data, "success": False}
-        
-        try:
-            # Extract IP addresses
-            ips = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', stdout)
-            if ips:
-                signals.add("dns_resolved")
-                signals.add("ip_address")
-                parsed_data["ips"] = list(set(ips))
-            
-            # Check for NXDOMAIN
-            if "NXDOMAIN" in stdout:
-                parsed_data["status"] = "NXDOMAIN"
-            elif "NOERROR" in stdout:
-                signals.add("dns_noerror")
-                parsed_data["status"] = "NOERROR"
-            
-            return {"signals": signals, "parsed": parsed_data, "success": len(signals) > 0}
-        except Exception as e:
-            logger.error(f"dig parse failed: {e}")
-            return {"signals": set(), "parsed": {}, "success": False}
-    
+
     @staticmethod
     def parse_nmap_output(stdout: str) -> Dict[str, any]:
         """Parse nmap output"""
@@ -123,6 +95,9 @@ class DiscoverySignalParser:
                 if re.search(pattern, stdout, re.IGNORECASE):
                     signals.add("cms_detected")
                     parsed_data["cms"] = pattern
+                    # Add specific WordPress signal for wpscan gating
+                    if pattern == 'WordPress':
+                        signals.add("wordpress_detected")
                     break
             
             # Check for HTTPS
@@ -211,7 +186,6 @@ class DiscoverySignalParser:
         """Main dispatcher for parsing tool output"""
         
         parsers = {
-            "dig_a": DiscoverySignalParser.parse_dig_output,
             "nmap_quick": DiscoverySignalParser.parse_nmap_output,
             "nmap_full": DiscoverySignalParser.parse_nmap_output,
             "whatweb": DiscoverySignalParser.parse_whatweb_output,
