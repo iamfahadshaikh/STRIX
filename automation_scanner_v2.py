@@ -65,17 +65,20 @@ class DecisionOutcome(Enum):
 
 
 class AutomationScannerV2:
+    MAX_TOOL_TIMEOUT = 300  # Global hard cap: 5 minutes per tool
+
     def __init__(
         self,
         target: str,
         output_dir: str | None = None,
         skip_tool_check: bool = False,
+        custom_budget: int | None = None,
     ) -> None:
         self.target = target
         self.start_time = datetime.now()
         self.correlation_id = self.start_time.strftime("%Y%m%d_%H%M%S")
 
-        self.profile = TargetProfile.from_target(target)
+        self.profile = TargetProfile.from_target(target, custom_budget=custom_budget)
 
         # Explicit HTTPS probe to set capability before planning/ledger
         self.profile = self._with_https_probe(self.profile)
@@ -159,7 +162,8 @@ class AutomationScannerV2:
         """
         tool = plan_item["tool"]
         command = plan_item["command"]
-        timeout = plan_item.get("timeout", 300)
+        configured_timeout = int(plan_item.get("timeout", 300))
+        timeout = min(configured_timeout, self.MAX_TOOL_TIMEOUT)
         category = plan_item.get("category", "Unknown")
         retries = plan_item.get("retries", 0)
         
@@ -502,7 +506,8 @@ class AutomationScannerV2:
                 return DecisionOutcome.BLOCK, f"payload_readiness_failed: {validation_reason}"
         
         meta = {k: plan_item.get(k, set()) for k in ["requires", "optional", "produces"]}
-        worst_case = plan_item.get("worst_case", plan_item.get("timeout", 300))
+        configured_worst_case = int(plan_item.get("worst_case", plan_item.get("timeout", 300)))
+        worst_case = min(configured_worst_case, self.MAX_TOOL_TIMEOUT)
         remaining = max(0.0, self.runtime_deadline - datetime.now().timestamp())
         ctx = self._build_context()
 
@@ -772,8 +777,8 @@ class AutomationScannerV2:
             if "Reflected" in stdout or "reflected" in stdout:
                 self.cache.add_reflection("xss_candidate")
         
-        elif tool == "nuclei_crit" and stdout:
-            # Nuclei finds endpoints/issues
+        elif tool.startswith("nuclei") and stdout:
+            # All Nuclei variants find endpoints/issues
             for line in stdout.split("\n"):
                 if line.strip() and "[" in line:
                     tokens = line.split()
@@ -842,6 +847,27 @@ class AutomationScannerV2:
         prefix = f"{self.profile.scheme}://{self.profile.host}"
         return f"{prefix}{path if path.startswith('/') else '/' + path}"
 
+    def _is_actionable_nuclei_target(self, url: str) -> bool:
+        """Return True for likely actionable web endpoints, False for static assets."""
+        static_ext = {
+            ".css", ".js", ".mjs", ".map", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+            ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".otf", ".mp4", ".mp3",
+            ".pdf", ".zip", ".gz", ".tgz", ".rar", ".7z",
+        }
+        path = urlparse(url).path.lower()
+
+        # Allow obvious dynamic/scripted endpoints even when file extensions are used
+        dynamic_ext = {".php", ".asp", ".aspx", ".jsp", ".jspx", ".cgi"}
+        for ext in dynamic_ext:
+            if path.endswith(ext):
+                return True
+
+        for ext in static_ext:
+            if path.endswith(ext):
+                return False
+
+        return True
+
     def _materialize_targets(self, tool: str, require_params: bool = False, require_command_params: bool = False) -> list[str]:
         """Materialize full URLs for a tool from discoveries.
 
@@ -865,7 +891,14 @@ class AutomationScannerV2:
             endpoints = [parsed.path or "/"]
 
         urls = {self._build_full_url(ep) for ep in endpoints if ep}
-        return sorted(urls)
+        materialized = sorted(urls)
+
+        # Nuclei should focus on actionable endpoints, not static assets.
+        if tool == "nuclei":
+            filtered = [u for u in materialized if self._is_actionable_nuclei_target(u)]
+            return filtered or [self.profile.url]
+
+        return materialized
 
     def _scope_command(self, tool_name: str, command: str) -> str:
         """Rewrite commands to respect scoped endpoints and discovery signals."""
@@ -873,13 +906,47 @@ class AutomationScannerV2:
             targets = self._materialize_targets("nuclei")
             if not targets:
                 return command
-            tag = "critical" if tool_name == "nuclei_crit" else "high"
-            # ENFORCE: Limit to critical/high, no medium/low
-            if len(targets) == 1:
-                return f"nuclei -u {targets[0]} -tags {tag} -silent"
-            list_file = self.output_dir / f"{tool_name}_targets.txt"
-            list_file.write_text("\n".join(targets), encoding="utf-8")
-            return f"nuclei -list {list_file} -tags {tag} -silent"
+            
+            # Handle different nuclei variants
+            if tool_name == "nuclei_crit":
+                severity = "critical"
+                if len(targets) == 1:
+                    return f"nuclei -u {targets[0]} -severity {severity} -silent -update-templates"
+                list_file = self.output_dir / f"{tool_name}_targets.txt"
+                list_file.write_text("\n".join(targets), encoding="utf-8")
+                return f"nuclei -list {list_file} -severity {severity} -silent -update-templates"
+            
+            elif tool_name == "nuclei_high":
+                severity = "high"
+                if len(targets) == 1:
+                    return f"nuclei -u {targets[0]} -severity {severity} -silent -update-templates"
+                list_file = self.output_dir / f"{tool_name}_targets.txt"
+                list_file.write_text("\n".join(targets), encoding="utf-8")
+                return f"nuclei -list {list_file} -severity {severity} -silent -update-templates"
+            
+            elif tool_name == "nuclei_all":
+                # Run all templates without severity filtering
+                if len(targets) == 1:
+                    return f"nuclei -target {targets[0]} -silent -update-templates"
+                list_file = self.output_dir / f"{tool_name}_targets.txt"
+                list_file.write_text("\n".join(targets), encoding="utf-8")
+                return f"nuclei -list {list_file} -silent -update-templates"
+            
+            elif tool_name == "nuclei_cves":
+                # Run with CVE templates
+                if len(targets) == 1:
+                    return f"nuclei -target {targets[0]} -t http/cves/ -silent -update-templates"
+                list_file = self.output_dir / f"{tool_name}_targets.txt"
+                list_file.write_text("\n".join(targets), encoding="utf-8")
+                return f"nuclei -list {list_file} -t http/cves/ -silent -update-templates"
+            
+            elif tool_name == "nuclei_ssl":
+                # Run with SSL templates
+                if len(targets) == 1:
+                    return f"nuclei -target {targets[0]} -t ssl -silent -update-templates"
+                list_file = self.output_dir / f"{tool_name}_targets.txt"
+                list_file.write_text("\n".join(targets), encoding="utf-8")
+                return f"nuclei -list {list_file} -t ssl -silent -update-templates"
 
         if tool_name == "sqlmap":
             targets = self._materialize_targets(tool_name, require_params=True)
@@ -955,26 +1022,47 @@ class AutomationScannerV2:
         # Legacy parsers for nuclei/dalfox with OWASP enforcement
         if tool.startswith("nuclei"):
             for line in stdout.split("\n"):
-                if "[critical]" in line.lower():
+                line_lower = line.lower()
+                severity = None
+                finding_type = FindingType.MISCONFIGURATION
+                
+                # Determine severity and type from nuclei output
+                if "[critical]" in line_lower:
+                    severity = Severity.CRITICAL
+                elif "[high]" in line_lower:
+                    severity = Severity.HIGH
+                elif "[medium]" in line_lower:
+                    severity = Severity.MEDIUM
+                elif "[low]" in line_lower:
+                    severity = Severity.LOW
+                elif "[info]" in line_lower:
+                    severity = Severity.INFO
+                
+                # Extract finding if severity was found
+                if severity:
+                    # Detect finding type from nuclei output
+                    if "xss" in line_lower or "cross-site" in line_lower:
+                        finding_type = FindingType.XSS
+                    elif "sql" in line_lower or "injection" in line_lower:
+                        finding_type = FindingType.SQLI
+                    elif "lfi" in line_lower or "file inclusion" in line_lower:
+                        finding_type = FindingType.LFI
+                    elif "rce" in line_lower or "command" in line_lower:
+                        finding_type = FindingType.RCE
+                    elif "ssrf" in line_lower:
+                        finding_type = FindingType.SSRF
+                    elif "cve-" in line_lower:
+                        finding_type = FindingType.CVE
+                    elif "ssl" in line_lower or "tls" in line_lower or "cipher" in line_lower:
+                        finding_type = FindingType.WEAK_CRYPTO
+                    
                     finding = Finding(
-                        type=FindingType.MISCONFIGURATION,
-                        severity=Severity.CRITICAL,
+                        type=finding_type,
+                        severity=severity,
                         location=self.profile.host,
                         description=line.strip(),
-                        tool="nuclei",
-                        owasp=map_to_owasp(FindingType.MISCONFIGURATION.value),
-                        evidence=line[:500]
-                    )
-                    finding.owasp = map_to_owasp(finding.type.value)  # ENFORCE
-                    self.findings.add(finding)
-                elif "[high]" in line.lower():
-                    finding = Finding(
-                        type=FindingType.MISCONFIGURATION,
-                        severity=Severity.HIGH,
-                        location=self.profile.host,
-                        description=line.strip(),
-                        tool="nuclei",
-                        owasp=map_to_owasp(FindingType.MISCONFIGURATION.value),
+                        tool=tool,  # Use actual tool name (nuclei_all, nuclei_cves, etc.)
+                        owasp=map_to_owasp(finding_type.value),
                         evidence=line[:500]
                     )
                     finding.owasp = map_to_owasp(finding.type.value)  # ENFORCE
@@ -1064,21 +1152,45 @@ class AutomationScannerV2:
                 "DNS": {"tools": {"dig_a", "dig_ns", "dig_mx", "dnsrecon"}},
                 "Subdomains": {"tools": {"findomain", "sublist3r", "assetfinder"}},
                 "Network": {"tools": {"ping", "nmap_quick", "nmap_vuln"}},
+                "WebDetection": {"tools": {"whatweb", "nikto"}},
+                "SSL": {"tools": {"sslscan", "testssl", "openssl_connect", "openssl_showcerts", "openssl_status", "openssl_state"}},
                 "Crawling": {"tools": {"gating_crawl"}},
-                "WebDetection": {"tools": {"whatweb"}},
-                "SSL": {"tools": {"sslscan", "testssl"}},
                 "WebEnum": {"tools": {"gobuster", "dirsearch"}},
                 "Exploitation": {"tools": {"dalfox", "xsstrike", "sqlmap", "commix", "xsser"}},
-                "Nuclei": {"tools": {"nuclei_crit", "nuclei_high"}},
+                "Nuclei": {"tools": {"nuclei_crit", "nuclei_high", "nuclei_all", "nuclei_cves", "nuclei_ssl"}},
         }
         
         # Track phase success
         phase_success = {phase: False for phase in phases}
         
-        # ====== PHASE 1c: DISCOVERY COMPLETENESS CHECK ======
-        self.log("PHASE 1c: Evaluating discovery completeness...", "INFO")
+        # ====== PHASE 1a-1b: DISCOVERY PHASE (RUN FIRST) ======
+        # Execute discovery tools to gather signals BEFORE checking completeness
+        self.log("PHASE 1: Running discovery tools (DNS, Network, Web Detection, SSL/TLS)...", "INFO")
         
-        # Initialize discovery evaluator with cache
+        discovery_phases = ["DNS", "Subdomains", "Network", "WebDetection", "SSL"]
+        discovery_plan = [t for t in plan if any(
+            t[0] in phases[phase]["tools"] for phase in discovery_phases
+        )]
+        
+        # Execute discovery tools first
+        for i, (tool_name, cmd, meta) in enumerate(discovery_plan, 1):
+            if not self.ledger.allows(tool_name):
+                continue
+            self.log(f"[Discovery] Executing {tool_name}...", "INFO")
+            try:
+                # Convert tuple to dict format expected by _run_tool
+                scoped_cmd = self._scope_command(tool_name, cmd)
+                plan_item = {"tool": tool_name, "command": scoped_cmd, **meta}
+                result = self._run_tool(plan_item, i, len(discovery_plan))
+                if result and result.get("status") == "SUCCESS":
+                    self.log(f"  ✓ {tool_name} completed", "INFO")
+            except Exception as e:
+                self.log(f"  ⚠ {tool_name} error: {e}", "WARN")
+        
+        # ====== PHASE 1c: DISCOVERY COMPLETENESS CHECK (AFTER TOOLS) ======
+        self.log("PHASE 1c: Evaluating discovery completeness (after discovery tools)...", "INFO")
+        
+        # Initialize discovery evaluator with cache (NOW populated by discovery tools)
         self.discovery_evaluator = DiscoveryCompletenessEvaluator(self.cache, self.profile)
         
         # Evaluate completeness
@@ -1089,25 +1201,25 @@ class AutomationScannerV2:
         # Log results
         if self.completeness_report.complete:
             self.log(f"✓ Discovery COMPLETE: {score_pct}/100", "INFO")
+            self.log(f"✓ All payload tools READY to execute", "INFO")
         else:
-            self.log(f"⚠ Discovery INCOMPLETE: {score_pct}/100", "WARN")
+            self.log(f"⏳ Discovery INCOMPLETE: {score_pct}/100", "WARN")
             for gap in self.completeness_report.missing_signals:
-                self.log(f"  - Gap: {gap}", "WARN")
+                self.log(f"  - Waiting for: {gap}", "WARN")
         
         # STRICT: If discovery incomplete AND score < 60 → BLOCK payload tools
         if (not self.completeness_report.complete) and score_pct < 60:
-            self.log("BLOCKING payload tools: Discovery too incomplete (score < 60)", "ERROR")
+            self.log("⏳ BLOCKING payload tools: Discovery still incomplete after tools (score < 60)", "ERROR")
             
             # Mark all payload tools as blocked in ledger
-            for phase_name, phase_config in phases.items():
-                if phase_name in ["Exploitation", "WebEnum"]:
-                    for tool in phase_config["tools"]:
-                        self.ledger.record_tool_decision(
-                            tool_name=tool,
-                            decision=Decision.DENY,
-                            reason=f"discovery_incomplete_score_{score_pct}"
-                        )
-                        self.log(f"  BLOCKED: {tool} (discovery incomplete)", "WARN")
+            for phase_name in ["Exploitation", "WebEnum"]:
+                for tool in phases[phase_name]["tools"]:
+                    self.ledger.record_tool_decision(
+                        tool_name=tool,
+                        decision=Decision.DENY,
+                        reason=f"discovery_incomplete_score_{score_pct}"
+                    )
+                    self.log(f"  ⏳ BLOCKED: {tool} (insufficient discovery)", "WARN")
         
         # ====== PHASE 1d: TLS EVALUATION FOR HTTPS TARGETS ======
         if self.profile.is_https:
@@ -1117,19 +1229,7 @@ class AutomationScannerV2:
             tls_evaluated = self.cache.has_signal("tls_evaluated") or self.cache.has_signal("ssl_evaluated")
             
             if not tls_evaluated:
-                self.log("⚠ HTTPS target but no TLS evaluation - running testssl...", "WARN")
-                
-                # Force testssl execution if not already run
-                if "testssl" not in [r["tool"] for r in self.execution_results]:
-                    # Add testssl to plan if missing
-                    testssl_added = False
-                    for tool_name, cmd, meta in plan:
-                        if tool_name == "testssl":
-                            testssl_added = True
-                            break
-                    
-                    if not testssl_added:
-                        self.log("Adding testssl to execution plan for HTTPS target", "INFO")
+                self.log("⚠ HTTPS target but no TLS evaluation - testssl should have run", "WARN")
             else:
                 self.log(f"✓ TLS evaluated for HTTPS target", "INFO")
         
@@ -1256,10 +1356,18 @@ class AutomationScannerV2:
         
         total = len(plan)
         builder_payload_tools = {"dalfox", "sqlmap", "commix"}
+        
+        # Track tools already executed in discovery phase to avoid duplication
+        discovery_tool_names = {t[0] for t in discovery_plan}
+        
         for i, item in enumerate(plan, start=1):
             # executor.get_execution_plan() returns tuples (tool, cmd, meta)
             tool_name, cmd, meta = item
             scoped_cmd = None
+            
+            # Skip tools that already ran in discovery phase
+            if tool_name in discovery_tool_names:
+                continue
             
             # Determine which phase this tool belongs to
             current_phase = None
@@ -1463,8 +1571,27 @@ class AutomationScannerV2:
         for cf in correlated_findings:
             # Handle both dict and CorrelatedFinding objects
             if isinstance(cf, dict):
-                # Skip adding dicts to registry - they don't have the right structure
-                pass
+                # Reconstruct Finding objects from dicts
+                try:
+                    f_type = FindingType[cf.get('type', 'OTHER')] if isinstance(cf.get('type'), str) else FindingType.OTHER
+                except (KeyError, TypeError):
+                    f_type = FindingType.OTHER
+                try:
+                    f_sev = Severity[cf.get('severity', 'INFO')] if isinstance(cf.get('severity'), str) else Severity.INFO
+                except (KeyError, TypeError):
+                    f_sev = Severity.INFO
+                finding = Finding(
+                    type=f_type,
+                    severity=f_sev,
+                    location=cf.get('location', ''),
+                    description=cf.get('description', ''),
+                    cwe=cf.get('cwe'),
+                    owasp=cf.get('owasp'),
+                    tool=cf.get('tool', 'unknown'),
+                    evidence=cf.get('evidence', ''),
+                    remediation=cf.get('remediation', ''),
+                )
+                self.findings.add(finding)
             elif hasattr(cf, 'primary_finding'):
                 self.findings.add(cf.primary_finding)
         
@@ -1524,6 +1651,37 @@ class AutomationScannerV2:
         # NEW: Generate HTML report
         try:
             html_file = self.output_dir / "security_report.html"
+
+            severity_counts = self.findings.count_by_severity()
+            owasp_summary: dict[str, int] = {}
+            for finding in self.findings.get_all():
+                owasp_value = finding.owasp
+                if isinstance(owasp_value, Enum):
+                    owasp_value = owasp_value.value
+                owasp_key = str(owasp_value) if owasp_value else "Unmapped"
+                owasp_summary[owasp_key] = owasp_summary.get(owasp_key, 0) + 1
+
+            discovery_summary = {
+                "endpoints": len(self.cache.endpoints),
+                "live_endpoints": len(self.cache.live_endpoints),
+                "params": len(self.cache.params),
+                "command_params": len(self.cache.command_params),
+                "ssrf_params": len(self.cache.ssrf_params),
+                "reflections": len(self.cache.reflections),
+                "subdomains": len(self.cache.subdomains),
+                "ports": len(self.cache.discovered_ports),
+            }
+
+            findings_summary = {
+                "critical": severity_counts.get(Severity.CRITICAL, 0),
+                "high": severity_counts.get(Severity.HIGH, 0),
+                "medium": severity_counts.get(Severity.MEDIUM, 0),
+                "low": severity_counts.get(Severity.LOW, 0),
+                "info": severity_counts.get(Severity.INFO, 0),
+                "total": sum(severity_counts.values()),
+                "owasp": owasp_summary,
+            }
+
             HTMLReportGenerator.generate(
                 target=self.profile.host,
                 correlation_id=self.correlation_id,
@@ -1533,6 +1691,8 @@ class AutomationScannerV2:
                 vulnerability_report=vulnerability_report,
                 risk_report=risk_report,
                 coverage_report=coverage_report,
+                discovery_summary=discovery_summary,
+                findings_summary=findings_summary,
                 output_path=html_file,
             )
             self.log(f"HTML report generated: {html_file}", "SUCCESS")
@@ -1551,44 +1711,110 @@ class AutomationScannerV2:
         lines.append("=" * 80)
         lines.append("FINDINGS SUMMARY (Deduplicated, OWASP-Mapped, High-Confidence Only)")
         lines.append("=" * 80)
-        
-        # Filter: suppress LOW/INFO unless explicitly verbose
-        findings = [f for f in self.findings.get_all() 
-                   if f.severity in {Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM}]
-        
-        if not findings:
-            lines.append("\nNo findings detected above medium severity (or all were filtered as noise).")
+
+        all_findings = self.findings.get_all()
+        severity_counts = self.findings.count_by_severity()
+
+        # Discovery summary first (requested high-level generic context)
+        lines.append("\nDISCOVERY SUMMARY")
+        lines.append("-" * 80)
+        lines.append(
+            "Endpoints: {endpoints}, Live: {live}, Params: {params}, CmdParams: {cmd}, "
+            "SSRFParams: {ssrf}, Reflections: {refl}, Subdomains: {sub}, Ports: {ports}".format(
+                endpoints=len(self.cache.endpoints),
+                live=len(self.cache.live_endpoints),
+                params=len(self.cache.params),
+                cmd=len(self.cache.command_params),
+                ssrf=len(self.cache.ssrf_params),
+                refl=len(self.cache.reflections),
+                sub=len(self.cache.subdomains),
+                ports=len(self.cache.discovered_ports),
+            )
+        )
+
+        # Explicit OWASP visibility
+        owasp_counts: dict[str, int] = {}
+        for finding in all_findings:
+            owasp_value = finding.owasp
+            if isinstance(owasp_value, Enum):
+                owasp_value = owasp_value.value
+            key = str(owasp_value) if owasp_value else "Unmapped"
+            owasp_counts[key] = owasp_counts.get(key, 0) + 1
+
+        lines.append("\nOWASP CATEGORY SUMMARY")
+        lines.append("-" * 80)
+        if owasp_counts:
+            for category, count in sorted(owasp_counts.items(), key=lambda item: (-item[1], item[0])):
+                lines.append(f"- {category}: {count}")
         else:
-            # Group by OWASP category
-            by_owasp = {}
-            for f in findings:
-                owasp = f.owasp or "Unmapped"
-                if owasp not in by_owasp:
-                    by_owasp[owasp] = []
-                by_owasp[owasp].append(f)
-            
-            # Output by category
+            lines.append("- No OWASP-mapped findings available.")
+
+        # Filter: suppress LOW/INFO in detailed body unless requested elsewhere
+        findings = [
+            f for f in all_findings
+            if f.severity in {Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM}
+        ]
+
+        lines.append("\nDETAILED FINDINGS (CRITICAL/HIGH/MEDIUM)")
+        lines.append("-" * 80)
+        if not findings:
+            lines.append("No findings detected above medium severity (or all were filtered as noise).")
+        else:
+            by_owasp: dict[str, list[Finding]] = {}
+            for finding in findings:
+                owasp_value = finding.owasp
+                if isinstance(owasp_value, Enum):
+                    owasp_value = owasp_value.value
+                owasp_key = str(owasp_value) if owasp_value else "Unmapped"
+                by_owasp.setdefault(owasp_key, []).append(finding)
+
             for owasp_cat in sorted(by_owasp.keys()):
                 lines.append(f"\n[{owasp_cat}]")
                 cat_findings = by_owasp[owasp_cat]
-                
-                # Group by severity within category
+
                 crit = [f for f in cat_findings if f.severity == Severity.CRITICAL]
                 high = [f for f in cat_findings if f.severity == Severity.HIGH]
                 med = [f for f in cat_findings if f.severity == Severity.MEDIUM]
-                
+
                 for severity, group in [(Severity.CRITICAL, crit), (Severity.HIGH, high), (Severity.MEDIUM, med)]:
                     if group:
                         lines.append(f"  {severity.value}:")
-                        for f in group:
-                            lines.append(f"    - {f.type.value}: {f.description}")
-                            lines.append(f"      Location: {f.location}")
-                            if f.cwe:
-                                lines.append(f"      CWE-{f.cwe}")
-        
+                        for finding in group:
+                            lines.append(f"    - {finding.type.value}: {finding.description}")
+                            lines.append(f"      Location: {finding.location}")
+                            if finding.cwe:
+                                cwe_val = str(finding.cwe)
+                                if cwe_val.upper().startswith("CWE-"):
+                                    lines.append(f"      {cwe_val}")
+                                else:
+                                    lines.append(f"      CWE-{cwe_val}")
+
+        lines.append("\nSUPPRESSED FINDINGS OVERVIEW (LOW/INFO)")
+        lines.append("-" * 80)
+        lines.append(
+            f"LOW: {severity_counts.get(Severity.LOW, 0)}, "
+            f"INFO: {severity_counts.get(Severity.INFO, 0)}"
+        )
+
+        suppressed = [
+            f for f in all_findings
+            if f.severity in {Severity.LOW, Severity.INFO}
+        ][:5]
+        if suppressed:
+            lines.append("Sample entries:")
+            for finding in suppressed:
+                lines.append(f"  - {finding.severity.value}: {finding.type.value} @ {finding.location}")
+
         lines.append("\n" + "=" * 80)
-        counts = self.findings.count_by_severity()
-        lines.append(f"Summary: {counts[Severity.CRITICAL]} CRITICAL, {counts[Severity.HIGH]} HIGH, {counts[Severity.MEDIUM]} MEDIUM, {counts[Severity.LOW]} LOW")
+        lines.append(
+            "Summary: {critical} CRITICAL, {high} HIGH, {medium} MEDIUM, {low} LOW, {info} INFO".format(
+                critical=severity_counts.get(Severity.CRITICAL, 0),
+                high=severity_counts.get(Severity.HIGH, 0),
+                medium=severity_counts.get(Severity.MEDIUM, 0),
+                low=severity_counts.get(Severity.LOW, 0),
+                info=severity_counts.get(Severity.INFO, 0),
+            )
+        )
         lines.append("(LOW and INFO findings suppressed. Use --verbose to see all.)")
         lines.append("=" * 80)
         
@@ -1664,6 +1890,12 @@ def main() -> None:
         action="store_true",
         help="Check tools status and exit (no scanning)",
     )
+    parser.add_argument(
+        "--budget",
+        type=int,
+        default=120000,
+        help="Runtime budget in seconds (default: 120000s = 33.3 hours)",
+    )
     args = parser.parse_args()
 
     # If --check-tools requested, run interactive tool checker and exit
@@ -1677,13 +1909,18 @@ def main() -> None:
             sys.exit(1)
         return
 
-    # If --install-missing requested without target, just install and exit
+    # If --install-missing requested without target, just install missing tools and exit
     if args.install_missing and not args.target:
         try:
             tool_mgr = ToolManager()
-            print("\n[*] Installing all missing tools...\n")
-            ok, failed = tool_mgr.install_missing_tools_non_interactive(list(tool_mgr.tool_database.keys()))
-            print(f"\n[*] Installation complete: {ok} installed, {failed} failed\n")
+            print("\n[*] Scanning for missing tools...\n")
+            tool_mgr.scan_all_tools()
+            if tool_mgr.missing_tools:
+                print(f"\n[*] Installing {len(tool_mgr.missing_tools)} missing tools...\n")
+                ok, failed = tool_mgr.install_missing_tools_non_interactive(list(tool_mgr.missing_tools.keys()))
+                print(f"\n[*] Installation complete: {ok} installed, {failed} failed\n")
+            else:
+                print("[✓] All tools are already installed!\n")
         except Exception as e:
             print(f"[!] Tool installation failed: {e}")
             sys.exit(1)
@@ -1709,6 +1946,7 @@ def main() -> None:
         target=args.target,
         output_dir=args.output,
         skip_tool_check=args.skip_install,
+        custom_budget=args.budget,
     )
 
     # Optional pre-flight installers (when target is provided)

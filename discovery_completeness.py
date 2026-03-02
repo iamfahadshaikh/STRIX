@@ -165,19 +165,19 @@ class DiscoveryCompletenessEvaluator:
         recommendations = []
         
         if "dns_resolved" in missing_critical:
-            recommendations.append("DNS resolution failed - verify target is valid")
+            recommendations.append("⏳ DNS resolution failed - verify target is valid")
         
         if "reachable" in missing_critical:
-            recommendations.append("Target unreachable - check network connectivity or firewall rules")
-        
-        if "https" in missing_important and self.profile.is_web_target:
-            recommendations.append("Run sslscan or testssl to determine HTTPS availability")
+            recommendations.append("⏳ Target unreachable - check network connectivity or firewall rules")
         
         if "ports_known" in missing_important:
-            recommendations.append("Run nmap_quick to discover open ports")
+            recommendations.append("⏳ WAITING: nmap_quick running to discover open ports (required before payload tools)")
+        
+        if "https" in missing_important and self.profile.is_web_target:
+            recommendations.append("⏳ Run sslscan or testssl to determine HTTPS availability")
         
         if "tech_stack" in missing_important and self.profile.is_web_target:
-            recommendations.append("Run whatweb to identify web technologies")
+            recommendations.append("⏳ Run whatweb to identify web technologies")
         
         return recommendations
     
@@ -185,11 +185,13 @@ class DiscoveryCompletenessEvaluator:
         """Log completeness report"""
         if report.complete:
             logger.info(f"[DiscoveryCompleteness] ✓ COMPLETE ({report.completeness_score:.0%})")
+            logger.info(f"[DiscoveryCompleteness] ✓ All payload tools ready to execute")
         else:
-            logger.warning(f"[DiscoveryCompleteness] ⚠ INCOMPLETE ({report.completeness_score:.0%})")
-            logger.warning(f"[DiscoveryCompleteness] Missing: {', '.join(report.missing_signals)}")
+            logger.warning(f"[DiscoveryCompleteness] ⏳ INCOMPLETE ({report.completeness_score:.0%})")
+            logger.warning(f"[DiscoveryCompleteness] Waiting for: {', '.join(report.missing_signals)}")
+            logger.warning(f"[DiscoveryCompleteness] ⏳ Payload tools (dalfox, sqlmap, xsser, xsstrike, commix) BLOCKED until discovery completes")
         
         if report.recommendations:
-            logger.info("[DiscoveryCompleteness] Recommendations:")
+            logger.info("[DiscoveryCompleteness] Status:")
             for rec in report.recommendations:
-                logger.info(f"  - {rec}")
+                logger.info(f"  {rec}")

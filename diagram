@@ -1,0 +1,300 @@
+graph TD
+    START["🎯 Start: Analyze Target Type"]
+    
+    START --> TARGETTYPE{Target Type?}
+    
+    %% ============ ROOT DOMAIN PATH ============
+    TARGETTYPE -->|ROOT_DOMAIN| ROOT["🔵 RootDomainExecutor"]
+    
+    ROOT --> PHASE1["Phase 1: DNS Reconnaissance"]
+    PHASE1 --> DNSRECON{Allow dnsrecon?}
+    DNSRECON -->|YES| CMD_DNSRECON["▶ dnsrecon -d {host}<br/>timeout: 30s<br/>produces: dns_records"]
+    DNSRECON -->|NO| PHASE2
+    CMD_DNSRECON --> PHASE2
+    
+    PHASE2["Phase 2: Subdomain Enumeration"]
+    PHASE2 --> ASSETFINDER{Allow assetfinder?}
+    ASSETFINDER -->|YES| CMD_ASSETFINDER["▶ /root/go/bin/assetfinder {host}<br/>timeout: 60s<br/>produces: subdomains"]
+    ASSETFINDER -->|NO| PHASE3
+    CMD_ASSETFINDER --> PHASE3
+    
+    PHASE3["Phase 3: Network Scanning"]
+    PHASE3 --> PING{Allow ping?}
+    PING -->|YES| CMD_PING["▶ ping -c 1 {host}<br/>timeout: 10s<br/>produces: reachable"]
+    PING -->|NO| NMAP_Q
+    CMD_PING --> NMAP_Q{Allow nmap_quick?}
+    
+    NMAP_Q -->|YES| CMD_NMAP_Q["▶ nmap -F {host}<br/>timeout: 600s<br/>requires: reachable<br/>produces: ports_known"]
+    NMAP_Q -->|NO| NMAP_V
+    CMD_NMAP_Q --> NMAP_V{Allow nmap_vuln?}
+    
+    NMAP_V -->|YES| CMD_NMAP_V["▶ nmap -sV --script vuln<br/>timeout: 900s<br/>requires: ports_known<br/>produces: vuln_signal"]
+    NMAP_V -->|NO| PHASE4
+    CMD_NMAP_V --> PHASE4
+    
+    PHASE4["Phase 4: Web Detection"]
+    PHASE4 --> WHATWEB{Allow whatweb?}
+    WHATWEB -->|YES| CMD_WHATWEB["▶ whatweb -v {url}<br/>timeout: 60s<br/>requires: web_target<br/>produces: tech_stack_detected"]
+    WHATWEB -->|NO| WHATWEB_FB
+    CMD_WHATWEB --> WHATWEB_FB{Allow whatweb_http_fallback?}
+    
+    WHATWEB_FB -->|YES| CMD_WHATWEB_FB["▶ whatweb -v http://{host}<br/>timeout: 60s<br/>produces: tech_stack_detected"]
+    WHATWEB_FB -->|NO| NIKTO
+    CMD_WHATWEB_FB --> NIKTO{Allow nikto?}
+    
+    NIKTO -->|YES| CMD_NIKTO["▶ nikto -h {url} -C always<br/>timeout: 180s<br/>requires: web_target<br/>produces: web_findings"]
+    NIKTO -->|NO| WP_DETECT
+    CMD_NIKTO --> WP_DETECT
+    
+    WP_DETECT{WordPress Detected?}
+    WP_DETECT -->|YES| WPSCAN{Allow wpscan?}
+    WP_DETECT -->|NO| PHASE5
+    WPSCAN -->|YES| CMD_WPSCAN["▶ wpscan --url {url}<br/>timeout: 300s<br/>produces: wordpress_findings"]
+    WPSCAN -->|NO| PHASE5
+    CMD_WPSCAN --> PHASE5
+    
+    PHASE5["Phase 5: SSL/TLS Analysis"]
+    PHASE5 --> IS_HTTPS{Is HTTPS?}
+    IS_HTTPS -->|NO| PHASE6
+    IS_HTTPS -->|YES| SSLSCAN{Allow sslscan?}
+    
+    SSLSCAN -->|YES| CMD_SSLSCAN["▶ sslscan {host}<br/>timeout: 120s<br/>produces: tls_findings"]
+    SSLSCAN -->|NO| TESTSSL
+    CMD_SSLSCAN --> TESTSSL{Allow testssl?}
+    
+    TESTSSL -->|YES| CMD_TESTSSL["▶ testssl.sh --quiet -U {url}<br/>timeout: 240s<br/>produces: tls_findings"]
+    TESTSSL -->|NO| OPENSSL1
+    CMD_TESTSSL --> OPENSSL1{Allow openssl_connect?}
+    
+    OPENSSL1 -->|YES| CMD_OPENSSL1["▶ openssl s_client -connect {host}:443<br/>timeout: 30s<br/>produces: tls_details"]
+    OPENSSL1 -->|NO| OPENSSL2
+    CMD_OPENSSL1 --> OPENSSL2
+    
+    OPENSSL2{Allow openssl_showcerts?}
+    OPENSSL2 -->|YES| CMD_OPENSSL2["▶ openssl s_client -showcerts<br/>timeout: 30s<br/>produces: cert_chain"]
+    OPENSSL2 -->|NO| OPENSSL3
+    CMD_OPENSSL2 --> OPENSSL3
+    
+    OPENSSL3{Allow openssl_status?}
+    OPENSSL3 -->|YES| CMD_OPENSSL3["▶ openssl s_client -status<br/>timeout: 30s<br/>produces: ocsp_status"]
+    OPENSSL3 -->|NO| OPENSSL4
+    CMD_OPENSSL3 --> OPENSSL4
+    
+    OPENSSL4{Allow openssl_state?}
+    OPENSSL4 -->|YES| CMD_OPENSSL4["▶ openssl s_client -state<br/>timeout: 30s<br/>produces: tls_handshake"]
+    OPENSSL4 -->|NO| PHASE6
+    CMD_OPENSSL4 --> PHASE6
+    
+    PHASE6["Phase 6: Web Enumeration"]
+    PHASE6 --> GOBUSTER_R{Allow gobuster?}
+    GOBUSTER_R -->|YES| CMD_GOBUSTER_R["▶ gobuster dir -u {url}<br/>timeout: 9999s<br/>produces: endpoints_known, live_endpoints"]
+    GOBUSTER_R -->|NO| PHASE7
+    CMD_GOBUSTER_R --> PHASE7
+    
+    PHASE7["Phase 7: Vulnerability Scanning"]
+    PHASE7 --> DALFOX{Allow dalfox?}
+    DALFOX -->|YES| CMD_DALFOX["▶ dalfox url {url} --silence<br/>timeout: 300s<br/>requires: endpoints_known<br/>produces: xss_findings"]
+    DALFOX -->|NO| XSSTRIKE
+    CMD_DALFOX --> XSSTRIKE
+    
+    XSSTRIKE{Allow xsstrike?}
+    XSSTRIKE -->|YES| CMD_XSSTRIKE["▶ xsstrike -u {url} --crawl<br/>timeout: 300s<br/>produces: xss_findings"]
+    XSSTRIKE -->|NO| SQLMAP
+    CMD_XSSTRIKE --> SQLMAP
+    
+    SQLMAP{Allow sqlmap?}
+    SQLMAP -->|YES| CMD_SQLMAP["▶ sqlmap -u {url} --batch<br/>timeout: 300s<br/>requires: endpoints_known, params_known<br/>produces: sqli_findings"]
+    SQLMAP -->|NO| XSSER
+    CMD_SQLMAP --> XSSER
+    
+    XSSER{Allow xsser?}
+    XSSER -->|YES| CMD_XSSER["▶ xsser -u {url}<br/>timeout: 300s<br/>produces: xss_findings"]
+    XSSER -->|NO| COMMIX
+    CMD_XSSER --> COMMIX
+    
+    COMMIX{Allow commix?}
+    COMMIX -->|YES| CMD_COMMIX["▶ commix -u {url}<br/>timeout: 300s<br/>produces: rce_findings"]
+    COMMIX -->|NO| PHASE8
+    CMD_COMMIX --> PHASE8
+    
+    PHASE8["Phase 8: Nuclei Scanning"]
+    PHASE8 --> NUCLEI_C{Allow nuclei_crit?}
+    NUCLEI_C -->|YES| CMD_NUCLEI_C["▶ nuclei -u {url} -severity critical<br/>timeout: 600s<br/>requires: web_target<br/>produces: web_findings"]
+    NUCLEI_C -->|NO| NUCLEI_H
+    CMD_NUCLEI_C --> NUCLEI_H{Allow nuclei_high?}
+    
+    NUCLEI_H -->|YES| CMD_NUCLEI_H["▶ nuclei -u {url} -severity high<br/>timeout: 600s<br/>produces: web_findings"]
+    NUCLEI_H -->|NO| NUCLEI_ALL
+    CMD_NUCLEI_H --> NUCLEI_ALL{Allow nuclei_all?}
+    
+    NUCLEI_ALL -->|YES| CMD_NUCLEI_ALL["▶ nuclei -target {host}<br/>timeout: 900s<br/>produces: web_findings"]
+    NUCLEI_ALL -->|NO| NUCLEI_CVE
+    CMD_NUCLEI_ALL --> NUCLEI_CVE{Allow nuclei_cves?}
+    
+    NUCLEI_CVE -->|YES| CMD_NUCLEI_CVE["▶ nuclei -target {host} -t http/cves/<br/>timeout: 600s<br/>produces: web_findings"]
+    NUCLEI_CVE -->|NO| NUCLEI_SSL
+    CMD_NUCLEI_CVE --> NUCLEI_SSL{Allow nuclei_ssl?}
+    
+    NUCLEI_SSL -->|YES| CMD_NUCLEI_SSL["▶ nuclei -target {host} -t ssl<br/>timeout: 300s<br/>produces: ssl_findings"]
+    NUCLEI_SSL -->|NO| ROOT_END
+    CMD_NUCLEI_SSL --> ROOT_END["✅ ROOT DOMAIN SCAN COMPLETE"]
+    
+    %% ============ SUBDOMAIN PATH ============
+    TARGETTYPE -->|SUBDOMAIN| SUB["🟢 SubdomainExecutor"]
+    
+    SUB --> SUB_NOTE["⚠️ Skip Phase 1: DNS inherited from root domain<br/>No subdomain enumeration"]
+    SUB_NOTE --> SUB_PHASE2["Phase 2: Network Scanning MINIMAL"]
+    
+    SUB_PHASE2 --> SUB_PING{Allow ping?}
+    SUB_PING -->|YES| SUB_CMD_PING["▶ ping -c 1 {host}"]
+    SUB_PING -->|NO| SUB_NMAP
+    SUB_CMD_PING --> SUB_NMAP{Allow nmap_quick?}
+    
+    SUB_NMAP -->|YES| SUB_CMD_NMAP["▶ nmap -F {host}"]
+    SUB_NMAP -->|NO| SUB_WEB_CHECK
+    SUB_CMD_NMAP --> SUB_WEB_CHECK
+    
+    SUB_WEB_CHECK{Is Web Target?}
+    SUB_WEB_CHECK -->|NO| SUB_CHECK_HTTPS
+    SUB_WEB_CHECK -->|YES| SUB_PHASE3["Phase 3: Web Detection"]
+    
+    SUB_PHASE3 --> SUB_WHATWEB{Allow whatweb?}
+    SUB_WHATWEB -->|YES| SUB_CMD_WHATWEB["▶ whatweb -v {url}"]
+    SUB_WHATWEB -->|NO| SUB_WHATWEB_FB
+    SUB_CMD_WHATWEB --> SUB_WHATWEB_FB{Allow whatweb_http_fallback?}
+    
+    SUB_WHATWEB_FB -->|YES| SUB_CMD_WHATWEB_FB["▶ whatweb -v http://{host}"]
+    SUB_WHATWEB_FB -->|NO| SUB_NIKTO
+    SUB_CMD_WHATWEB_FB --> SUB_NIKTO{Allow nikto?}
+    
+    SUB_NIKTO -->|YES| SUB_CMD_NIKTO["▶ nikto -h {url} -C always<br/>timeout: 120s"]
+    SUB_NIKTO -->|NO| SUB_WP
+    SUB_CMD_NIKTO --> SUB_WP
+    
+    SUB_WP{WordPress Detected?}
+    SUB_WP -->|YES| SUB_WPSCAN{Allow wpscan?}
+    SUB_WP -->|NO| SUB_CHECK_HTTPS
+    SUB_WPSCAN -->|YES| SUB_CMD_WPSCAN["▶ wpscan --url {url}"]
+    SUB_WPSCAN -->|NO| SUB_CHECK_HTTPS
+    SUB_CMD_WPSCAN --> SUB_CHECK_HTTPS
+    
+    SUB_CHECK_HTTPS{Is HTTPS?}
+    SUB_CHECK_HTTPS -->|NO| SUB_PHASE5
+    SUB_CHECK_HTTPS -->|YES| SUB_SSLSCAN{Allow sslscan?}
+    
+    SUB_SSLSCAN -->|YES| SUB_CMD_SSLSCAN["▶ sslscan {host}"]
+    SUB_SSLSCAN -->|NO| SUB_PHASE5
+    SUB_CMD_SSLSCAN --> SUB_PHASE5
+    
+    SUB_PHASE5{Is Web Target?}
+    SUB_PHASE5 -->|NO| SUB_VULN
+    SUB_PHASE5 -->|YES| SUB_ENUM["Phase 5: Web Enumeration"]
+    
+    SUB_ENUM --> SUB_GOBUSTER{Allow gobuster?}
+    SUB_GOBUSTER -->|YES| SUB_CMD_GOBUSTER["▶ gobuster dir -u {url}"]
+    SUB_GOBUSTER -->|NO| SUB_VULN
+    SUB_CMD_GOBUSTER --> SUB_VULN
+    
+    SUB_VULN["Phase 6: Vulnerability Scanning<br/>Nuclei ONLY for Subdomains"]
+    SUB_VULN --> SUB_NUCLEI_C{Allow nuclei_crit?}
+    SUB_NUCLEI_C -->|YES| SUB_CMD_NUCLEI_C["▶ nuclei -u {url} -severity critical"]
+    SUB_NUCLEI_C -->|NO| SUB_NUCLEI_H
+    SUB_CMD_NUCLEI_C --> SUB_NUCLEI_H{Allow nuclei_high?}
+    
+    SUB_NUCLEI_H -->|YES| SUB_CMD_NUCLEI_H["▶ nuclei -u {url} -severity high"]
+    SUB_NUCLEI_H -->|NO| SUB_NUCLEI_ALL
+    SUB_CMD_NUCLEI_H --> SUB_NUCLEI_ALL{Allow nuclei_all?}
+    
+    SUB_NUCLEI_ALL -->|YES| SUB_CMD_NUCLEI_ALL["▶ nuclei -target {host}"]
+    SUB_NUCLEI_ALL -->|NO| SUB_NUCLEI_CVE
+    SUB_CMD_NUCLEI_ALL --> SUB_NUCLEI_CVE{Allow nuclei_cves?}
+    
+    SUB_NUCLEI_CVE -->|YES| SUB_CMD_NUCLEI_CVE["▶ nuclei -target {host} -t http/cves/"]
+    SUB_NUCLEI_CVE -->|NO| SUB_NUCLEI_SSL
+    SUB_CMD_NUCLEI_CVE --> SUB_NUCLEI_SSL{Allow nuclei_ssl?}
+    
+    SUB_NUCLEI_SSL -->|YES| SUB_CMD_NUCLEI_SSL["▶ nuclei -target {host} -t ssl"]
+    SUB_NUCLEI_SSL -->|NO| SUB_END
+    SUB_CMD_NUCLEI_SSL --> SUB_END["✅ SUBDOMAIN SCAN COMPLETE"]
+    
+    %% ============ IP PATH ============
+    TARGETTYPE -->|IP| IP["🔴 IPExecutor"]
+    
+    IP --> IP_NOTE["⚠️ Skip DNS: IP already resolved"]
+    IP_NOTE --> IP_PHASE1["Phase 1: Network Scanning"]
+    
+    IP_PHASE1 --> IP_PING{Allow ping?}
+    IP_PING -->|YES| IP_CMD_PING["▶ ping -c 1 {host}"]
+    IP_PING -->|NO| IP_NMAP
+    IP_CMD_PING --> IP_NMAP{Allow nmap_quick?}
+    
+    IP_NMAP -->|YES| IP_CMD_NMAP["▶ nmap -F {host}"]
+    IP_NMAP -->|NO| IP_WEB_CHECK
+    IP_CMD_NMAP --> IP_WEB_CHECK
+    
+    IP_WEB_CHECK{Is Web Target?}
+    IP_WEB_CHECK -->|NO| IP_CHECK_HTTPS
+    IP_WEB_CHECK -->|YES| IP_PHASE2["Phase 2: Web Detection"]
+    
+    IP_PHASE2 --> IP_WHATWEB{Allow whatweb?}
+    IP_WHATWEB -->|YES| IP_CMD_WHATWEB["▶ whatweb -v {url}"]
+    IP_WHATWEB -->|NO| IP_WHATWEB_FB
+    IP_CMD_WHATWEB --> IP_WHATWEB_FB{Allow whatweb_http_fallback?}
+    
+    IP_WHATWEB_FB -->|YES| IP_CMD_WHATWEB_FB["▶ whatweb -v http://{host}"]
+    IP_WHATWEB_FB -->|NO| IP_WPSCAN
+    IP_CMD_WHATWEB_FB --> IP_WPSCAN
+    
+    IP_WPSCAN{WordPress Detected?}
+    IP_WPSCAN -->|YES| IP_WPSCAN_CHK{Allow wpscan?}
+    IP_WPSCAN -->|NO| IP_CHECK_HTTPS
+    IP_WPSCAN_CHK -->|YES| IP_CMD_WPSCAN["▶ wpscan --url {url}"]
+    IP_WPSCAN_CHK -->|NO| IP_CHECK_HTTPS
+    IP_CMD_WPSCAN --> IP_CHECK_HTTPS
+    
+    IP_CHECK_HTTPS{Is HTTPS?}
+    IP_CHECK_HTTPS -->|NO| IP_PHASE4
+    IP_CHECK_HTTPS -->|YES| IP_SSLSCAN{Allow sslscan?}
+    
+    IP_SSLSCAN -->|YES| IP_CMD_SSLSCAN["▶ sslscan {host}:{port}"]
+    IP_SSLSCAN -->|NO| IP_PHASE4
+    IP_CMD_SSLSCAN --> IP_PHASE4
+    severity critical"]
+    IP_NUCLEI_C -->|NO| IP_NUCLEI_H
+    IP_CMD_NUCLEI_C --> IP_NUCLEI_H{Allow nuclei_high?}
+    
+    IP_NUCLEI_H -->|YES| IP_CMD_NUCLEI_H["▶ nuclei -u {url} -severity high"]
+    IP_NUCLEI_H -->|NO| IP_NUCLEI_ALL
+    IP_CMD_NUCLEI_H --> IP_NUCLEI_ALL{Allow nuclei_all?}
+    
+    IP_NUCLEI_ALL -->|YES| IP_CMD_NUCLEI_ALL["▶ nuclei -target {host}"]
+    IP_NUCLEI_ALL -->|NO| IP_NUCLEI_CVE
+    IP_CMD_NUCLEI_ALL --> IP_NUCLEI_CVE{Allow nuclei_cves?}
+    
+    IP_NUCLEI_CVE -->|YES| IP_CMD_NUCLEI_CVE["▶ nuclei -target {host} -t http/cves/"]
+    IP_NUCLEI_CVE -->|NO| IP_NUCLEI_SSL
+    IP_CMD_NUCLEI_CVE --> IP_NUCLEI_SSL{Allow nuclei_ssl?}
+    
+    IP_NUCLEI_SSL -->|YES| IP_CMD_NUCLEI_SSL["▶ nuclei -target {host} -t ssl"]
+    IP_NUCLEI_SSL -->|NO| IP_END
+    IP_CMD_NUCLEI_SSL|YES| IP_CMD_GOBUSTER["▶ gobuster dir -u {url}"]
+    IP_GOBUSTER -->|NO| IP_VULN
+    IP_CMD_GOBUSTER --> IP_VULN
+    
+    IP_VULN["Phase 5: Vulnerability Scanning<br/>Nuclei ONLY for IPs"]
+    IP_VULN --> IP_NUCLEI_C{Allow nuclei_crit?}
+    IP_NUCLEI_C -->|YES| IP_CMD_NUCLEI_C["▶ nuclei -u {url} -tags critical"]
+    IP_NUCLEI_C -->|NO| IP_NUCLEI_H
+    IP_CMD_NUCLEI_C --> IP_NUCLEI_H{Allow nuclei_high?}
+    
+    IP_NUCLEI_H -->|YES| IP_CMD_NUCLEI_H["▶ nuclei -u {url} -tags high"]
+    IP_NUCLEI_H -->|NO| IP_END
+    IP_CMD_NUCLEI_H --> IP_END["✅ IP SCAN COMPLETE"]
+    
+    style START fill:#FFE5B4
+    style ROOT fill:#87CEEB
+    style SUB fill:#90EE90
+    style IP fill:#FFB6C1
+    style ROOT_END fill:#87CEEB
+    style SUB_END fill:#90EE90
+    style IP_END fill:#FFB6C1

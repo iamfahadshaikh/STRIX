@@ -433,17 +433,34 @@ class TestSSLParser:
         for vuln_name, (severity, cwe, desc) in vulnerabilities.items():
             # testssl uses "VULNERABLE" or "vulnerable" markers
             pattern = rf'{vuln_name}[^\n]*vulnerable'
-            if re.search(pattern, stdout, re.IGNORECASE):
-                findings.append(Finding(
-                    type=FindingType.WEAK_CRYPTO,
-                    severity=severity,
-                    location=target,
-                    description=desc,
-                    tool="testssl",
-                    cwe=cwe,
-                    owasp=map_to_owasp(FindingType.WEAK_CRYPTO),
-                    evidence=f"Vulnerable to {vuln_name}"
-                ))
+            match = re.search(pattern, stdout, re.IGNORECASE)
+            if match:
+                matched_line = match.group(0)
+                
+                # CVE-2014-0160 (Heartbleed) validation: require confirmation if "not vulnerable" appears
+                if vuln_name == 'heartbleed' and re.search(r'not\s+vulnerable|\(OK\)', matched_line, re.IGNORECASE):
+                    # Downgrade to INFO with unverified status instead of CRITICAL
+                    findings.append(Finding(
+                        type=FindingType.WEAK_CRYPTO,
+                        severity=Severity.INFO,
+                        location=target,
+                        description=f"{desc} - Unverified (Requires Manual Check)",
+                        tool="testssl",
+                        cwe=cwe,
+                        owasp=map_to_owasp(FindingType.WEAK_CRYPTO),
+                        evidence=f"Detection contradictory - testssl output: {matched_line.strip()}"
+                    ))
+                else:
+                    findings.append(Finding(
+                        type=FindingType.WEAK_CRYPTO,
+                        severity=severity,
+                        location=target,
+                        description=desc,
+                        tool="testssl",
+                        cwe=cwe,
+                        owasp=map_to_owasp(FindingType.WEAK_CRYPTO),
+                        evidence=f"Vulnerable to {vuln_name}"
+                    ))
         
         return findings
 
@@ -516,6 +533,90 @@ class WhatwebParser:
         return tech_stack
 
 
+class WPScanParser:
+    """Parse wpscan output for WordPress vulnerabilities."""
+    
+    @staticmethod
+    def parse(stdout: str, target: str) -> List[Finding]:
+        findings = []
+        
+        # Parse vulnerabilities in plugins
+        plugin_vuln_pattern = r'\[!\]\s+Title:\s+(.+?)\n.*?Fixed in:\s+(.+?)\n.*?References:\s+(.+?)(?=\n\n|\Z)'
+        for match in re.finditer(plugin_vuln_pattern, stdout, re.DOTALL):
+            title, fixed_version, references = match.groups()
+            findings.append(Finding(
+                type=FindingType.VULNERABLE_COMPONENT,
+                severity=Severity.HIGH,
+                location=target,
+                description=f"WordPress Plugin Vulnerability: {title.strip()}",
+                tool="wpscan",
+                evidence=f"Fixed in version: {fixed_version.strip()}",
+                remediation=f"Update to version {fixed_version.strip()} or later",
+                owasp=map_to_owasp(FindingType.VULNERABLE_COMPONENT)
+            ))
+        
+        # Parse vulnerabilities in themes
+        theme_vuln_pattern = r'\[!\]\s+Title:\s+(.+?)\n.*?(?:Fixed in:\s+(.+?)\n)?.*?References:\s+(.+?)(?=\n\n|\Z)'
+        for match in re.finditer(theme_vuln_pattern, stdout, re.DOTALL):
+            title = match.group(1)
+            if 'theme' in title.lower():
+                findings.append(Finding(
+                    type=FindingType.VULNERABLE_COMPONENT,
+                    severity=Severity.MEDIUM,
+                    location=target,
+                    description=f"WordPress Theme Vulnerability: {title.strip()}",
+                    tool="wpscan",
+                    owasp=map_to_owasp(FindingType.VULNERABLE_COMPONENT)
+                ))
+        
+        # Parse WordPress version vulnerabilities
+        wp_vuln_pattern = r'\[!\]\s+We found\s+(\d+)\s+vulnerabilities'
+        for match in re.finditer(wp_vuln_pattern, stdout):
+            vuln_count = match.group(1)
+            findings.append(Finding(
+                type=FindingType.VULNERABLE_COMPONENT,
+                severity=Severity.HIGH,
+                location=target,
+                description=f"WordPress Core: {vuln_count} known vulnerabilities detected",
+                tool="wpscan",
+                remediation="Update WordPress to the latest version",
+                owasp=map_to_owasp(FindingType.VULNERABLE_COMPONENT)
+            ))
+        
+        # Parse outdated WordPress version
+        version_pattern = r'WordPress version\s+([\d.]+)\s+identified.*?The version is out of date'
+        for match in re.finditer(version_pattern, stdout, re.DOTALL):
+            version = match.group(1)
+            findings.append(Finding(
+                type=FindingType.VULNERABLE_COMPONENT,
+                severity=Severity.MEDIUM,
+                location=target,
+                description=f"Outdated WordPress version: {version}",
+                tool="wpscan",
+                remediation="Update WordPress to the latest stable version",
+                owasp=map_to_owasp(FindingType.VULNERABLE_COMPONENT)
+            ))
+        
+        # Parse username enumeration
+        user_pattern = r'\[i\]\s+User\(s\) Identified:\n(.+?)(?=\n\n|\[|\Z)'
+        for match in re.finditer(user_pattern, stdout, re.DOTALL):
+            users_block = match.group(1)
+            username_matches = re.findall(r'\|\s+(.+?)\s+\|', users_block)
+            if username_matches:
+                findings.append(Finding(
+                    type=FindingType.INFORMATION_DISCLOSURE,
+                    severity=Severity.LOW,
+                    location=target,
+                    description=f"WordPress usernames enumerated: {', '.join(username_matches[:5])}",
+                    tool="wpscan",
+                    evidence=f"Found {len(username_matches)} usernames",
+                    remediation="Disable user enumeration or use security plugins to block enumeration attempts",
+                    owasp=map_to_owasp(FindingType.INFORMATION_DISCLOSURE)
+                ))
+        
+        return findings
+
+
 def parse_tool_output(tool: str, stdout: str, stderr: str, target: str) -> List[Finding]:
     """
     Unified parser dispatcher.
@@ -537,6 +638,7 @@ def parse_tool_output(tool: str, stdout: str, stderr: str, target: str) -> List[
         'sqlmap': SQLMapParser.parse,
         'sslscan': SSLScanParser.parse,
         'testssl': TestSSLParser.parse,
+        'wpscan': WPScanParser.parse,
     }
     
     parser = parsers.get(tool)

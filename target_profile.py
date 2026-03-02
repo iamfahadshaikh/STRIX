@@ -66,6 +66,7 @@ class TargetProfile:
     
     # Metadata
     created_at: datetime = field(default_factory=datetime.utcnow)
+    custom_budget: Optional[int] = None  # Custom runtime budget override
     
     def __post_init__(self):
         """Validate profile consistency"""
@@ -150,13 +151,14 @@ class TargetProfile:
         )
 
     @classmethod
-    def from_target(cls, target: str, scheme: str = "https") -> "TargetProfile":
+    def from_target(cls, target: str, scheme: str = "https", custom_budget: Optional[int] = None) -> "TargetProfile":
         """
         Factory method to create TargetProfile from a target string.
         
         Args:
             target: Domain, subdomain, or IP
             scheme: http or https (default: https)
+            custom_budget: Optional custom runtime budget in seconds
         
         Returns:
             TargetProfile instance
@@ -219,6 +221,7 @@ class TargetProfile:
             is_resolvable=target_type == TargetType.IP,
             is_web_target=True,
             is_https=is_https,
+            custom_budget=custom_budget,
         )
 
     @property
@@ -229,6 +232,8 @@ class TargetProfile:
     @property
     def runtime_budget(self) -> int:
         """Runtime budget in seconds"""
+        if self.custom_budget is not None:
+            return self.custom_budget
         if self.target_type == TargetType.ROOT_DOMAIN:
             return 1800
         elif self.target_type == TargetType.SUBDOMAIN:

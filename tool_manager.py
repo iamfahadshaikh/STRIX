@@ -24,13 +24,12 @@ class ToolManager:
             # Ledger pseudo-tools → real binaries
             'nmap_quick': 'nmap',
             'nmap_vuln': 'nmap',
-            'dig_a': 'dig',
-            'dig_ns': 'dig',
-            'dig_mx': 'dig',
             'nuclei_crit': 'nuclei',
             'nuclei_high': 'nuclei',
             # testssl binary name
             'testssl': 'testssl.sh',
+            # whatweb HTTP fallback reuses whatweb binary
+            'whatweb_http_fallback': 'whatweb',
         }
     
     def _detect_distro(self):
@@ -63,34 +62,6 @@ class ToolManager:
                 'category': 'DNS',
                 'description': 'DNS enumeration tool'
             },
-            'host': {
-                'apt': 'bind-utils',
-                'pip': None,
-                'brew': 'bind',
-                'category': 'DNS',
-                'description': 'DNS lookup utility'
-            },
-            'dig': {
-                'apt': 'dnsutils',
-                'pip': None,
-                'brew': 'bind',
-                'category': 'DNS',
-                'description': 'DNS lookup utility'
-            },
-            'nslookup': {
-                'apt': 'bind-tools',
-                'pip': None,
-                'brew': 'bind',
-                'category': 'DNS',
-                'description': 'DNS lookup utility'
-            },
-            'dnsenum': {
-                'apt': 'dnsenum',
-                'pip': 'dnsenum',
-                'brew': 'dnsenum',
-                'category': 'DNS',
-                'description': 'DNS enumeration tool'
-            },
             
             # Network Tools
             'nmap': {
@@ -99,20 +70,6 @@ class ToolManager:
                 'brew': 'nmap',
                 'category': 'Network',
                 'description': 'Network mapper and port scanner'
-            },
-            'traceroute': {
-                'apt': 'traceroute',
-                'pip': None,
-                'brew': 'traceroute',
-                'category': 'Network',
-                'description': 'Trace network route'
-            },
-            'whois': {
-                'apt': 'whois',
-                'pip': 'python-whois',
-                'brew': 'whois',
-                'category': 'Network',
-                'description': 'WHOIS lookup tool'
             },
             'ping': {
                 'apt': 'iputils-ping',
@@ -127,8 +84,10 @@ class ToolManager:
                 'apt': 'testssl.sh',
                 'pip': None,
                 'brew': 'testssl',
+                'custom': 'cd ~ && wget -q https://testssl.sh/testssl.sh-3.2.2.tar.gz && tar zxf testssl.sh-3.2.2.tar.gz && rm testssl.sh-3.2.2.tar.gz 2>/dev/null || apt-get install -y testssl.sh',
                 'category': 'SSL/TLS',
-                'description': 'SSL/TLS vulnerability scanner'
+                'description': 'SSL/TLS vulnerability scanner',
+                'verify_paths': [os.path.expanduser('~/testssl.sh-3.2.2/testssl.sh'), '/usr/bin/testssl.sh', '/usr/local/bin/testssl.sh']
             },
             'sslscan': {
                 'apt': 'sslscan',
@@ -175,12 +134,12 @@ class ToolManager:
                 'category': 'Web',
                 'description': 'Directory and DNS brute forcing tool'
             },
-            'dirsearch': {
-                'apt': 'dirsearch',
-                'pip': 'dirsearch',
-                'brew': None,
+            'dirb': {
+                'apt': 'dirb',
+                'pip': None,
+                'brew': 'dirb',
                 'category': 'Web',
-                'description': 'Web path scanner'
+                'description': 'Web directory brute force scanner'
             },
             'nikto': {
                 'apt': 'nikto',
@@ -188,6 +147,30 @@ class ToolManager:
                 'brew': 'nikto',
                 'category': 'Web',
                 'description': 'Web server scanner'
+            },
+            # Support Packages (non-binary packages installed via apt)
+            'wordlists': {
+                'apt': 'wordlists',
+                'pip': None,
+                'brew': None,
+                'category': 'Support',
+                'description': 'Common wordlists package',
+                'verify_paths': ['/usr/share/wordlists']
+            },
+            'seclists': {
+                'apt': 'seclists',
+                'pip': None,
+                'brew': None,
+                'category': 'Support',
+                'description': 'SecLists: security testing wordlists',
+                'verify_paths': ['/usr/share/seclists']
+            },
+            'dirbuster': {
+                'apt': 'dirbuster',
+                'pip': None,
+                'brew': None,
+                'category': 'Web',
+                'description': 'DirBuster (provides wordlists and GUI tool)'
             },
             # Vulnerability Scanners
             'xsstrike': {
@@ -236,21 +219,6 @@ class ToolManager:
             },
             
             # Subdomain Tools
-            'findomain': {
-                'apt': 'findomain',  # Now available via apt on Kali
-                'pip': None,
-                'go': None,
-                'brew': 'findomain',
-                'category': 'Subdomains',
-                'description': 'Subdomain enumeration'
-            },
-            'sublist3r': {
-                'apt': 'sublist3r',
-                'pip': 'sublist3r',
-                'brew': None,
-                'category': 'Subdomains',
-                'description': 'Subdomain enumeration'
-            },
             'theharvester': {
                 'apt': 'theharvester',
                 'pip': 'theharvester',
@@ -270,6 +238,12 @@ class ToolManager:
     def check_tool_installed(self, tool_name):
         """Check if a tool is installed - checks standard PATH, Go bins, and pipx paths"""
         try:
+            # Support package verification via filesystem paths
+            info = self.tool_database.get(self.tool_aliases.get(tool_name, tool_name)) or self.tool_database.get(tool_name)
+            if info and info.get('verify_paths'):
+                for p in info['verify_paths']:
+                    if os.path.exists(p):
+                        return True
             binary = self.tool_aliases.get(tool_name, tool_name)
             # Special case: testssl may be installed as testssl.sh
             if tool_name == 'testssl':
@@ -277,18 +251,18 @@ class ToolManager:
                 for cmd in ['testssl', 'testssl.sh']:
                     result = subprocess.run(
                         ['which', cmd] if self.os_type == "Linux" else ['where', cmd],
-                        capture_output=True
+                        capture_output=True, text=True
                     )
-                    if result.returncode == 0:
+                    if result.returncode == 0 and result.stdout.strip():
                         return True
-                return False
+                # Don't return False here - continue with other checks below
             
             # First try standard which/where
             result = subprocess.run(
                 ['which', binary] if self.os_type == "Linux" else ['where', binary],
-                capture_output=True
+                capture_output=True, text=True
             )
-            if result.returncode == 0:
+            if result.returncode == 0 and result.stdout.strip():
                 return True
             
             # Check Go bin directory for Go-installed tools (assetfinder, dalfox)
@@ -364,7 +338,7 @@ class ToolManager:
             if tool_info.get('custom'):
                 return tool_info['custom']
             if tool_info.get('apt'):
-                return f"apt-get install -y {tool_info['apt']}"
+                return f"sudo apt-get install -y {tool_info['apt']}"
             elif tool_info.get('pip'):
                 # Try pip3 with --break-system-packages first (PEP 668), then fallback
                 return (
@@ -387,7 +361,7 @@ class ToolManager:
             if tool_info.get('custom'):
                 return tool_info['custom']
             if tool_info.get('apt'):
-                return f"apt-get install -y {tool_info['apt']}"
+                return f"sudo apt-get install -y {tool_info['apt']}"
             elif tool_info.get('pip'):
                 return (
                     f"pip3 install {tool_info['pip']} --break-system-packages 2>/dev/null || "

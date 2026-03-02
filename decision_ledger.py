@@ -314,22 +314,12 @@ class DecisionEngine:
         # ============ DNS TOOLS ============
         if profile.is_ip:
             # IP targets skip DNS entirely
-            ledger.add_decision("dig_a", Decision.DENY, "Target is IP (no DNS needed)")
-            ledger.add_decision("dig_ns", Decision.DENY, "Target is IP (no DNS needed)")
-            ledger.add_decision("dig_mx", Decision.DENY, "Target is IP (no DNS needed)")
             ledger.add_decision("dnsrecon", Decision.DENY, "Target is IP (no DNS needed)")
         elif profile.is_subdomain:
-            # Subdomains get minimal DNS (A/AAAA only)
-            ledger.add_decision("dig_a", Decision.ALLOW, "Subdomain A record resolution", priority=10)
-            ledger.add_decision("dig_aaaa", Decision.ALLOW, "Subdomain AAAA record resolution", priority=10)
-            ledger.add_decision("dig_ns", Decision.DENY, "NS lookup not needed for subdomain")
-            ledger.add_decision("dig_mx", Decision.DENY, "MX lookup not needed for subdomain")
+            # Subdomains inherit all DNS records from root domain (via dnsrecon)
             ledger.add_decision("dnsrecon", Decision.DENY, "Full DNS recon not needed for subdomain")
         else:
-            # Root domains get full DNS
-            ledger.add_decision("dig_a", Decision.ALLOW, "Root domain A record resolution", priority=10)
-            ledger.add_decision("dig_ns", Decision.ALLOW, "Root domain NS record resolution", priority=10)
-            ledger.add_decision("dig_mx", Decision.ALLOW, "Root domain MX record resolution", priority=9)
+            # Root domains get full DNS via dnsrecon
             ledger.add_decision("dnsrecon", Decision.ALLOW, "Full DNS recon for root domain", priority=8)
         
         # ============ SUBDOMAIN ENUMERATION ============
@@ -351,18 +341,28 @@ class DecisionEngine:
         
         # ============ WEB DETECTION ============
         ledger.add_decision("whatweb", Decision.ALLOW, "Early web technology detection", priority=25)
+        ledger.add_decision("whatweb_http_fallback", Decision.ALLOW, "HTTP fallback for web tech detection", priority=25)
         
         # ============ SSL/TLS ============
         if profile.is_https and profile.is_web_target:
             ledger.add_decision("sslscan", Decision.ALLOW, "SSL/TLS certificate analysis", priority=18)
             ledger.add_decision("testssl", Decision.ALLOW, "SSL/TLS vulnerability scan", priority=17)
+            ledger.add_decision("openssl_connect", Decision.ALLOW, "OpenSSL connection test", priority=16)
+            ledger.add_decision("openssl_showcerts", Decision.ALLOW, "OpenSSL certificate chain", priority=15)
+            ledger.add_decision("openssl_status", Decision.ALLOW, "OpenSSL OCSP status", priority=14)
+            ledger.add_decision("openssl_state", Decision.ALLOW, "OpenSSL handshake state", priority=13)
         else:
             ledger.add_decision("sslscan", Decision.DENY, "Target not HTTPS")
             ledger.add_decision("testssl", Decision.DENY, "Target not HTTPS")
+            ledger.add_decision("openssl_connect", Decision.DENY, "Target not HTTPS")
+            ledger.add_decision("openssl_showcerts", Decision.DENY, "Target not HTTPS")
+            ledger.add_decision("openssl_status", Decision.DENY, "Target not HTTPS")
+            ledger.add_decision("openssl_state", Decision.DENY, "Target not HTTPS")
         
         # ============ WEB SCANNING ============
         # FORCED: gobuster, nikto, nuclei run on all targets regardless of type
         ledger.add_decision("gobuster", Decision.ALLOW, "Directory enumeration (all targets)", priority=16, timeout=9999)
+        ledger.add_decision("dirb", Decision.ALLOW, "Directory enumeration fallback", priority=16, timeout=300)
         ledger.add_decision("dirsearch", Decision.ALLOW, "Directory/file search", priority=15)
         ledger.add_decision("nikto", Decision.ALLOW, "Baseline web scan (all targets)", priority=14, timeout=9999)
         
@@ -389,5 +389,8 @@ class DecisionEngine:
         # FORCED: nuclei runs on all targets regardless of type
         ledger.add_decision("nuclei_crit", Decision.ALLOW, "Nuclei critical templates (all targets)", priority=6, timeout=9999)
         ledger.add_decision("nuclei_high", Decision.ALLOW, "Nuclei high severity templates (all targets)", priority=5, timeout=9999)
+        ledger.add_decision("nuclei_all", Decision.ALLOW, "Nuclei all templates (all targets)", priority=5, timeout=9999)
+        ledger.add_decision("nuclei_cves", Decision.ALLOW, "Nuclei CVE templates (all targets)", priority=6, timeout=9999)
+        ledger.add_decision("nuclei_ssl", Decision.ALLOW, "Nuclei SSL templates (all targets)", priority=5, timeout=9999)
         
         return ledger.build()
