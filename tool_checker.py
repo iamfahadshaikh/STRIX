@@ -110,16 +110,33 @@ class InteractiveToolChecker:
                 
                 # Prompt user
                 while True:
-                    response = input(f"   Install {tool}? [y/n/s(kip all)]: ").strip().lower()
-                    if response in ['y', 'n', 's']:
+                    response = input(f"   Install {tool}? [y/n/a(ll)/s(kip all)]: ").strip().lower()
+                    if response in ['y', 'n', 'a', 's']:
                         if response == 'y':
                             self.selected_tools.append(tool)
+                        elif response == 'a':
+                            # Add current tool and all remaining tools with install commands
+                            print(f"\n[*] Installing all remaining tools...\n")
+                            self.selected_tools.append(tool)
+                            # Add all remaining tools from this category
+                            for remaining_tool, remaining_info in sorted(missing_by_category[category]):
+                                if remaining_tool != tool and self.tool_manager.get_install_command(remaining_tool):
+                                    if remaining_tool not in self.selected_tools:
+                                        self.selected_tools.append(remaining_tool)
+                            # Add all tools from remaining categories
+                            current_category_index = sorted(missing_by_category.keys()).index(category)
+                            for next_category in sorted(missing_by_category.keys())[current_category_index + 1:]:
+                                for next_tool, next_info in sorted(missing_by_category[next_category]):
+                                    if self.tool_manager.get_install_command(next_tool):
+                                        if next_tool not in self.selected_tools:
+                                            self.selected_tools.append(next_tool)
+                            return
                         elif response == 's':
                             print(f"\n[*] Skipping remaining tools...\n")
                             return
                         break
                     else:
-                        print("   ⚠️  Please enter 'y', 'n', or 's'")
+                        print("   ⚠️  Please enter 'y', 'n', 'a', or 's'")
     
     def install_selected(self):
         """Install all selected tools"""
