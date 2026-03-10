@@ -47,11 +47,11 @@ class ToolManager:
         return {
             # DNS Tools
             'assetfinder': {
-                'apt': None,  # Not available via apt on Kali
+                'apt': 'assetfinder',  # Now available via apt on Kali
                 'pip': None,
                 'brew': 'tomnomnom/tap/assetfinder',
                 'go': 'github.com/tomnomnom/assetfinder@latest',
-                'custom': 'apt-get install -y golang-go 2>/dev/null && go install github.com/tomnomnom/assetfinder@latest && export PATH=$PATH:/root/go/bin',
+                'custom': None,  # Prefer apt installation
                 'category': 'DNS',
                 'description': 'Subdomain discovery tool'
             },
@@ -107,14 +107,14 @@ class ToolManager:
                 'apt': 'sslyze',  # Now available via apt on Kali
                 'pip': 'sslyze',
                 'brew': None,
-                'custom': 'apt-get install -y sslyze 2>/dev/null || (apt-get install -y pipx 2>/dev/null && pipx install sslyze && pipx ensurepath)',
+                'custom': None,  # Prefer apt installation
                 'category': 'SSL/TLS',
                 'description': 'SSL/TLS analyzer'
             },
             
             # Web Scanning Tools
             'wpscan': {
-                'apt': None,
+                'apt': 'wpscan',  # Available via apt on Kali
                 'pip': 'wpscan',
                 'brew': 'wpscan',
                 'category': 'Web',
@@ -185,7 +185,12 @@ class ToolManager:
                 'pip': None,
                 'go': 'github.com/hahwul/dalfox/v2@latest',
                 'brew': None,
-                'custom': 'apt-get install -y golang-go 2>/dev/null && go install github.com/hahwul/dalfox/v2@latest && export PATH=$PATH:/root/go/bin',
+                'custom': None,  # Will use Go install if golang is available
+                'verify_paths': [
+                    os.path.expanduser('~/go/bin/dalfox'),
+                    '/root/go/bin/dalfox',
+                    os.path.expanduser('~/.local/bin/dalfox')
+                ],
                 'category': 'Vulnerabilities',
                 'description': 'XSS vulnerability scanner'
             },
@@ -334,7 +339,7 @@ class ToolManager:
         
         # Debian/Ubuntu/Kali/generic Linux systems
         if self.distro in ['ubuntu', 'debian', 'kali', 'linux']:
-            # Check for custom installation command first (handles complex cases like Go + export PATH)
+            # Check for custom installation command first (handles complex cases)
             if tool_info.get('custom'):
                 return tool_info['custom']
             if tool_info.get('apt'):
@@ -347,7 +352,11 @@ class ToolManager:
                     f"pip install {tool_info['pip']}"
                 )
             elif tool_info.get('go'):
-                return f"go install {tool_info['go']}"
+                # Check if Go is installed first, install if needed
+                return (
+                    f"which go >/dev/null 2>&1 || sudo apt-get install -y golang-go; "
+                    f"go install {tool_info['go']}"
+                )
         
         # macOS
         elif self.distro == 'macos':
