@@ -24,12 +24,23 @@ class ToolManager:
             # Ledger pseudo-tools → real binaries
             'nmap_quick': 'nmap',
             'nmap_vuln': 'nmap',
+            'nmap_full': 'nmap',
             'nuclei_crit': 'nuclei',
             'nuclei_high': 'nuclei',
+            'nuclei_ssl': 'nuclei',
+            'nuclei_cves': 'nuclei',
+            'nuclei_all': 'nuclei',
+            # OpenSSL subcommands (all use openssl binary)
+            'openssl_connect': 'openssl',
+            'openssl_showcerts': 'openssl',
+            'openssl_state': 'openssl',
+            'openssl_status': 'openssl',
             # testssl binary name
             'testssl': 'testssl.sh',
             # whatweb HTTP fallback reuses whatweb binary
             'whatweb_http_fallback': 'whatweb',
+            # dirsearch is often used interchangeably with dirb/gobuster
+            'dirsearch': 'gobuster',  # fallback to gobuster if dirsearch not available
         }
     
     def _detect_distro(self):

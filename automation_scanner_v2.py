@@ -827,12 +827,25 @@ class AutomationScannerV2:
         allowed_tools = set(self.ledger.get_allowed_tools())
         for tool in allowed_tools:
             try:
+                # Check if tool is installed (this handles aliases automatically)
                 if self.tool_manager.check_tool_installed(tool):
                     continue
+                
+                # Try to get install command
                 install_cmd = self.tool_manager.get_install_command(tool)
+                
+                # If no install command, check if it's a pseudo-tool (alias)
                 if not install_cmd:
+                    # Check if this is an alias for a tool that's already installed
+                    canonical_tool = self.tool_manager.tool_aliases.get(tool)
+                    if canonical_tool and self.tool_manager.check_tool_installed(canonical_tool):
+                        # Pseudo-tool satisfied by canonical tool, skip silently
+                        continue
+                    # Otherwise, warn about missing tool
                     self.log(f"Missing tool {tool} (no installer available)", "WARN")
                     continue
+                
+                # Attempt installation
                 self.log(f"Auto-installing missing tool: {tool}", "INFO")
                 install_result = subprocess.run(install_cmd, shell=True, capture_output=True, text=True)
                 if install_result.returncode != 0:
