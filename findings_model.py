@@ -46,7 +46,12 @@ class Finding:
     owasp: Optional[str] = None  # e.g., "A03:2021"
     tool: str = "unknown"
     evidence: str = ""
+    evidence_file: str = ""
+    evidence_line: int = 0
     remediation: str = ""
+    impact: str = ""
+    exploitability: str = ""
+    verification_steps: str = ""
     discovered_at: str = field(default_factory=lambda: datetime.now().isoformat())
     
     def __hash__(self):
@@ -144,7 +149,12 @@ class FindingsRegistry:
                     "owasp": f.owasp.value if isinstance(f.owasp, Enum) else f.owasp,
                     "tool": f.tool,
                     "evidence": f.evidence[:200],  # Truncate
+                    "evidence_file": f.evidence_file,
+                    "evidence_line": f.evidence_line,
                     "remediation": f.remediation,
+                    "impact": f.impact,
+                    "exploitability": f.exploitability,
+                    "verification_steps": f.verification_steps,
                     "discovered_at": f.discovered_at,
                 }
                 for f in self.get_all()
