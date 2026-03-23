@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import logging
+import re
 import socket
 import ssl
 import subprocess
@@ -43,6 +45,9 @@ from vulnerability_centric_reporter import VulnerabilityCentricReporter
 from risk_aggregation import RiskAggregator
 
 
+logger = logging.getLogger(__name__)
+
+
 class ToolOutcome(Enum):
     SUCCESS_WITH_FINDINGS = "SUCCESS_WITH_FINDINGS"
     SUCCESS_NO_FINDINGS = "SUCCESS_NO_FINDINGS"
@@ -73,12 +78,36 @@ class AutomationScannerV2:
         output_dir: str | None = None,
         skip_tool_check: bool = False,
         custom_budget: int | None = None,
+        manual_out_of_scope_mode: str = "ask",
     ) -> None:
         self.target = target
         self.start_time = datetime.now()
         self.correlation_id = self.start_time.strftime("%Y%m%d_%H%M%S")
 
         self.profile = TargetProfile.from_target(target, custom_budget=custom_budget)
+        self.manual_out_of_scope_mode = manual_out_of_scope_mode
+        self.manual_out_of_scope_report: dict = {
+            "mode": manual_out_of_scope_mode,
+            "prompt_response": "skip",
+            "attempted": False,
+            "candidate_tools": [],
+            "targets": [],
+            "executed": [],
+            "failed": [],
+            "non_actionable_failures": [],
+            "classified_failures": {
+                "ENV_ERROR": 0,
+                "TARGET_BLOCKED": 0,
+                "NOT_APPLICABLE": 0,
+                "EXECUTION_ERROR": 0,
+            },
+            "missing_or_unavailable": [],
+        }
+        self.executed_tool_names: set[str] = set()
+        self._tool_execution_meta: dict[str, dict] = {}
+
+        # Resolve IPs early for report accuracy (equivalent to nslookup/ping visibility).
+        self._resolve_target_ips()
 
         # Explicit HTTPS probe to set capability before planning/ledger
         self.profile = self._with_https_probe(self.profile)
@@ -150,6 +179,121 @@ class AutomationScannerV2:
     def log(self, msg: str, level: str = "INFO") -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
         print(f"[{timestamp}] [{level}] {msg}")
+
+    def _resolve_target_ips(self) -> None:
+        """Resolve and store target IPs for reporting (nslookup/ping equivalent context)."""
+        if self.profile.is_ip:
+            object.__setattr__(self.profile, "resolved_ips", [self.profile.host])
+            object.__setattr__(self.profile, "is_resolvable", True)
+            return
+
+        try:
+            addresses = sorted({item[4][0] for item in socket.getaddrinfo(self.profile.host, None)})
+            if addresses:
+                object.__setattr__(self.profile, "resolved_ips", addresses)
+                object.__setattr__(self.profile, "is_resolvable", True)
+        except Exception:
+            object.__setattr__(self.profile, "resolved_ips", [])
+            object.__setattr__(self.profile, "is_resolvable", False)
+
+    def _extract_tech_stack_summary(self) -> dict:
+        """Build a readable tech stack summary from parsed detections."""
+        tech = {
+            "server": [],
+            "cms": [],
+            "languages": [],
+            "frameworks": [],
+            "javascript": [],
+        }
+
+        if getattr(self.profile, "detected_cms", None):
+            tech["cms"].append(str(self.profile.detected_cms))
+
+        for param in sorted(self.cache.params):
+            p = str(param)
+            if p.startswith("tech_server_"):
+                tech["server"].append(p.replace("tech_server_", ""))
+            elif p.startswith("tech_cms_"):
+                tech["cms"].append(p.replace("tech_cms_", ""))
+            elif p.startswith("tech_lang_"):
+                tech["languages"].append(p.replace("tech_lang_", ""))
+            elif p.startswith("framework_"):
+                tech["frameworks"].append(p.replace("framework_", ""))
+            elif p.startswith("js_"):
+                tech["javascript"].append(p.replace("js_", ""))
+
+        for key in tech:
+            tech[key] = sorted(set(tech[key]))
+        return tech
+
+    def _build_discovery_detail_lists(self) -> dict:
+        """Build detailed discovery lists for report sections."""
+        endpoints = self.cache.get_normalized_endpoints()
+        api_endpoints = [ep for ep in endpoints if "/api" in ep.lower()]
+        params = sorted(str(p) for p in self.cache.params)
+        reflections = sorted(str(r) for r in self.cache.reflections)
+        subdomains = sorted(str(s) for s in self.cache.subdomains)
+        ports = [str(p) for p in sorted(self.cache.discovered_ports)]
+        command_params = sorted(str(p) for p in self.cache.command_params)
+        ssrf_params = sorted(str(p) for p in self.cache.ssrf_params)
+
+        return {
+            "endpoints_list": endpoints,
+            "api_endpoints_list": api_endpoints,
+            "parameters_list": params,
+            "reflections_list": reflections,
+            "subdomains_list": subdomains,
+            "ports_list": ports,
+            "command_params_list": command_params,
+            "ssrf_params_list": ssrf_params,
+        }
+
+    def _collect_security_strengths(self) -> list[str]:
+        """Extract verified positive security signals from executed tool outputs."""
+        strengths: list[str] = []
+        output_files = [r.get("output_file") for r in self.execution_results if r.get("output_file")]
+        seen = set()
+
+        def _add(msg: str) -> None:
+            if msg not in seen:
+                seen.add(msg)
+                strengths.append(msg)
+
+        for path in output_files:
+            try:
+                p = Path(path)
+                if not p.exists():
+                    continue
+                content = p.read_text(encoding="utf-8", errors="ignore").lower()
+                if "tlsv1.3" in content and "enabled" in content:
+                    _add("TLS 1.3 is enabled")
+                if "tlsv1.2" in content and "enabled" in content:
+                    _add("TLS 1.2 is enabled")
+                if "sslv3" in content and "disabled" in content:
+                    _add("Legacy SSLv3 is disabled")
+                if "tlsv1.0" in content and "disabled" in content:
+                    _add("Legacy TLS 1.0 is disabled")
+                if "heartbleed" in content and "not vulnerable" in content:
+                    _add("Heartbleed check passed (not vulnerable)")
+                if "poodle" in content and "not vulnerable" in content:
+                    _add("POODLE check passed (not vulnerable)")
+                if "freak" in content and "not vulnerable" in content:
+                    _add("FREAK check passed (not vulnerable)")
+            except Exception:
+                continue
+
+        return strengths
+
+    def _prompt_manual_out_of_scope_action(self) -> str:
+        """Prompt user for manual out-of-scope execution mode: yes/no/skip."""
+        if self.manual_out_of_scope_mode in {"yes", "no", "skip"}:
+            return self.manual_out_of_scope_mode
+
+        while True:
+            choice = input("\nRun out-of-scope skipped/missing tools across all discovered API/pages? [yes/no/skip]: ").strip().lower()
+            if choice in {"yes", "no", "skip"}:
+                return choice
+            print("Please enter one of: yes, no, skip")
 
     def _run_tool(self, plan_item: dict, index: int, total: int) -> dict:
         """Orchestrate tool execution: decision → execution → parsing → result.
@@ -323,12 +467,28 @@ class AutomationScannerV2:
 
         with self._lock:
             self.execution_results.append(result)
+        self._tool_execution_meta[tool] = {
+            "status": status,
+            "outcome": outcome.value,
+            "timed_out": outcome == ToolOutcome.TIMEOUT,
+            "failure_reason": failure_reason or "",
+        }
+
+        # Graceful degradation: parse partial Nikto output even on timeout.
+        if tool == "nikto" and outcome == ToolOutcome.TIMEOUT and stdout.strip():
+            self.log("Nikto timed out - parsing partial output for hardening findings", "WARN")
+            try:
+                with self._lock:
+                    self._parse_discoveries(tool, stdout)
+                self._extract_findings(tool, stdout, stderr, output_file)
+            except Exception as e:  # noqa: BLE001
+                self.log(f"Partial nikto parse failed: {e}", "WARN")
 
         # ====== PHASE 7: Parsing (if successful) ======
         if outcome == ToolOutcome.SUCCESS_WITH_FINDINGS:
             with self._lock:
                 self._parse_discoveries(tool, stdout)
-                self._extract_findings(tool, effective_stdout, stderr)
+            self._extract_findings(tool, effective_stdout, stderr, output_file)
         
         # ====== PHASE 7b: Signal extraction for discovery tools ======
         if category == "discovery":
@@ -569,7 +729,31 @@ class AutomationScannerV2:
                 return "POSITIVE"
             return "NEGATIVE_SIGNAL"
         
-        # Default: actionable output = POSITIVE
+        # Scanner tools: require explicit finding indicators to avoid noisy banner false positives.
+        finding_keywords = [
+            "vulnerable", "vulnerability", "missing security header", "suggested security header missing",
+            "exposed", "injection", "xss", "sqli", "cve-", "critical", "high", "medium",
+        ]
+        scanner_tools = {"nikto", "testssl", "sslscan", "sqlmap", "commix", "xsstrike", "xsser", "dalfox", "nuclei_all", "nuclei_crit", "nuclei_high", "nuclei_cves", "nuclei_ssl", "nuclei"}
+        if tool in scanner_tools:
+            lines = [ln.strip().lower() for ln in stdout.splitlines() if ln.strip()]
+            if not lines:
+                return "NO_SIGNAL"
+            positive_lines = 0
+            negative_lines = 0
+            for line in lines:
+                if any(k in line for k in finding_keywords):
+                    if any(neg in line for neg in ["not vulnerable", "no vulnerabilities found", "no issues found", "(ok)"]):
+                        negative_lines += 1
+                    else:
+                        positive_lines += 1
+            if positive_lines > 0:
+                return "POSITIVE"
+            if negative_lines > 0:
+                return "NEGATIVE_SIGNAL"
+            return "NO_SIGNAL"
+
+        # Default: non-empty output is treated as signal for non-scanner discovery/info tools.
         if stdout.strip():
             return "POSITIVE"
         return "NO_SIGNAL"
@@ -1016,8 +1200,225 @@ class AutomationScannerV2:
             return self.payload_command_builder.build_commix_commands(self.profile.url)
 
         return []
+
+    def _manual_command_for_tool(self, tool_name: str, target_url: str) -> str | None:
+        """Build best-effort manual command for out-of-scope reruns."""
+        host = self.profile.host
+        base_domain = self.profile.base_domain or host
+
+        templates = {
+            "whatweb": f"whatweb -v {target_url}",
+            "whatweb_http_fallback": f"whatweb -v {target_url.replace('https://', 'http://')}",
+            "nikto": f"nikto -h {target_url} -C all",
+            "gobuster": f"gobuster dir -u {target_url} -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt --status-codes-blacklist 403 -k",
+            "dirsearch": f"dirsearch -u {target_url} -e php,asp,aspx,jsp,js,txt,html -t 20 --random-agent --quiet-mode",
+            "nuclei_crit": f"nuclei -u {target_url} -severity critical -silent",
+            "nuclei_high": f"nuclei -u {target_url} -severity high -silent",
+            "nuclei_all": f"nuclei -u {target_url} -silent",
+            "nuclei_cves": f"nuclei -u {target_url} -t http/cves/ -silent",
+            "nuclei_ssl": f"nuclei -u {target_url} -t ssl -silent",
+            "dalfox": f"dalfox url {target_url} --silence",
+            "sqlmap": f"sqlmap -u {target_url} --batch --crawl=1",
+            "commix": f"commix -u {target_url} --batch",
+            "xsstrike": f"python3 /usr/share/xsstrike/xsstrike.py -u {target_url}",
+            "xsser": f"xsser --url {target_url}",
+            "arjun": f"arjun -u {target_url} --passive",
+            "ping": f"ping -c 2 {host}",
+            "nmap_quick": f"nmap -F {host}",
+            "nmap_vuln": f"nmap -sV --script vuln --script-timeout 120s {host}",
+            "sslscan": f"sslscan {host}",
+            "testssl": f"testssl.sh --quiet -U {target_url}",
+            "openssl_connect": f"openssl s_client -connect {host}:443 -servername {host}",
+            "openssl_showcerts": f"openssl s_client -connect {host}:443 -servername {host} -showcerts </dev/null",
+            "openssl_status": f"openssl s_client -connect {host}:443 -servername {host} -status </dev/null",
+            "openssl_state": f"openssl s_client -connect {host}:443 -servername {host} -state </dev/null",
+            "findomain": f"findomain -t {base_domain} -q",
+            "sublist3r": f"sublist3r -d {base_domain}",
+            "assetfinder": f"assetfinder --subs-only {base_domain}",
+            "dnsrecon": f"dnsrecon -d {base_domain}",
+            "wpscan": f"wpscan --url {target_url} --enumerate vp,vt,u --disable-tls-checks",
+        }
+        return templates.get(tool_name)
+
+    def _is_exploit_tool(self, tool_name: str) -> bool:
+        return tool_name in {"sqlmap", "xsstrike", "dalfox", "commix", "xsser", "arjun"}
+
+    def _should_skip_manual_exploit_for_target(self, tool_name: str, target_url: str) -> tuple[bool, str]:
+        """Skip exploit tooling when target characteristics make execution non-actionable."""
+        if not self._is_exploit_tool(tool_name):
+            return False, ""
+
+        has_params = self.cache.has_params()
+        has_reflections = self.cache.has_reflections()
+        lower_url = target_url.lower()
+
+        if not has_params and tool_name in {"sqlmap", "commix", "arjun"}:
+            return True, "NOT_APPLICABLE:no parameters detected"
+        if not has_reflections and tool_name in {"dalfox", "xsstrike", "xsser"}:
+            return True, "NOT_APPLICABLE:no reflectable parameters"
+        if "wp-content/plugins/" in lower_url and "?" not in lower_url:
+            return True, "NOT_APPLICABLE:static asset endpoint"
+
+        return False, ""
+
+    def _classify_manual_failure(self, rc: int, stdout: str, stderr: str, failure_reason: str | None) -> str:
+        """Classify manual sweep failures into actionable buckets."""
+        text = f"{stdout}\n{stderr}".lower()
+
+        if failure_reason in {"tool_not_installed", "permission_denied"} or "no such file or directory" in text or "can't open file" in text:
+            return "ENV_ERROR"
+        if "403" in text or "waf" in text or "ips" in text or "forbidden" in text:
+            return "TARGET_BLOCKED"
+        if "no usable links found" in text or "no parameters" in text or "no reflectable" in text or "not applicable" in text:
+            return "NOT_APPLICABLE"
+        if rc == 0 and ("[no output]" in text or "no issues found" in text):
+            return "NOT_APPLICABLE"
+        return "EXECUTION_ERROR"
+
+    def _execute_manual_tool_command(self, tool_name: str, command: str, target_url: str) -> dict:
+        """Execute one manual out-of-scope command and record findings/discoveries."""
+        started = datetime.now()
+        rc, stdout, stderr = self._execute_tool_subprocess(command, timeout=180)
+        signal = self._classify_signal(tool_name, stdout, stderr, rc)
+        failure_reason = self._classify_failure_reason(rc, stderr)
+        outcome, status = self._classify_execution_outcome(tool_name, rc, signal, failure_reason)
+        failure_class = self._classify_manual_failure(rc, stdout, stderr, failure_reason)
+        output_file = self._save_tool_output(f"manual_{tool_name}", command, stdout, stderr, rc)
+
+        # Reuse existing parsers for enrichment.
+        try:
+            self._parse_discoveries(tool_name, stdout)
+        except Exception:
+            pass
+        try:
+            self._extract_findings(tool_name, stdout, stderr, str(output_file) if output_file else None)
+        except Exception:
+            pass
+
+        result = {
+            "index": 0,
+            "total": 0,
+            "tool": tool_name,
+            "category": "ManualOutOfScope",
+            "status": status,
+            "outcome": outcome.value,
+            "reason": f"manual rerun against {target_url}",
+            "return_code": rc,
+            "timed_out": rc == 124,
+            "failure_reason": failure_reason or "",
+            "started_at": started.isoformat(),
+            "finished_at": datetime.now().isoformat(),
+            "stderr_preview": (stderr or "")[:500],
+            "stderr_length": len(stderr or ""),
+            "stderr_truncated": len(stderr or "") > 500,
+            "signal": signal,
+            "manual": True,
+            "target_url": target_url,
+            "failure_class": failure_class,
+        }
+        if output_file:
+            result["output_file"] = str(output_file)
+        self.execution_results.append(result)
+        return result
+
+    def _run_manual_out_of_scope_sweep(self) -> None:
+        """Run denied/skipped/blocked tools manually against all discovered pages/API endpoints."""
+        denied_tools = set(self.ledger.get_denied_tools())
+        skipped_or_blocked = {
+            r.get("tool") for r in self.execution_results if r.get("status") in {"SKIPPED", "BLOCKED"}
+        }
+        candidate_tools = sorted(t for t in (denied_tools | skipped_or_blocked) if t)
+
+        discovery_lists = self._build_discovery_detail_lists()
+        endpoint_urls = [self._build_full_url(ep) for ep in discovery_lists.get("endpoints_list", [])]
+        targets = sorted(set(endpoint_urls + [self.profile.url]))
+
+        self.manual_out_of_scope_report.update({
+            "attempted": True,
+            "candidate_tools": candidate_tools,
+            "targets": targets,
+        })
+
+        if not candidate_tools or not targets:
+            self.log("Manual out-of-scope sweep: nothing to run", "INFO")
+            return
+
+        # Try to install missing tools for manual sweep.
+        if self.tool_manager:
+            for tool_name in candidate_tools:
+                try:
+                    if self.tool_manager.check_tool_installed(tool_name):
+                        continue
+                    install_cmd = self.tool_manager.get_install_command(tool_name)
+                    if not install_cmd:
+                        self.manual_out_of_scope_report["missing_or_unavailable"].append({
+                            "tool": tool_name,
+                            "reason": "no install command available",
+                        })
+                        continue
+                    rc = subprocess.run(install_cmd, shell=True, capture_output=True, text=True).returncode
+                    if rc != 0:
+                        self.manual_out_of_scope_report["missing_or_unavailable"].append({
+                            "tool": tool_name,
+                            "reason": "install failed",
+                        })
+                except Exception as e:  # noqa: BLE001
+                    self.manual_out_of_scope_report["missing_or_unavailable"].append({
+                        "tool": tool_name,
+                        "reason": f"install exception: {e}",
+                    })
+
+        for tool_name in candidate_tools:
+            # Host-level tools only need one run.
+            host_level = tool_name in {
+                "ping", "nmap_quick", "nmap_vuln", "sslscan", "testssl",
+                "openssl_connect", "openssl_showcerts", "openssl_status", "openssl_state",
+                "findomain", "sublist3r", "assetfinder", "dnsrecon",
+            }
+            loop_targets = [self.profile.url] if host_level else targets
+
+            for target_url in loop_targets:
+                should_skip, skip_reason = self._should_skip_manual_exploit_for_target(tool_name, target_url)
+                if should_skip:
+                    self.manual_out_of_scope_report["non_actionable_failures"].append({
+                        "tool": tool_name,
+                        "target": target_url,
+                        "reason": skip_reason,
+                    })
+                    self.manual_out_of_scope_report["classified_failures"]["NOT_APPLICABLE"] += 1
+                    continue
+
+                command = self._manual_command_for_tool(tool_name, target_url)
+                if not command:
+                    self.manual_out_of_scope_report["missing_or_unavailable"].append({
+                        "tool": tool_name,
+                        "reason": "no command template",
+                    })
+                    break
+                result = self._execute_manual_tool_command(tool_name, command, target_url)
+                if result.get("status") in {"SUCCESS", "PARTIAL"}:
+                    self.manual_out_of_scope_report["executed"].append({
+                        "tool": tool_name,
+                        "target": target_url,
+                        "outcome": result.get("outcome"),
+                    })
+                else:
+                    failure_class = result.get("failure_class", "EXECUTION_ERROR")
+                    self.manual_out_of_scope_report["classified_failures"][failure_class] = (
+                        self.manual_out_of_scope_report["classified_failures"].get(failure_class, 0) + 1
+                    )
+                    failure_payload = {
+                        "tool": tool_name,
+                        "target": target_url,
+                        "reason": result.get("failure_reason") or result.get("reason"),
+                        "class": failure_class,
+                    }
+                    if failure_class in {"NOT_APPLICABLE", "TARGET_BLOCKED"}:
+                        self.manual_out_of_scope_report["non_actionable_failures"].append(failure_payload)
+                    else:
+                        self.manual_out_of_scope_report["failed"].append(failure_payload)
     
-    def _extract_findings(self, tool: str, stdout: str, stderr: str) -> None:
+    def _extract_findings(self, tool: str, stdout: str, stderr: str, output_file: str | None = None) -> None:
         """
         Extract normalized findings from tool output.
         
@@ -1028,7 +1429,7 @@ class AutomationScannerV2:
             return
         
         # Use unified parser for supported tools
-        findings = parse_tool_output(tool, stdout, stderr, self.target)
+        findings = parse_tool_output(tool, stdout, stderr, self.target, output_file=output_file)
         for finding in findings:
             self.findings.add(finding)
         
@@ -1059,13 +1460,13 @@ class AutomationScannerV2:
                     elif "sql" in line_lower or "injection" in line_lower:
                         finding_type = FindingType.SQLI
                     elif "lfi" in line_lower or "file inclusion" in line_lower:
-                        finding_type = FindingType.LFI
+                        finding_type = FindingType.MISCONFIGURATION
                     elif "rce" in line_lower or "command" in line_lower:
-                        finding_type = FindingType.RCE
+                        finding_type = FindingType.COMMAND_INJECTION
                     elif "ssrf" in line_lower:
                         finding_type = FindingType.SSRF
                     elif "cve-" in line_lower:
-                        finding_type = FindingType.CVE
+                        finding_type = FindingType.OUTDATED_SOFTWARE
                     elif "ssl" in line_lower or "tls" in line_lower or "cipher" in line_lower:
                         finding_type = FindingType.WEAK_CRYPTO
                     
@@ -1076,9 +1477,10 @@ class AutomationScannerV2:
                         description=line.strip(),
                         tool=tool,  # Use actual tool name (nuclei_all, nuclei_cves, etc.)
                         owasp=map_to_owasp(finding_type.value),
-                        evidence=line[:500]
+                        evidence=line[:500],
+                        evidence_file=output_file or "",
+                        evidence_line=max(1, stdout.count("\n", 0, stdout.find(line)) + 1 if line in stdout else 1),
                     )
-                    finding.owasp = map_to_owasp(finding.type.value)  # ENFORCE
                     self.findings.add(finding)
         
         elif tool == "dalfox" and "reflected" in stdout.lower():
@@ -1090,9 +1492,9 @@ class AutomationScannerV2:
                 tool="dalfox",
                 cwe="CWE-79",
                 owasp=map_to_owasp(FindingType.XSS.value),
-                evidence=stdout[:500]
+                evidence=stdout[:500],
+                evidence_file=output_file or "",
             )
-            finding.owasp = map_to_owasp(finding.type.value)
             self.findings.add(finding)
         
         # Whatweb: Extract technology stack for gating
@@ -1112,22 +1514,7 @@ class AutomationScannerV2:
             for lib in tech_stack.get("javascript_libs", []):
                 self.cache.add_param(f"js_{lib.lower()}")
 
-        elif tool in ("sslscan", "testssl"):
-            for line in stdout.split("\n"):
-                lower = line.lower()
-                if not lower:
-                    continue
-                if any(k in lower for k in ["heartbleed", "poodle", "crime", "rc4", "sslv3", "tls1.0", "tls 1.0", "insecure reneg", "null cipher", "expired", "self-signed"]):
-                    severity = Severity.HIGH if any(k in lower for k in ["heartbleed", "poodle", "crime"]) else Severity.MEDIUM
-                    self.findings.add(Finding(
-                        type=FindingType.WEAK_CRYPTO,
-                        severity=severity,
-                        location=self.profile.host,
-                        description=line.strip(),
-                        tool=tool,
-                        owasp=map_to_owasp(FindingType.WEAK_CRYPTO.value),
-                        evidence=line[:500]
-                    ))
+        # SSL/TLS findings are fully handled by dedicated parsers to avoid line-level false positives.
 
     def _summarize_gating(self, orchestrator) -> str:
         """Summarize gating decisions for logging"""
@@ -1137,6 +1524,144 @@ class AutomationScannerV2:
             status = "✓ RUN" if can_run else "✗ SKIP"
             summary.append(f"{tool}: {status}")
         return " | ".join(summary)
+
+    def _base_confidence_for_finding(self, tool_name: str) -> float:
+        """Provide a baseline confidence seed from execution context."""
+        meta = self._tool_execution_meta.get(tool_name, {})
+        if meta.get("timed_out"):
+            return 0.35
+        if meta.get("status") == "PARTIAL":
+            return 0.45
+        return 0.6
+
+    def _autofill_actionability_fields(self, finding_dict: dict) -> None:
+        """Fill missing impact/exploitability/verification templates for report quality."""
+        f_type = str(finding_dict.get("type", "")).lower()
+        description = str(finding_dict.get("description", "")).lower()
+        tool = str(finding_dict.get("tool", "unknown"))
+        location = finding_dict.get("location", "")
+
+        is_header_gap = "missing security header" in description or "header" in description
+        is_breach = "breach" in description
+        is_service_exposure = "discovered" in description and "port" in description
+
+        if not (finding_dict.get("impact") or "").strip():
+            if is_header_gap:
+                finding_dict["impact"] = "Increases risk of XSS, clickjacking, and data leakage when combined with other weaknesses."
+            elif is_breach:
+                finding_dict["impact"] = "Potential side-channel leakage risk when secrets are reflected in compressed HTTPS responses."
+            elif is_service_exposure:
+                finding_dict["impact"] = "Exposed service metadata can accelerate reconnaissance and targeted exploit selection."
+            else:
+                finding_dict["impact"] = "Security posture degradation with potential exploitation when chained."
+
+        if not (finding_dict.get("exploitability") or "").strip():
+            if is_breach or is_header_gap:
+                finding_dict["exploitability"] = "Passive; typically requires chaining with other vulnerabilities."
+            elif is_service_exposure:
+                finding_dict["exploitability"] = "Low standalone; primarily recon advantage for attackers."
+            else:
+                finding_dict["exploitability"] = "Context dependent based on exposure and attacker capability."
+
+        if not (finding_dict.get("verification_steps") or "").strip():
+            if is_header_gap:
+                finding_dict["verification_steps"] = "Run: curl -I https://target and verify expected security headers are present."
+            elif is_service_exposure:
+                finding_dict["verification_steps"] = f"Run: nmap -sV {self.profile.host} and validate service/banner exposure at {location}."
+            elif is_breach:
+                finding_dict["verification_steps"] = "Re-run testssl/nikto and validate HTTPS compression plus reflection behavior on sensitive endpoints."
+            else:
+                finding_dict["verification_steps"] = "Re-run the original command and validate reproducibility from evidence line."
+
+    def _read_output_text(self, output_path: str) -> str:
+        try:
+            p = Path(output_path)
+            if not p.exists():
+                return ""
+            return p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+    def _apply_promotion_logic(self, findings: list[dict]) -> list[dict]:
+        """Promote hardening findings using cross-tool corroboration and contextual rules."""
+        promoted = list(findings)
+        existing_descriptions = {str(f.get("description", "")).lower() for f in promoted if isinstance(f, dict)}
+
+        nikto_failed = any(
+            r.get("tool") == "nikto" and r.get("status") == "FAILED"
+            for r in self.execution_results
+        )
+
+        tool_text: dict[str, str] = {}
+        for r in self.execution_results:
+            tool = r.get("tool")
+            output_file = r.get("output_file")
+            if tool and output_file:
+                tool_text[tool] = self._read_output_text(str(output_file)).lower()
+
+        nikto_text = tool_text.get("nikto", "")
+        testssl_text = tool_text.get("testssl", "")
+        whatweb_text = tool_text.get("whatweb", "") + "\n" + tool_text.get("whatweb_http_fallback", "")
+        nuclei_text = "\n".join([
+            tool_text.get("nuclei_all", ""),
+            tool_text.get("nuclei_high", ""),
+            tool_text.get("nuclei_ssl", ""),
+            tool_text.get("nuclei_cves", ""),
+        ])
+
+        # Rule 1: Missing header hardening findings (promote from direct observation).
+        missing_headers = sorted(set(re.findall(r"suggested security header missing:\s*([^\.\n]+)", nikto_text, re.IGNORECASE)))
+        if missing_headers:
+            sev = "MEDIUM" if len(missing_headers) >= 3 else "LOW"
+            confidence = 0.85 if len(missing_headers) >= 2 else 0.75
+            desc = f"Hardening Gap: Missing security headers ({', '.join(h.strip().lower() for h in missing_headers[:6])})"
+            if desc.lower() not in existing_descriptions:
+                promoted.append({
+                    "type": "Misconfiguration",
+                    "severity": sev,
+                    "location": self.profile.host,
+                    "description": desc,
+                    "tool": "nikto",
+                    "confidence": confidence,
+                    "owasp": "A05:2021 - Security Misconfiguration",
+                    "cwe": "CWE-693",
+                    "evidence": "Suggested security header missing observed in nikto output",
+                    "impact": "Missing browser security headers reduce baseline hardening and increase exploit chainability.",
+                    "exploitability": "Passive; usually requires chaining with XSS/clickjacking/content injection.",
+                    "verification_steps": "curl -I https://target and validate each listed header is present.",
+                })
+
+        # Rule 2: BREACH contextual promotion with corroboration.
+        breach_tools = set()
+        if "breach" in nikto_text:
+            breach_tools.add("nikto")
+        if "breach" in testssl_text and ("gzip" in testssl_text or "compression" in testssl_text):
+            breach_tools.add("testssl")
+        if "content-encoding" in whatweb_text and "gzip" in whatweb_text:
+            breach_tools.add("whatweb")
+        if "breach" in nuclei_text or "http-missing-security-headers" in nuclei_text:
+            breach_tools.add("nuclei")
+
+        if len(breach_tools) >= 2:
+            desc = "Potential side-channel risk (BREACH), requires attacker-controlled reflection to exploit"
+            if desc.lower() not in existing_descriptions:
+                confidence = 0.75 if (nikto_failed and len([t for t in breach_tools if t != "nikto"]) >= 2) else 0.65
+                promoted.append({
+                    "type": "Weak Cryptography",
+                    "severity": "LOW",
+                    "location": self.profile.host,
+                    "description": desc,
+                    "tool": "+".join(sorted(breach_tools)),
+                    "confidence": confidence,
+                    "owasp": "A02:2021 - Cryptographic Failures",
+                    "cwe": "CWE-200",
+                    "evidence": "Cross-tool corroboration: BREACH/compression indicators from " + ", ".join(sorted(breach_tools)),
+                    "impact": "Compression side-channels may leak secrets under specific reflective conditions.",
+                    "exploitability": "Context-dependent and usually requires attacker-controlled reflection and repeated requests.",
+                    "verification_steps": "Confirm gzip compression on sensitive endpoints and test reflection of secret-bearing tokens.",
+                })
+
+        return promoted
 
     def run_full_scan(self) -> None:
         print("\n" + "=" * 80)
@@ -1484,6 +2009,17 @@ class AutomationScannerV2:
         
         self.log("Scan complete - orchestrator finished (see execution results for skips/blocks)", "SUCCESS")
 
+        # Optional manual out-of-scope rerun over discovered API/pages.
+        manual_choice = self._prompt_manual_out_of_scope_action()
+        self.manual_out_of_scope_report["prompt_response"] = manual_choice
+        if manual_choice == "yes":
+            self.log("Manual out-of-scope sweep: YES selected", "INFO")
+            self._run_manual_out_of_scope_sweep()
+        elif manual_choice == "no":
+            self.log("Manual out-of-scope sweep: NO selected", "INFO")
+        else:
+            self.log("Manual out-of-scope sweep: SKIP selected", "INFO")
+
         self._write_report()
 
     def _write_report(self) -> None:
@@ -1516,6 +2052,12 @@ class AutomationScannerV2:
                 "owasp": finding.owasp,
                 "tool": finding.tool,
                 "evidence": finding.evidence[:500] if finding.evidence else "",
+                "evidence_file": finding.evidence_file,
+                "evidence_line": finding.evidence_line,
+                "impact": finding.impact,
+                "exploitability": finding.exploitability,
+                "verification_steps": finding.verification_steps,
+                "confidence": self._base_confidence_for_finding(finding.tool),
             }
             # Apply OWASP mapping if not already set
             if not f_dict.get("owasp"):
@@ -1524,6 +2066,7 @@ class AutomationScannerV2:
                     f_dict["owasp"] = owasp_cat.value
                 except:
                     pass
+            self._autofill_actionability_fields(f_dict)
             findings_dicts.append(f_dict)
         deduplicated_findings = self.dedup_engine.deduplicate(findings_dicts)
         
@@ -1532,6 +2075,9 @@ class AutomationScannerV2:
         
         # Skip advanced correlation for now - work with filtered dicts directly
         correlated_findings = filtered_findings
+
+        # Promotion layer: elevate hardening findings with corroboration/context rules.
+        correlated_findings = self._apply_promotion_logic(correlated_findings)
         
         # Phase 4: Enhanced confidence scoring
         if self.enhanced_confidence:
@@ -1602,7 +2148,12 @@ class AutomationScannerV2:
                     owasp=cf.get('owasp'),
                     tool=cf.get('tool', 'unknown'),
                     evidence=cf.get('evidence', ''),
+                    evidence_file=cf.get('evidence_file', ''),
+                    evidence_line=int(cf.get('evidence_line', 0) or 0),
                     remediation=cf.get('remediation', ''),
+                    impact=cf.get('impact', ''),
+                    exploitability=cf.get('exploitability', ''),
+                    verification_steps=cf.get('verification_steps', ''),
                 )
                 self.findings.add(finding)
             elif hasattr(cf, 'primary_finding'):
@@ -1612,6 +2163,23 @@ class AutomationScannerV2:
         self.log("PHASE 4c: Logging coverage gaps...", "INFO")
         self.coverage_analyzer.log_coverage_summary()
         coverage_report = self.coverage_analyzer.get_coverage_report()
+        skipped_tools = sorted({r.get("tool") for r in self.execution_results if r.get("status") == "SKIPPED" and r.get("tool")})
+        denied_tools = sorted(set(self.ledger.get_denied_tools()))
+        missing_tools = []
+        if self.tool_manager:
+            for tool in sorted(set(skipped_tools + denied_tools + coverage_report.get("blocked", {}).get("tools", []))):
+                try:
+                    if not self.tool_manager.check_tool_installed(tool):
+                        missing_tools.append(tool)
+                except Exception:
+                    continue
+        coverage_report["skipped"] = {"tools": skipped_tools}
+        coverage_report["denied"] = {"tools": denied_tools}
+        coverage_report["missing"] = {
+            **coverage_report.get("missing", {}),
+            "missing_tools": missing_tools,
+        }
+        coverage_report["manual_out_of_scope"] = self.manual_out_of_scope_report
 
         report = {
             "profile": self.profile.to_dict(),
@@ -1655,6 +2223,7 @@ class AutomationScannerV2:
             "vulnerabilities": vulnerability_report,
             # Phase 4: Business risk aggregation
             "risk_aggregation": risk_report,
+            "manual_out_of_scope": self.manual_out_of_scope_report,
         }
 
         report_file = self.output_dir / "execution_report.json"
@@ -1674,6 +2243,21 @@ class AutomationScannerV2:
                 owasp_key = str(owasp_value) if owasp_value else "Unmapped"
                 owasp_summary[owasp_key] = owasp_summary.get(owasp_key, 0) + 1
 
+            discovery_lists = self._build_discovery_detail_lists()
+            tech_stack = self._extract_tech_stack_summary()
+
+            skipped_tools = sorted({r.get("tool") for r in self.execution_results if r.get("status") == "SKIPPED" and r.get("tool")})
+            blocked_tools = sorted({r.get("tool") for r in self.execution_results if r.get("status") == "BLOCKED" and r.get("tool")})
+            denied_tools = sorted(set(self.ledger.get_denied_tools()))
+            missing_tools = []
+            if self.tool_manager:
+                for tool in sorted(set(skipped_tools + blocked_tools + denied_tools)):
+                    try:
+                        if not self.tool_manager.check_tool_installed(tool):
+                            missing_tools.append(tool)
+                    except Exception:
+                        continue
+
             discovery_summary = {
                 "endpoints": len(self.cache.endpoints),
                 "live_endpoints": len(self.cache.live_endpoints),
@@ -1683,6 +2267,15 @@ class AutomationScannerV2:
                 "reflections": len(self.cache.reflections),
                 "subdomains": len(self.cache.subdomains),
                 "ports": len(self.cache.discovered_ports),
+                "target_ips": list(getattr(self.profile, "resolved_ips", []) or []),
+                "detected_os": getattr(self.profile, "detected_os", None),
+                "tech_stack": tech_stack,
+                "skipped_tools": skipped_tools,
+                "blocked_tools": blocked_tools,
+                "denied_tools": denied_tools,
+                "missing_tools": missing_tools,
+                "manual_out_of_scope": self.manual_out_of_scope_report,
+                **discovery_lists,
             }
 
             findings_summary = {
@@ -1706,6 +2299,7 @@ class AutomationScannerV2:
                 coverage_report=coverage_report,
                 discovery_summary=discovery_summary,
                 findings_summary=findings_summary,
+                security_strengths=self._collect_security_strengths(),
                 output_path=html_file,
             )
             self.log(f"HTML report generated: {html_file}", "SUCCESS")
@@ -1909,6 +2503,12 @@ def main() -> None:
         default=120000,
         help="Runtime budget in seconds (default: 120000s = 33.3 hours)",
     )
+    parser.add_argument(
+        "--manual-out-of-scope",
+        choices=["ask", "yes", "no", "skip"],
+        default="ask",
+        help="After scan, run denied/skipped tools on discovered API/pages (yes/no/skip or interactive ask)",
+    )
     args = parser.parse_args()
 
     # If --check-tools requested, run interactive tool checker and exit
@@ -1960,6 +2560,7 @@ def main() -> None:
         output_dir=args.output,
         skip_tool_check=args.skip_install,
         custom_budget=args.budget,
+        manual_out_of_scope_mode=args.manual_out_of_scope,
     )
 
     # Optional pre-flight installers (when target is provided)
