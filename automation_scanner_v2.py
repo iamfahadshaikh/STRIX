@@ -2334,6 +2334,9 @@ class AutomationScannerV2:
                 discovery_summary=discovery_summary,
                 findings_summary=findings_summary,
                 security_strengths=self._collect_security_strengths(),
+                confirmed_exploitation=proof_report,
+                service_fingerprints=self.service_fingerprints,
+                prioritized_subdomains=self.prioritized_subdomains,
                 output_path=html_file,
             )
             self.log(f"HTML report generated: {html_file}", "SUCCESS")
@@ -2588,9 +2591,14 @@ class AutomationScannerV2:
             
             self.log(f"Testing {endpoint} ({method}) with {len(params)} parameter(s)", "INFO")
             
-            # Test each parameter
+            # Test each parameter - PHASE 3: STRICT PARAMETER FILTERING
             for param in params[:3]:  # Limit params to avoid timeout
                 param_name = param.get("name") if isinstance(param, dict) else str(param)
+                
+                # FILTER: Skip non-user-controllable parameters
+                if self._should_skip_parameter(param_name):
+                    self.log(f"Skipping {param_name}: not user-controllable", "DEBUG")
+                    continue
                 
                 # Try SSRF exploitation
                 try:
@@ -2672,6 +2680,45 @@ class AutomationScannerV2:
             })
 
         return fallback_targets
+    
+    def _should_skip_parameter(self, param_name: str) -> bool:
+        """
+        PHASE 3: Strict parameter filtering
+        Skip non-user-controllable parameters to reduce false positives
+        
+        Returns: True if parameter should be skipped, False if should be tested
+        """
+        # SKIP: External intelligence parameters (metadata, not user input)
+        skip_prefixes = [
+            "external_intel_",  # CRTSH, ASN, etc - read-only data
+            "crawler_",         # Crawler-generated, not real params
+            "static_",          # Static/readonly
+            "config_",          # Configuration params
+            "cache_",           # Cache parameters
+        ]
+        
+        for prefix in skip_prefixes:
+            if param_name.lower().startswith(prefix):
+                return True
+        
+        # SKIP: Known static parameters
+        skip_params = {
+            "utm_source", "utm_medium", "utm_campaign",  # Analytics
+            "fbclid", "gclid", "msclkid",               # Tracking IDs
+            "ref", "referrer",                          # Referrers
+            "timestamp", "nonce", "state",              # Tokens/state
+            "callback",                                  # Callbacks (legitimate use)
+            "format", "type",                           # Format params
+            "lang", "language", "locale",               # Localization
+            "version", "v",                             # Version params
+        }
+        
+        if param_name.lower() in skip_params:
+            return True
+        
+        # Otherwise: INCLUDE this parameter for testing
+        return False
+
 
     def run_service_fingerprinting(self) -> List[Dict]:
         """Fingerprint discovered services and ports to improve attack context."""

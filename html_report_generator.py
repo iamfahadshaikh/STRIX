@@ -171,6 +171,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <div class="section">
+            <h2>⚔️ Phase 5: Confirmed Active Exploitation</h2>
+            {confirmed_exploitation_html}
+        </div>
+
+        <div class="section">
+            <h2>🔦 Service Fingerprinting Results</h2>
+            {service_fingerprints_html}
+        </div>
+
+        <div class="section">
+            <h2>🎯 Prioritized Subdomain Targets</h2>
+            {prioritized_subdomains_html}
+        </div>
+
+        <div class="section">
             <h2>📌 Coverage Gaps</h2>
             {coverage_section_html}
         </div>
@@ -197,6 +212,9 @@ class HTMLReportGenerator:
         discovery_summary: Optional[Dict[str, Any]] = None,
         findings_summary: Optional[Dict[str, Any]] = None,
         security_strengths: Optional[List[str]] = None,
+        confirmed_exploitation: Optional[Dict[str, Any]] = None,
+        service_fingerprints: Optional[List[Dict[str, Any]]] = None,
+        prioritized_subdomains: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Generate HTML report from intelligence data."""
         
@@ -248,6 +266,11 @@ class HTMLReportGenerator:
         target_intel_html = HTMLReportGenerator._render_target_intel(target, discovery_summary)
         strengths_section_html = HTMLReportGenerator._render_strengths(security_strengths or [])
         
+        # PHASE 5: Confirmed exploitation findings (new)
+        confirmed_exploitation_html = HTMLReportGenerator._render_confirmed_exploitation(confirmed_exploitation)
+        service_fingerprints_html = HTMLReportGenerator._render_service_fingerprints(service_fingerprints or [])
+        prioritized_subdomains_html = HTMLReportGenerator._render_prioritized_subdomains(prioritized_subdomains or [])
+        
         # Fill template
         html = HTML_TEMPLATE.format(
             target=target,
@@ -269,7 +292,10 @@ class HTMLReportGenerator:
             remediation_queue_html=remediation_queue_html,
             vuln_section_html=vuln_section_html,
             risk_section_html=risk_section_html,
-            coverage_section_html=coverage_section_html
+            coverage_section_html=coverage_section_html,
+            confirmed_exploitation_html=confirmed_exploitation_html,
+            service_fingerprints_html=service_fingerprints_html,
+            prioritized_subdomains_html=prioritized_subdomains_html
         )
         
         # Write to file
@@ -740,3 +766,127 @@ class HTMLReportGenerator:
             {''.join(owasp_rows) or '<p>No OWASP-mapped findings.</p>'}
         </div>
         """
+    
+    @staticmethod
+    def _render_confirmed_exploitation(confirmed_exploitation: Optional[Dict[str, Any]]) -> str:
+        """Render Phase 5 confirmed active exploitation findings."""
+        if not confirmed_exploitation:
+            return "<p>No confirmed exploitations detected.</p>"
+        
+        summary = confirmed_exploitation.get("summary", {})
+        total = summary.get("total_confirmed", 0)
+        severity_breakdown = summary.get("by_severity", {})
+        by_type = summary.get("by_type", {})
+        
+        # Build summary cards
+        summary_html = f"""
+        <div class="stats-grid">
+            <div class="stat-card"><div class="label">Total Confirmed</div><div class="value">{total}</div></div>
+            <div class="stat-card"><div class="label">CRITICAL SQLi</div><div class="value severity-critical">{by_type.get('SQLi', 0)}</div></div>
+            <div class="stat-card"><div class="label">HIGH SSRF</div><div class="value severity-high">{by_type.get('SSRF', 0)}</div></div>
+            <div class="stat-card"><div class="label">HIGH XSS</div><div class="value severity-high">{by_type.get('XSS', 0)}</div></div>
+        </div>
+        """
+        
+        # Build findings cards
+        findings_html = ""
+        findings_list = confirmed_exploitation.get("findings", [])
+        for finding in findings_list[:15]:  # Show top 15
+            ftype = finding.get("type", "Unknown")
+            severity = finding.get("severity", "MEDIUM").lower()
+            endpoint = finding.get("endpoint", "?")
+            param = finding.get("parameter", "?")
+            confidence = int(finding.get("confidence", 0) * 100)
+            proof_type = finding.get("proof_type", "response_diff")
+            
+            findings_html += f"""
+            <div class="finding-card {severity}">
+                <div class="finding-header">
+                    <div class="finding-title">{ftype}</div>
+                    <div>
+                        <span class="badge badge-{severity}">{severity.upper()}</span>
+                        <span class="badge badge-info">{proof_type}</span>
+                    </div>
+                </div>
+                <div class="finding-meta">
+                    <strong>Location:</strong> {endpoint} [{param}]<br>
+                    <strong>Confidence:</strong> {confidence}%
+                </div>
+            </div>
+            """
+        
+        return summary_html + findings_html if findings_html else summary_html + "<p>No detailed exploitation findings available.</p>"
+    
+    @staticmethod
+    def _render_service_fingerprints(fingerprints: List[Dict[str, Any]]) -> str:
+        """Render service fingerprinting results."""
+        if not fingerprints:
+            return "<p>No service fingerprints detected.</p>"
+        
+        rows = []
+        for fp in fingerprints:
+            host = fp.get("host", "?")
+            port = fp.get("port", "?")
+            protocol = fp.get("protocol", "unknown")
+            service = fp.get("service", "unknown")
+            version = fp.get("version", "unknown")
+            tech_stack = fp.get("technology_stack", []) or []
+            confidence = int(fp.get("confidence", 0) * 100)
+            
+            tech_html = "".join(f'<span class="tool-tag">{t}</span>' for t in tech_stack[:3])
+            
+            rows.append(f"""
+            <tr>
+                <td><strong>{host}:{port}</strong></td>
+                <td>{protocol}/{service}</td>
+                <td>{version}</td>
+                <td>{tech_html}</td>
+                <td><strong>{confidence}%</strong></td>
+            </tr>
+            """)
+        
+        return f"""
+        <div class="chart-container">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead style="background: #f8f9fa;">
+                    <tr>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Host:Port</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Protocol</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Version</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Tech Stack</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {''.join(rows)}
+                </tbody>
+            </table>
+        </div>
+        """
+    
+    @staticmethod
+    def _render_prioritized_subdomains(subdomains: List[Dict[str, Any]]) -> str:
+        """Render subdomain prioritization results."""
+        if not subdomains:
+            return "<p>No prioritized subdomains detected.</p>"
+        
+        rows = []
+        for idx, subdomain in enumerate(subdomains[:15], 1):  # Show top 15
+            name = subdomain.get("subdomain", "?")
+            score = float(subdomain.get("score", 0))
+            param_count = subdomain.get("parameter_count", 0)
+            
+            rows.append(f"""
+            <div class="finding-card low" style="margin-bottom: 10px;">
+                <div class="finding-header">
+                    <div class="finding-title">#{idx}. {name}</div>
+                    <div><span class="badge badge-info">Score: {score:.1f}</span></div>
+                </div>
+                <div class="finding-meta">
+                    <strong>Attack Surface:</strong> {param_count} parameters<br>
+                    <strong>Prioritization Score:</strong> {score:.1f}/100.0 (40% exposure + 25% params + 20% tech + 15% ports)
+                </div>
+            </div>
+            """)
+        
+        return "".join(rows) if rows else "<p>No subdomain prioritization data available.</p>"
