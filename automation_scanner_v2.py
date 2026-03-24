@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 
@@ -43,6 +44,15 @@ from payload_execution_validator import PayloadExecutionValidator, PayloadOutcom
 from report_coverage_analyzer import ReportCoverageAnalyzer, BlockReason
 from vulnerability_centric_reporter import VulnerabilityCentricReporter
 from risk_aggregation import RiskAggregator
+from response_diffing_engine import ResponseDiffingEngine
+from oob_callback_system import OOBCallbackSystem
+from ssrf_exploitation_engine import SSRFExploitationEngine
+from xss_exploitation_engine import XSSExploitationEngine
+from sqli_exploitation_engine import SQLinjectionEngine
+from adaptive_fuzzing_engine import AdaptiveFuzzingEngine
+from service_fingerprinting_engine import ServiceFingerprintingEngine
+from subdomain_prioritization import SubdomainPrioritizationEngine
+from proof_based_reporter import ProofBasedReporter, ConfirmationMethod
 
 
 logger = logging.getLogger(__name__)
@@ -147,6 +157,19 @@ class AutomationScannerV2:
         self.external_intel = ExternalIntelAggregator()  # Phase 1: External intel
         self.payload_tracker = PayloadOutcomeTracker()  # Phase 3: Outcome tracking
         self.coverage_analyzer = ReportCoverageAnalyzer()  # Phase 4: Coverage gaps
+        
+        # Phase 5: Exploitation and Active Validation Engines
+        self.response_diffing = ResponseDiffingEngine()  # Response comparison
+        self.oob_system = OOBCallbackSystem()  # Out-of-band callback detection
+        self.ssrf_engine = None  # Initialized after OOB setup
+        self.xss_engine = None  # Initialized in exploitation phase
+        self.sqli_engine = None  # Initialized in exploitation phase
+        self.fuzzing_engine = AdaptiveFuzzingEngine()  # Payload mutation/retry
+        self.fingerprint_engine = ServiceFingerprintingEngine()  # Service identification
+        self.service_fingerprints: List[Dict] = []
+        self.subdomain_prioritizer = SubdomainPrioritizationEngine()  # Attack surface ranking
+        self.prioritized_subdomains: List[Dict] = []
+        self.proof_reporter = ProofBasedReporter()  # Confirmed findings only
 
         # Error semantics counters for planning influence
         self.error_counters = {
@@ -1745,12 +1768,13 @@ class AutomationScannerV2:
             for gap in self.completeness_report.missing_signals:
                 self.log(f"  - Waiting for: {gap}", "WARN")
         
-        # STRICT: If discovery incomplete AND score < 60 → BLOCK payload tools
+        # STRICT: If discovery incomplete AND score < 60 → BLOCK only heavy web-enum tools.
+        # Active exploitation remains enabled and is validated post-execution.
         if (not self.completeness_report.complete) and score_pct < 60:
             self.log("⏳ BLOCKING payload tools: Discovery still incomplete after tools (score < 60)", "ERROR")
             
             # Mark all payload tools as blocked in ledger
-            for phase_name in ["Exploitation", "WebEnum"]:
+            for phase_name in ["WebEnum"]:
                 for tool in phases[phase_name]["tools"]:
                     self.ledger.record_tool_decision(
                         tool_name=tool,
@@ -1891,6 +1915,20 @@ class AutomationScannerV2:
             self.log(f"⚠️  Blocked tools: {', '.join(gate_report['blocked_tools'])}", "ERROR")
         else:
             self.log(f"✓ Crawler gate passed: {gate_report['endpoints_discovered']} endpoints discovered", "SUCCESS")
+
+        # PHASE 5: Active exploitation always runs and is filtered only at proof/report stage
+        if self.initialize_exploitation_engines():
+            scheme = "https" if self.profile.is_https else "http"
+            base_url = f"{scheme}://{self.profile.host}"
+            fallback_endpoints = self._build_fallback_endpoints_for_exploitation()
+            exploitation_findings = self.run_active_exploitation(base_url, endpoints=fallback_endpoints)
+            self.log(f"Exploitation phase complete: {len(exploitation_findings)} findings from active testing", "INFO")
+        else:
+            self.log("Exploitation engines failed to initialize - skipping active testing", "WARN")
+
+        # Service visibility and target ranking feed prioritization logic.
+        self.run_service_fingerprinting()
+        self.prioritized_subdomains = self.prioritize_subdomain_targets()
         
         total = len(plan)
         builder_payload_tools = {"dalfox", "sqlmap", "commix"}
@@ -1926,18 +1964,8 @@ class AutomationScannerV2:
 
                 if not targets or not targets.can_run:
                     reason = targets.reason if targets else "Gated by crawl analysis (no targets)"
-                    self.log(f"[{tool_name}] BLOCKED by strict gating: {reason}", "WARN")
-                    self.execution_results.append({
-                        "tool": tool_name,
-                        "outcome": ToolOutcome.BLOCKED.value,
-                        "reason": reason,
-                        "duration": 0,
-                        "category": meta.get("category", "Exploitation"),
-                        "status": "BLOCKED",
-                        "failure_reason": "blocked_by_gating",
-                    })
-                    continue
-                gated_targets = targets.to_dict()
+                    self.log(f"[{tool_name}] strict gating advisory only: {reason} (continuing execution)", "WARN")
+                gated_targets = targets.to_dict() if targets else None
 
             # Payload tools must use crawler-derived commands only
             if tool_name in builder_payload_tools and self.payload_command_builder:
@@ -2181,6 +2209,8 @@ class AutomationScannerV2:
         }
         coverage_report["manual_out_of_scope"] = self.manual_out_of_scope_report
 
+        proof_report = self.generate_proof_based_final_report()
+
         report = {
             "profile": self.profile.to_dict(),
             "ledger": self.ledger.to_dict(),
@@ -2223,6 +2253,10 @@ class AutomationScannerV2:
             "vulnerabilities": vulnerability_report,
             # Phase 4: Business risk aggregation
             "risk_aggregation": risk_report,
+            # Phase 5: Proof-based confirmed exploitation findings
+            "confirmed_exploitation": proof_report,
+            "service_fingerprints": self.service_fingerprints,
+            "prioritized_subdomains": self.prioritized_subdomains,
             "manual_out_of_scope": self.manual_out_of_scope_report,
         }
 
@@ -2464,6 +2498,266 @@ class AutomationScannerV2:
                 "level": level,
             }
         return confidence
+    
+    # ============================================================================
+    # PHASE 5: ACTIVE EXPLOITATION AND PROOF-BASED VALIDATION
+    # ============================================================================
+    
+    def initialize_exploitation_engines(self) -> bool:
+        """
+        Initialize all exploitation engines for active vulnerability testing
+        
+        Returns: True if initialization successful, False otherwise
+        """
+        try:
+            self.log("Initializing exploitation engines...", "INFO")
+            
+            # Start OOB callback server (required for blind vulnerability detection)
+            if not self.oob_system.start_callback_server():
+                self.log("Warning: OOB callback server failed to start", "WARN")
+            else:
+                self.log(f"OOB callback server started on {self.oob_system.external_ip}:{self.oob_system.port}", "SUCCESS")
+            
+            # Initialize exploitation engines with shared diffing engine
+            self.ssrf_engine = SSRFExploitationEngine(
+                response_diffing_engine=self.response_diffing,
+                oob_system=self.oob_system
+            )
+            
+            self.xss_engine = XSSExploitationEngine(
+                response_diffing_engine=self.response_diffing,
+                fuzzing_engine=self.fuzzing_engine
+            )
+            
+            self.sqli_engine = SQLinjectionEngine(
+                response_diffing_engine=self.response_diffing,
+                fuzzing_engine=self.fuzzing_engine
+            )
+            
+            self.log("All exploitation engines initialized", "SUCCESS")
+            return True
+        
+        except Exception as e:
+            self.log(f"Error initializing exploitation engines: {e}", "ERROR")
+            return False
+    
+    def run_active_exploitation(self, base_url: str, endpoints: Optional[List[Dict]] = None) -> List[Dict]:
+        """
+        Run active exploitation against discovered endpoints
+        
+        Args:
+            base_url: Base URL of target (scheme + host)
+            endpoints: List of discovered endpoints from crawler (optional)
+        
+        Returns: List of exploitation results
+        """
+        self.log("PHASE 5: ACTIVE EXPLOITATION - Attempting to validate vulnerabilities with proof", "INFO")
+        
+        exploitation_results = []
+        
+        # Endpoints can come from graph or fallback cache-derived targets.
+        if endpoints:
+            endpoints_to_test = endpoints
+        elif self.endpoint_graph and self.endpoint_graph.endpoints:
+            endpoints_to_test = self.endpoint_graph.endpoints
+        else:
+            endpoints_to_test = self._build_fallback_endpoints_for_exploitation()
+        
+        if not endpoints_to_test:
+            self.log("No endpoints discovered - skipping active exploitation", "WARN")
+            return []
+        
+        self.log(f"Testing {len(endpoints_to_test)} endpoint(s) for active vulnerabilities...", "INFO")
+        
+        # Create session for exploitation (reuses cookies across attempts)
+        import requests
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "VAPT-Automated-Engine/1.0 (Vulnerability Assessment)"
+        })
+        
+        # Test each endpoint
+        for endpoint_obj in endpoints_to_test[:10]:  # Limit to top 10 to avoid timeout
+            endpoint = endpoint_obj.get("url") if isinstance(endpoint_obj, dict) else str(endpoint_obj)
+            params = endpoint_obj.get("params", []) if isinstance(endpoint_obj, dict) else []
+            method = endpoint_obj.get("method", "GET").upper() if isinstance(endpoint_obj, dict) else "GET"
+            
+            if not params:
+                self.log(f"Skipping {endpoint} - no parameters", "DEBUG")
+                continue
+            
+            self.log(f"Testing {endpoint} ({method}) with {len(params)} parameter(s)", "INFO")
+            
+            # Test each parameter
+            for param in params[:3]:  # Limit params to avoid timeout
+                param_name = param.get("name") if isinstance(param, dict) else str(param)
+                
+                # Try SSRF exploitation
+                try:
+                    ssrf_result = self.ssrf_engine.exploit_ssrf(
+                        endpoint=endpoint,
+                        parameter=param_name,
+                        base_url=base_url,
+                        http_method=method,
+                        session=session
+                    )
+                    if ssrf_result:
+                        exploitation_results.append(ssrf_result)
+                        # Add to proof-based reporter
+                        self.proof_reporter.add_from_exploitation_result(ssrf_result)
+                except Exception as e:
+                    self.log(f"SSRF exploitation error: {e}", "DEBUG")
+                
+                # Try XSS exploitation
+                try:
+                    xss_result = self.xss_engine.exploit_xss(
+                        endpoint=endpoint,
+                        parameter=param_name,
+                        base_url=base_url,
+                        http_method=method,
+                        session=session
+                    )
+                    if xss_result:
+                        exploitation_results.append(xss_result)
+                        self.proof_reporter.add_from_exploitation_result(xss_result)
+                except Exception as e:
+                    self.log(f"XSS exploitation error: {e}", "DEBUG")
+                
+                # Try SQL injection exploitation
+                try:
+                    sqli_result = self.sqli_engine.exploit_sqli(
+                        endpoint=endpoint,
+                        parameter=param_name,
+                        base_url=base_url,
+                        http_method=method,
+                        session=session
+                    )
+                    if sqli_result:
+                        exploitation_results.append(sqli_result)
+                        self.proof_reporter.add_from_exploitation_result(sqli_result)
+                except Exception as e:
+                    self.log(f"SQLi exploitation error: {e}", "DEBUG")
+        
+        # Wait for OOB callbacks
+        self.log("Waiting for out-of-band callbacks (5 seconds)...", "INFO")
+        import time
+        time.sleep(5)
+        
+        # Check OOB callbacks
+        oob_confirmed = self.ssrf_engine.check_oob_callbacks()
+        for oob_finding in oob_confirmed:
+            exploitation_results.append(oob_finding)
+            self.proof_reporter.add_from_exploitation_result(oob_finding)
+        
+        self.log(f"Exploitation phase complete: {len(exploitation_results)} vulnerabilities found", "INFO")
+        
+        return exploitation_results
+
+    def _build_fallback_endpoints_for_exploitation(self) -> List[Dict]:
+        """Build minimal endpoint/param targets from discovery cache when crawler graph is unavailable."""
+        fallback_targets: List[Dict] = []
+        if not self.cache:
+            return fallback_targets
+
+        endpoints = sorted(self.cache.live_endpoints or self.cache.endpoints)
+        params = sorted(self.cache.params)
+        if not endpoints or not params:
+            return fallback_targets
+
+        for endpoint in endpoints[:10]:
+            fallback_targets.append({
+                "url": endpoint,
+                "method": "GET",
+                "params": [{"name": p} for p in params[:5]],
+            })
+
+        return fallback_targets
+
+    def run_service_fingerprinting(self) -> List[Dict]:
+        """Fingerprint discovered services and ports to improve attack context."""
+        try:
+            host = self.profile.host
+            ports = self.cache.get_discovered_ports() if self.cache else []
+            if not ports:
+                ports = [80, 443, 8080, 8081]
+
+            self.log(f"Running service fingerprinting on {host} ports: {ports}", "INFO")
+            fingerprints = self.fingerprint_engine.fingerprint_port_range(host, ports, use_common_only=False)
+            self.service_fingerprints = [fp.to_dict() for fp in fingerprints]
+            self.log(f"Service fingerprinting complete: {len(self.service_fingerprints)} service(s) identified", "INFO")
+            return self.service_fingerprints
+        except Exception as e:
+            self.log(f"Service fingerprinting failed: {e}", "WARN")
+            self.service_fingerprints = []
+            return []
+    
+    def prioritize_subdomain_targets(self) -> List[Dict]:
+        """
+        Prioritize discovered subdomains for assessment
+        
+        Returns: Ordered list of high-priority targets
+        """
+        if not self.cache or not self.cache.subdomains:
+            return []
+        
+        self.log("Prioritizing discovered subdomains by attack surface...", "INFO")
+
+        fp_by_host: Dict[str, List[Dict]] = {}
+        for fp in self.service_fingerprints:
+            fp_by_host.setdefault(fp.get("host", ""), []).append(fp)
+        
+        for subdomain in self.cache.subdomains:
+            # Analyze subdomain characteristics
+            param_count = len(self.cache.params)
+            host_fps = fp_by_host.get(subdomain, [])
+            tech_stack: List[str] = []
+            open_ports: List[int] = []
+            for host_fp in host_fps:
+                tech_stack.extend(host_fp.get("technology_stack", []) or [])
+                if host_fp.get("port"):
+                    open_ports.append(int(host_fp["port"]))
+            
+            self.subdomain_prioritizer.add_subdomain(
+                subdomain=subdomain,
+                parameter_count=param_count,
+                has_auth=False,  # TODO: detect from cache/auth adapter
+                tech_stack=sorted(set(tech_stack)),
+                open_ports=sorted(set(open_ports))
+            )
+        
+        # Get prioritized list
+        recommendations = self.subdomain_prioritizer.recommend_attack_order()
+        
+        if recommendations:
+            self.log(f"Top priority targets (by attack surface):", "INFO")
+            for i, rec in enumerate(recommendations[:5], 1):
+                self.log(f"  {i}. {rec['subdomain']} (score: {rec['score']:.1f}) - {rec['reason']}", "INFO")
+        
+        return recommendations
+    
+    def generate_proof_based_final_report(self) -> Dict:
+        """
+        Generate final report showing ONLY confirmed vulnerabilities with proof
+        
+        Returns: Report dict with confirmed findings only
+        """
+        self.log("Generating proof-based vulnerability report...", "INFO")
+        
+        report = self.proof_reporter.generate_report()
+        
+        # Log summary
+        self.log(f"FINAL REPORT: {report['summary']['total_confirmed']} confirmed vulnerabilities", "INFO")
+        
+        if report['statistics']['critical'] > 0:
+            self.log(f"  🔴 CRITICAL: {report['statistics']['critical']}", "ERROR")
+        if report['statistics']['high'] > 0:
+            self.log(f"  🔴 HIGH: {report['statistics']['high']}", "WARN")
+        if report['statistics']['medium'] > 0:
+            self.log(f"  🟡 MEDIUM: {report['statistics']['medium']}", "INFO")
+        if report['statistics']['low'] > 0:
+            self.log(f"  🟢 LOW: {report['statistics']['low']}", "INFO")
+        
+        return report
 
 
 def main() -> None:
