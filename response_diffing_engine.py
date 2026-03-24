@@ -190,45 +190,72 @@ class ResponseDiffingEngine:
                             payload: str, endpoint: str) -> DiffResult:
         """
         Apply multiple diffing strategies to find evidence of vulnerability
+        STRICT VALIDATION: All scores raised to 0.7+ minimum for vulnerabilities
         
         Returns DiffResult with highest confidence score from all strategies
         """
         strategies_scores = {}
         
-        # Strategy 1: Status code change
+        # Strategy 1: Status code change - STRICT
+        # Status code changes have many benign causes (redirects, error handling)
+        # Accept only specific exploitation indicators
         status_changed = baseline.status_code != payload_response.status_code
-        status_score = 0.35 if status_changed else 0.0
+        status_score = 0.0  # Raised from 0.35 - status code alone is NOT proof
+        if status_changed and payload_response.status_code in [403, 404, 500]:
+            # Only accept if payload triggers error (potential vulnerability indicator)
+            status_score = 0.65  # Still high bar
         strategies_scores[DiffingStrategy.STATUS_CODE] = status_score
         
-        # Strategy 2: Content length change
+        # Strategy 2: Content length change - STRICT
+        # Require substantial length difference (>20%) for meaningful evidence
         length_changed = baseline.content_length != payload_response.content_length
         length_diff = abs(baseline.content_length - payload_response.content_length)
-        length_score = min(0.40, length_diff / (baseline.content_length or 1) * 0.5) if length_changed else 0.0
+        length_diff_percent = (length_diff / (baseline.content_length or 1)) * 100
+        
+        if length_changed and length_diff_percent > 20:  # Raised threshold from any % to 20%
+            length_score = min(0.75, 0.65 + (length_diff_percent / 200))  # 0.65-0.75 range
+        else:
+            length_score = 0.0  # Raised from 0.40 - minor changes are noise
         strategies_scores[DiffingStrategy.LENGTH_CHANGE] = length_score
         
-        # Strategy 3: Body similarity (sequence matching)
+        # Strategy 3: Body similarity (sequence matching) - STRICT
+        # Only accept substantial structural differences
         similarity = self._calculate_body_similarity(baseline.body, payload_response.body)
-        similarity_score = 0.0 if similarity > 0.95 else (1.0 - similarity) * 0.45
+        if similarity < 0.80:  # Require >20% structural change (raised from 0.95 threshold)
+            similarity_score = 0.70 + ((1.0 - similarity) * 0.25)  # 0.70-0.95 range
+        else:
+            similarity_score = 0.0  # Raised from 0.45 - similar responses are not exploited
         strategies_scores[DiffingStrategy.FUZZY_MATCH] = similarity_score
         
-        # Strategy 4: Payload reflection (for XSS)
+        # Strategy 4: Payload reflection (for XSS) - STRICT
+        # Actual reflection is good evidence; accept at 0.85+
         reflected, context = self._check_reflection(payload, payload_response.body)
-        reflection_score = 0.50 if reflected else 0.0
+        reflection_score = 0.85 if reflected else 0.0  # Raised from 0.50 - must be actual reflection
         strategies_scores[DiffingStrategy.REFLECTION] = reflection_score
         
-        # Strategy 5: Error signature (for SQLi)
+        # Strategy 5: Error signature (for SQLi) - STRICT
+        # Confirmed SQL errors are strong evidence
         error_sig, error_type = self._check_error_signature(payload_response.body)
-        error_score = 0.55 if error_sig else 0.0
+        error_score = 0.85 if error_sig else 0.0  # Raised from 0.55 - must be confirmed error
         strategies_scores[DiffingStrategy.ERROR_SIGNATURE] = error_score
         
-        # Strategy 6: Timing difference (for time-based SQLi)
+        # Strategy 6: Timing difference (for time-based SQLi) - STRICT
+        # Only accept significant delays (>3s for SLEEP(5) payloads)
         timing_diff = abs(payload_response.response_time - baseline.response_time)
-        timing_score = min(0.45, timing_diff / 5.0) if timing_diff > 1.0 else 0.0
+        if timing_diff > 3.0:  # Strict: require >3s delay (raised from 1.0)
+            timing_score = 0.75 + min(0.2, timing_diff / 20)  # 0.75-0.95 range
+        else:
+            timing_score = 0.0  # Raised from 0.45 - small delays are noise
         strategies_scores[DiffingStrategy.TIMING] = timing_score
         
         # Select best strategy
         best_strategy = max(strategies_scores.items(), key=lambda x: x[1])
         best_strategy_enum, best_confidence = best_strategy
+        
+        # GLOBAL THRESHOLD: Minimum 0.7 confidence for acceptance
+        if best_confidence < 0.70:
+            best_confidence = 0.0  # Raised threshold from 0.35 to 0.70
+            logger.debug(f"Diff result for {endpoint}: below 0.7 threshold, rejecting")
         
         # Build comprehensive DiffResult
         diff_result = DiffResult(
@@ -247,7 +274,7 @@ class ResponseDiffingEngine:
         # Add analysis notes
         diff_result.analysis_notes = [
             f"Status code: {baseline.status_code} → {payload_response.status_code}",
-            f"Body size: {baseline.content_length} → {payload_response.content_length} bytes",
+            f"Body size: {baseline.content_length} → {payload_response.content_length} bytes ({length_diff_percent:.1f}% change)",
             f"Similarity: {similarity*100:.1f}%",
             f"Response time: {baseline.response_time:.2f}s → {payload_response.response_time:.2f}s",
         ]
@@ -256,8 +283,9 @@ class ResponseDiffingEngine:
         if error_sig:
             diff_result.analysis_notes.append(f"Error signature detected: {error_type}")
         
-        logger.info(f"Diff result for {endpoint}: {best_strategy_enum.value} "
-                   f"({best_confidence:.2f} confidence)")
+        if best_confidence >= 0.70:
+            logger.info(f"Diff result for {endpoint}: {best_strategy_enum.value} "
+                       f"({best_confidence:.2f} confidence) - ACCEPTED")
         
         return diff_result
     
@@ -317,9 +345,10 @@ class ResponseDiffingEngine:
         }
     
     def has_evidence_of_exploitation(self, endpoint: str, 
-                                     confidence_threshold: float = 0.35) -> bool:
+                                     confidence_threshold: float = 0.70) -> bool:
         """
         Check if we have high-confidence evidence of exploitation for endpoint
+        STRICT: Threshold raised from 0.35 to 0.70 for genuine proof
         """
         diffs = [d for k, d in self.diffs.items() if k.startswith(endpoint)]
         return any(d.confidence >= confidence_threshold for d in diffs)
