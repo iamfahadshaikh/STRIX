@@ -179,6 +179,46 @@ class PayloadExecutionValidator:
             # Unknown tool - allow by default (nuclei, etc.)
             return True, "unknown_tool_allowed"
 
+    @staticmethod
+    def validate_exploitation_proof(vuln_type: str, proof: Dict, confidence: float) -> Tuple[bool, str]:
+        """Global hard gate: accept only proof-backed exploitation signals."""
+        vuln = str(vuln_type or "").strip().upper()
+        proof = proof if isinstance(proof, dict) else {}
+        conf = float(confidence or 0.0)
+
+        if vuln in {"SQLI", "SQL", "SQL INJECTION"}:
+            has_error = bool(proof.get("found_error") or proof.get("error_signature_found"))
+            has_boolean = bool(proof.get("response_different") and proof.get("significant_diff"))
+            time_diff = float(proof.get("time_difference", 0.0) or 0.0)
+            has_timing = time_diff > 3.0
+            if conf > 0.85 and (has_error or has_boolean or has_timing):
+                return True, "validated_sqli"
+            return False, "rejected_sqli_missing_strong_proof"
+
+        if vuln == "XSS":
+            reflected = bool(proof.get("payload_reflected"))
+            exploitable = bool(proof.get("exploitable_context") or proof.get("vulnerable"))
+            dynamic = bool(proof.get("dynamic_validation", {}).get("executed"))
+            if conf > 0.85 and reflected and (exploitable or dynamic):
+                return True, "validated_xss"
+            return False, "rejected_xss_non_exploitable_reflection"
+
+        if vuln == "SSRF":
+            method = str(proof.get("validation_method") or "").lower()
+            indicator = str(proof.get("indicator") or "").lower()
+            evidence_text = str(proof.get("evidence") or "").lower()
+            has_oob = bool(proof.get("callback_id") or "callback" in method)
+            has_metadata = any(k in indicator or k in evidence_text for k in ["metadata", "iam", "vpc", "subnet"])
+            has_file = any(k in indicator or k in evidence_text for k in ["file content", "root:", "windir", "system32"])
+            if conf > 0.90 and (has_oob or has_metadata or has_file):
+                return True, "validated_ssrf"
+            return False, "rejected_ssrf_weak_signal"
+
+        # Default for unsupported categories: require high confidence.
+        if conf >= 0.90:
+            return True, "validated_high_confidence"
+        return False, "rejected_unknown_type_low_confidence"
+
 
 class PayloadOutcomeTracker:
     """Track payload execution outcomes"""

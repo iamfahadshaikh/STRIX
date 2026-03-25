@@ -26,6 +26,15 @@ from urllib3.util.retry import Retry
 logger = logging.getLogger(__name__)
 
 
+DEBUG_PAGE_MARKERS = [
+    "you're seeing this error because you have debug = true",
+    "django version",
+    "using the urlconf defined in",
+    "the current path",
+    "url patterns",
+]
+
+
 @dataclass
 class LightCrawlResult:
     """Lightweight crawl output"""
@@ -62,6 +71,9 @@ class LightCrawler:
         self.forms: List[Dict] = []
         self.js_endpoints: Set[str] = set()
         self.api_endpoints: Set[str] = set()
+        self.leaked_routes: Set[str] = set()
+        self.debug_page_exposed = False
+        self.debug_indicators: Set[str] = set()
         self.session = self._create_session()
 
     def _create_session(self) -> requests.Session:
@@ -95,6 +107,9 @@ class LightCrawler:
             
             # Extract from HTML
             self._extract_from_html(resp.text, self.target)
+            self._extract_api_candidates_from_text(resp.text, self.target)
+            self._detect_debug_page(resp.text, self.target)
+            self._probe_api_entrypoints(self.target)
             
             logger.info(f"[LightCrawl] Crawl complete: {len(self.endpoints)} endpoints found")
             return True
@@ -120,7 +135,7 @@ class LightCrawler:
                 self.endpoints.add(full_url)
                 
                 # Check if API endpoint
-                if '/api/' in full_url.lower():
+                if self._is_api_like_path(full_url):
                     self.api_endpoints.add(full_url)
                 elif full_url.endswith('.js'):
                     self.js_endpoints.add(full_url)
@@ -164,6 +179,204 @@ class LightCrawler:
                         self.parameters[key] = set()
                     self.parameters[key].update(vals)
 
+    def _extract_api_candidates_from_text(self, html: str, page_url: str):
+        """Extract API-looking routes from raw page text (including debug pages)."""
+        text = html or ""
+
+        # Paths such as /api/users, api/v1/login, '/api/token/' often leak in debug pages.
+        path_pattern = r"(?:['\"(\s]|^)((?:/)?api(?:/[A-Za-z0-9._~!$&()*+,;=:@%-]*)?/?)(?=$|['\"\s<>)\]])"
+        for match in re.finditer(path_pattern, text, re.IGNORECASE):
+            candidate = (match.group(1) or "").strip()
+            if not candidate:
+                continue
+            if not candidate.startswith("/"):
+                candidate = "/" + candidate
+            self._register_endpoint_candidate(candidate, page_url, is_api_hint=True)
+
+    def _probe_api_entrypoints(self, page_url: str):
+        """Probe common API roots when initial crawl finds mostly static assets."""
+        probe_paths = [
+            "/api",
+            "/api/",
+            "/api/v1",
+            "/api/v1/",
+            "/api/customer-account/",
+            "/api/base/",
+            "/api/project/",
+            "/api/upload_data/",
+            "/swagger",
+            "/swagger/",
+            "/swagger.json",
+            "/openapi.json",
+            "/v3/api-docs",
+        ]
+        valid_statuses = {200, 201, 202, 204, 301, 302, 307, 308, 401, 403, 405, 500}
+
+        for path in probe_paths:
+            url = urljoin(page_url, path)
+            if not self._is_same_domain(url, page_url):
+                continue
+            try:
+                resp = self.session.get(url, timeout=min(self.timeout, 8), verify=False)
+            except requests.exceptions.RequestException:
+                continue
+
+            if resp.status_code in valid_statuses:
+                self.endpoints.add(url)
+                if self._is_api_like_path(url):
+                    self.api_endpoints.add(url)
+
+                if resp.text:
+                    self._extract_api_candidates_from_text(resp.text, page_url)
+                    self._detect_debug_page(resp.text, url)
+                    self._extract_openapi_paths(resp.text, page_url)
+
+    def _extract_openapi_paths(self, content: str, page_url: str):
+        """Extract endpoint paths from OpenAPI/Swagger JSON content."""
+        text = (content or "").strip()
+        if not text:
+            return
+
+        if '"paths"' not in text and "'paths'" not in text:
+            return
+
+        try:
+            data = json.loads(text)
+        except Exception:
+            return
+
+        paths = data.get("paths") if isinstance(data, dict) else None
+        if not isinstance(paths, dict):
+            return
+
+        for raw_path, methods in paths.items():
+            if not isinstance(raw_path, str):
+                continue
+            cleaned_path = raw_path.strip()
+            if not cleaned_path:
+                continue
+
+            # Normalize path params and track parameter hints.
+            normalized = re.sub(r"\{[^}]+\}", "{param}", cleaned_path)
+            for _ in re.finditer(r"\{param\}", normalized):
+                if "id" not in self.parameters:
+                    self.parameters["id"] = set()
+                self.parameters["id"].add("")
+
+            self._register_endpoint_candidate(normalized, page_url, is_api_hint=True)
+
+            # Add query/body parameter names from method definitions when present.
+            if isinstance(methods, dict):
+                for _, method_spec in methods.items():
+                    if not isinstance(method_spec, dict):
+                        continue
+                    for p in method_spec.get("parameters", []) or []:
+                        if isinstance(p, dict):
+                            name = p.get("name")
+                            if isinstance(name, str) and name.strip():
+                                if name not in self.parameters:
+                                    self.parameters[name] = set()
+                                self.parameters[name].add("")
+
+    def _register_endpoint_candidate(self, candidate_path: str, page_url: str, is_api_hint: bool = False):
+        """Normalize, scope, and register a candidate endpoint path."""
+        full_url = urljoin(page_url, candidate_path)
+        if not self._is_same_domain(full_url, page_url):
+            return
+
+        self.endpoints.add(full_url)
+        if is_api_hint or self._is_api_like_path(full_url):
+            self.api_endpoints.add(full_url)
+            self.leaked_routes.add(full_url)
+
+    def _is_api_like_path(self, url_or_path: str) -> bool:
+        """Return True for /api, /api/*, and versioned API styles."""
+        try:
+            parsed = urlparse(url_or_path)
+            path = (parsed.path or url_or_path or "").lower()
+        except Exception:
+            path = (url_or_path or "").lower()
+
+        return bool(re.search(r"(^|/)api(?:/|$)", path))
+
+    def _detect_debug_page(self, html: str, page_url: str):
+        """Detect exposed framework debug pages and collect evidence."""
+        if not html:
+            return
+
+        lower = html.lower()
+        hits = [m for m in DEBUG_PAGE_MARKERS if m in lower]
+        if hits:
+            self.debug_page_exposed = True
+            self.debug_indicators.update(hits)
+            self._extract_api_candidates_from_text(html, page_url)
+            self._extract_django_url_patterns(html, page_url)
+
+    def _extract_django_url_patterns(self, html: str, page_url: str):
+        """Extract endpoint paths from Django DEBUG 404 URL pattern listing."""
+        lines = [ln.strip() for ln in (html or "").splitlines()]
+        if not lines:
+            return
+
+        in_patterns = False
+        base_prefix = ""
+
+        for line in lines:
+            if not in_patterns:
+                if "django tried these url patterns" in line.lower():
+                    in_patterns = True
+                continue
+
+            # End section when Django switches to mismatch/debug explanation.
+            if "didn't match any of these" in line.lower() or "debug = true" in line.lower():
+                break
+
+            # Remove numbering (e.g., "12.") and normalize whitespace.
+            line = re.sub(r"^\d+\.\s*", "", line)
+            line = re.sub(r"\s+", " ", line).strip()
+            if not line:
+                continue
+
+            # Remove trailing [name='...'] metadata.
+            line = re.sub(r"\s*\[name=.*?\]\s*$", "", line)
+            if not line:
+                continue
+
+            # Ignore obvious non-route lines.
+            if line.lower().startswith("the current path"):
+                continue
+
+            # Handle split routes like "api/customer-account/ request-otp/".
+            parts = line.split(" ")
+            candidate = ""
+            if len(parts) >= 2 and parts[0].startswith("api/"):
+                candidate = parts[0].rstrip("/") + "/" + parts[1].lstrip("/")
+            else:
+                candidate = parts[0]
+
+            candidate = candidate.strip()
+            if not candidate:
+                continue
+
+            # Track base prefix from entries like "api/customer-account/".
+            if candidate.startswith("api/") and candidate.endswith("/") and "<" not in candidate and len(parts) == 1:
+                base_prefix = candidate
+
+            # If this line is a leaf route and we have a prefix, compose full path.
+            if base_prefix and not candidate.startswith("api/") and not candidate.startswith("admin/"):
+                candidate = base_prefix.rstrip("/") + "/" + candidate.lstrip("/")
+
+            # Convert Django typed converters into a stable placeholder path segment.
+            candidate = re.sub(r"<[^>]+>", "{param}", candidate)
+
+            # Register params from placeholders.
+            for _ in re.finditer(r"\{param\}", candidate):
+                if "id" not in self.parameters:
+                    self.parameters["id"] = set()
+                self.parameters["id"].add("")
+
+            self._register_endpoint_candidate(candidate, page_url, is_api_hint=candidate.startswith("api/"))
+
     def _is_same_domain(self, url: str, base_url: str) -> bool:
         """Check if URL is on same domain as base"""
         try:
@@ -182,10 +395,13 @@ class LightCrawler:
             "forms": len(self.forms),
             "api_endpoints": len(self.api_endpoints),
             "crawled_urls": len(self.endpoints),
+            "debug_page_exposed": self.debug_page_exposed,
+            "debug_indicators": sorted(list(self.debug_indicators))[:10],
             "parameters": {k: list(v) for k, v in self.parameters.items()},
             "endpoints_list": sorted(list(self.endpoints))[:50],
             "forms_list": self.forms[:20],
-            "api_endpoints_list": sorted(list(self.api_endpoints))[:20]
+            "api_endpoints_list": sorted(list(self.api_endpoints))[:20],
+            "leaked_routes": sorted(list(self.leaked_routes))[:50],
         }
 
     def to_json(self) -> str:

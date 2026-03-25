@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import asyncio
 import json
 import logging
 import re
@@ -13,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 
@@ -44,6 +45,7 @@ from payload_execution_validator import PayloadExecutionValidator, PayloadOutcom
 from report_coverage_analyzer import ReportCoverageAnalyzer, BlockReason
 from vulnerability_centric_reporter import VulnerabilityCentricReporter
 from risk_aggregation import RiskAggregator
+from risk_engine import RiskEngine
 from response_diffing_engine import ResponseDiffingEngine
 from oob_callback_system import OOBCallbackSystem
 from ssrf_exploitation_engine import SSRFExploitationEngine
@@ -52,7 +54,31 @@ from sqli_exploitation_engine import SQLinjectionEngine
 from adaptive_fuzzing_engine import AdaptiveFuzzingEngine
 from service_fingerprinting_engine import ServiceFingerprintingEngine
 from subdomain_prioritization import SubdomainPrioritizationEngine
+from ssl_certificate_checker import SSLCertificateChecker
 from proof_based_reporter import ProofBasedReporter, ConfirmationMethod
+from request_context import RequestContextManager
+from js_browser_discovery import JSBrowserDiscovery
+from core.request_engine import RequestEngine
+from core.session_manager import AuthType
+from modules.auth_engine import AuthEngine, LoginConfig
+from modules.idor_engine import IDOREngine
+from modules.access_control_engine import AccessControlEngine
+from auth_utils.param_extractor import ParameterExtractor
+from auth_utils.response_analyzer import ResponseAnalyzer
+from validation_engine import validate_finding_proof
+from param_intelligence import (
+    classify_parameters,
+    filter_controllable,
+    filter_high_confidence,
+)
+from strict_execution_handler import DiscoveryState, check_exploitation_readiness
+from finding_pipeline import get_pipeline
+from zap_adapter import ZAPAdapter
+from api_schema_importer import APISchemaImporter
+from passive_analysis_engine import analyze_headers
+from global_confidence_system import GlobalConfidenceSystem
+from discovery_quality_scorer import score_discovery
+from discovery_metrics import collect_discovery_metrics, assess_discovery_status
 
 
 logger = logging.getLogger(__name__)
@@ -167,9 +193,54 @@ class AutomationScannerV2:
         self.fuzzing_engine = AdaptiveFuzzingEngine()  # Payload mutation/retry
         self.fingerprint_engine = ServiceFingerprintingEngine()  # Service identification
         self.service_fingerprints: List[Dict] = []
+        self.certificate_checker = SSLCertificateChecker()  # TLS chain/expiry validation
+        self.certificate_assessments: List[Dict] = []
+        self.host_network_assessment: List[Dict] = []
         self.subdomain_prioritizer = SubdomainPrioritizationEngine()  # Attack surface ranking
         self.prioritized_subdomains: List[Dict] = []
         self.proof_reporter = ProofBasedReporter()  # Confirmed findings only
+        scheme = "https" if self.profile.is_https else "http"
+        self.request_context = RequestContextManager(f"{scheme}://{self.profile.host}")
+        self.finding_pipeline = get_pipeline()
+        self.zap_adapter = ZAPAdapter(timeout_seconds=300)
+        self.api_schema_importer = APISchemaImporter(timeout=12)
+        self.js_discovery_summary: Dict[str, Any] = {
+            "executed": False,
+            "playwright_used": False,
+            "endpoints": 0,
+            "api_endpoints": 0,
+            "js_assets": 0,
+            "network_requests": 0,
+            "params": 0,
+        }
+        self.zap_discovery_summary: Dict[str, Any] = {
+            "executed": False,
+            "success": False,
+            "endpoints": 0,
+            "params": 0,
+            "alerts": 0,
+        }
+        self.api_schema_summary: Dict[str, Any] = {
+            "executed": False,
+            "success": False,
+            "source": "none",
+            "endpoints": 0,
+            "params": 0,
+        }
+        self.discovery_quality: Dict[str, Any] = {
+            "score": 0,
+            "status": "UNKNOWN",
+            "should_abort_exploitation": False,
+        }
+        self.auth_access_control_summary: Dict[str, Any] = {
+            "executed": False,
+            "enabled_roles": [],
+            "authenticated_roles": [],
+            "endpoints_tested": 0,
+            "idor_findings": 0,
+            "access_control_findings": 0,
+            "errors": [],
+        }
 
         # Error semantics counters for planning influence
         self.error_counters = {
@@ -190,8 +261,6 @@ class AutomationScannerV2:
             f"Runtime Budget: {self.profile.runtime_budget}s "
             f"({self.profile.runtime_budget/60:.1f}m)"
         )
-        self.log(f"Output directory: {self.output_dir}")
-        self.log(f"Correlation ID: {self.correlation_id}")
 
         if self.tool_manager:
             self._ensure_required_tools()
@@ -270,6 +339,456 @@ class AutomationScannerV2:
             "command_params_list": command_params,
             "ssrf_params_list": ssrf_params,
         }
+
+    def _is_api_like_path(self, path: str) -> bool:
+        path_lower = str(path or "").lower()
+        return "/api" in path_lower or path_lower.endswith(".json") or "graphql" in path_lower
+
+    def _run_js_aware_discovery(self, base_url: str) -> None:
+        """Run browser-assisted JS discovery and merge signals into cache."""
+        try:
+            role_headers: Dict[str, Dict[str, str]] = {}
+            for role in self.request_context.active_roles(include_anonymous=False):
+                role_headers[role] = self.request_context.build_headers(role)
+
+            js_discovery = JSBrowserDiscovery(timeout=20, max_pages=20)
+            result = js_discovery.discover(base_url, role_headers=role_headers)
+
+            for endpoint in result.get("endpoints", []):
+                self.cache.add_endpoint(endpoint, source_tool="js_discovery", confidence=0.85)
+                if self._is_api_like_path(endpoint):
+                    self.cache.live_endpoints.add(endpoint)
+
+            for endpoint in result.get("api_endpoints", []):
+                self.cache.add_endpoint(endpoint, source_tool="js_discovery", confidence=0.9)
+                self.cache.live_endpoints.add(endpoint)
+
+            for param in result.get("params", []):
+                self.cache.add_param(param, source_tool="js_discovery", confidence=0.8)
+
+            stats = result.get("stats", {})
+            self.js_discovery_summary = {
+                "executed": True,
+                "success": bool(result.get("success", False)),
+                "playwright_used": bool(result.get("playwright_used", False)),
+                "endpoints": int(stats.get("endpoints", 0)),
+                "api_endpoints": int(stats.get("api_endpoints", 0)),
+                "js_assets": int(stats.get("js_assets", 0)),
+                "network_requests": int(stats.get("network_requests", 0)),
+                "requests_captured": int(result.get("requests_captured", 0)),
+                "api_calls_detected": int(result.get("api_calls_detected", 0)),
+                "params": int(stats.get("params", 0)),
+            }
+            self.log(
+                "JS-aware discovery merged: "
+                f"{self.js_discovery_summary['endpoints']} endpoints, "
+                f"{self.js_discovery_summary['api_endpoints']} API endpoints, "
+                f"{self.js_discovery_summary['params']} params",
+                "INFO",
+            )
+        except Exception as e:
+            self.js_discovery_summary = {
+                "executed": False,
+                "playwright_used": False,
+                "success": False,
+                "endpoints": 0,
+                "api_endpoints": 0,
+                "js_assets": 0,
+                "network_requests": 0,
+                "requests_captured": 0,
+                "api_calls_detected": 0,
+                "params": 0,
+                "error": str(e),
+            }
+            self.log(f"JS-aware discovery failed: {e}", "ERROR")
+            raise
+
+    def _run_zap_enrichment(self, base_url: str) -> None:
+        """Run ZAP API intelligence flow, fallback to baseline docker if API fails."""
+        result = self.zap_adapter.run_intelligence_scan(base_url, include_active_scan=True)
+        if not result.success:
+            self.log(f"ZAP API enrichment failed, trying baseline fallback: {result.error}", "WARN")
+            result = self.zap_adapter.run_baseline_docker(base_url, self.output_dir)
+        as_dict = result.to_dict()
+        self.zap_discovery_summary = {
+            "executed": True,
+            "success": bool(as_dict.get("success", False)),
+            "endpoints": int(as_dict.get("stats", {}).get("endpoints", 0)),
+            "params": int(as_dict.get("stats", {}).get("params", 0)),
+            "alerts": int(as_dict.get("stats", {}).get("alerts", 0)),
+            "headers": int(as_dict.get("stats", {}).get("headers", 0)),
+            "cookies": int(as_dict.get("stats", {}).get("cookies", 0)),
+            "error": as_dict.get("error"),
+        }
+
+        if not result.success:
+            self.log(f"ZAP enrichment failed: {result.error}", "WARN")
+            return
+
+        for endpoint in as_dict.get("endpoints", []):
+            self.cache.add_endpoint(endpoint, source_tool="zap", confidence=0.75)
+            if self._is_api_like_path(endpoint):
+                self.cache.live_endpoints.add(endpoint)
+
+        for param in as_dict.get("params", []):
+            self.cache.add_param(param, source_tool="zap", confidence=0.7)
+
+        # Keep alerts in finding pipeline for later correlation/validation.
+        zap_findings = self.finding_pipeline.ingest_zap_alerts(as_dict.get("alerts", []))
+        if zap_findings:
+            self.finding_pipeline.add_findings(zap_findings)
+
+        self.log(
+            "ZAP enrichment merged: "
+            f"{self.zap_discovery_summary['endpoints']} endpoints, "
+            f"{self.zap_discovery_summary['params']} params, "
+            f"{self.zap_discovery_summary['alerts']} alerts",
+            "INFO",
+        )
+
+    def _run_api_schema_import(self, base_url: str) -> None:
+        """Import OpenAPI/Swagger/GraphQL endpoints as structured targets."""
+        result = self.api_schema_importer.discover(base_url)
+        total_params = 0
+        self.api_schema_summary = {
+            "executed": True,
+            "success": bool(result.success),
+            "source": result.source,
+            "endpoints": len(result.endpoints),
+            "params": 0,
+            "error": result.error,
+        }
+
+        if not result.success:
+            self.log(f"API schema import: {result.error}", "INFO")
+            return
+
+        for item in result.endpoints:
+            endpoint = str(item.get("endpoint", "")).strip()
+            method = str(item.get("method", "GET")).upper()
+            params = item.get("params", []) if isinstance(item.get("params"), list) else []
+            if not endpoint:
+                continue
+            self.cache.add_endpoint(endpoint, source_tool="api_schema", confidence=0.95)
+            self.cache.live_endpoints.add(endpoint)
+            for param in params:
+                self.cache.add_param(str(param), source_tool="api_schema", confidence=0.9)
+                total_params += 1
+            if self.endpoint_graph:
+                try:
+                    self.endpoint_graph.add_endpoint(endpoint, params, method)
+                except Exception:
+                    pass
+
+        self.api_schema_summary["params"] = total_params
+        self.log(
+            "API schema import merged: "
+            f"{self.api_schema_summary['endpoints']} endpoints, "
+            f"{self.api_schema_summary['params']} params",
+            "INFO",
+        )
+
+    def _run_passive_analysis(self, base_url: str) -> None:
+        """Run lightweight passive header analysis and feed findings pipeline."""
+        try:
+            import requests
+
+            response = requests.get(base_url, timeout=10, verify=False)
+            passive_findings_raw = analyze_headers(base_url, dict(response.headers))
+            passive_findings = self.finding_pipeline.ingest_passive_findings(passive_findings_raw)
+            if passive_findings:
+                self.finding_pipeline.add_findings(passive_findings)
+            self.log(f"Passive analysis findings: {len(passive_findings)}", "INFO")
+        except Exception as e:
+            self.log(f"Passive analysis failed: {e}", "WARN")
+
+    def _evaluate_discovery_quality(self) -> None:
+        """Compute discovery quality and expose abort signal for exploitation."""
+        quality_metrics = collect_discovery_metrics(
+            endpoints_total=len(self.cache.endpoints),
+            api_endpoints=int(self.js_discovery_summary.get("api_endpoints", 0)) + int(self.api_schema_summary.get("endpoints", 0)),
+            params_total=len(self.cache.params),
+            reflections=len(self.cache.reflections),
+            js_calls=int(self.js_discovery_summary.get("network_requests", 0)),
+            zap_urls=int(self.zap_discovery_summary.get("endpoints", 0)),
+        )
+        quality_state = assess_discovery_status(quality_metrics)
+
+        metrics = {
+            "endpoints": len(self.cache.endpoints),
+            "params": len(self.cache.params),
+            "api_calls": self.js_discovery_summary.get("network_requests", 0),
+            "js_success": bool(self.js_discovery_summary.get("executed", False)),
+        }
+        self.discovery_quality = score_discovery(metrics)
+        self.discovery_quality["metrics"] = quality_metrics
+        self.discovery_quality["status_metrics"] = quality_state
+        if quality_state in {"WEAK", "FAILED"}:
+            self.discovery_quality["should_abort_exploitation"] = True
+        self.log(
+            "Discovery quality: "
+            f"{self.discovery_quality.get('status')} "
+            f"(score={self.discovery_quality.get('score')})",
+            "INFO",
+        )
+
+    def _extract_idor_candidate_endpoints(self, base_url: str) -> List[str]:
+        """Build endpoint candidates for role-aware IDOR/access-control checks."""
+        candidates: List[str] = []
+        id_like = re.compile(r"(id|user|account|order|profile|invoice|project)", re.IGNORECASE)
+
+        for endpoint in self.cache.get_normalized_endpoints()[:150]:
+            if not endpoint:
+                continue
+            if "?" in endpoint or re.search(r"/\d+(/|$)", endpoint) or id_like.search(endpoint):
+                full = endpoint if endpoint.startswith("http") else f"{base_url}{endpoint if endpoint.startswith('/') else '/' + endpoint}"
+                candidates.append(full)
+
+        return sorted(list(set(candidates)))[:25]
+
+    def _run_auth_access_control_assessment(self, base_url: str) -> None:
+        """Run async role-based authentication, IDOR, and access-control checks."""
+        try:
+            summary = asyncio.run(self._run_auth_access_control_assessment_async(base_url))
+            self.auth_access_control_summary = summary
+            self.log(
+                "Auth/IDOR assessment: "
+                f"roles={len(summary.get('authenticated_roles', []))}, "
+                f"IDOR={summary.get('idor_findings', 0)}, "
+                f"access_control={summary.get('access_control_findings', 0)}",
+                "INFO",
+            )
+        except Exception as e:
+            self.auth_access_control_summary = {
+                "executed": False,
+                "enabled_roles": [],
+                "authenticated_roles": [],
+                "endpoints_tested": 0,
+                "idor_findings": 0,
+                "access_control_findings": 0,
+                "errors": [str(e)],
+            }
+            self.log(f"Auth/IDOR assessment failed: {e}", "WARN")
+
+    async def _run_auth_access_control_assessment_async(self, base_url: str) -> Dict[str, Any]:
+        config_path = Path("auth_config") / "auth_config.json"
+        if not config_path.exists():
+            return {
+                "executed": False,
+                "enabled_roles": [],
+                "authenticated_roles": [],
+                "endpoints_tested": 0,
+                "idor_findings": 0,
+                "access_control_findings": 0,
+                "errors": ["auth_config/auth_config.json not found"],
+            }
+
+        with config_path.open("r", encoding="utf-8") as fh:
+            config = json.load(fh)
+
+        request_engine = RequestEngine(timeout=20.0, verify_ssl=False)
+        auth_engine = AuthEngine(request_engine)
+        request_engine.auth_engine = auth_engine
+
+        enabled_roles: List[str] = []
+        errors: List[str] = []
+        auth_entries = config.get("authentication_engines", [])
+        for entry in auth_entries:
+            if not entry.get("enabled"):
+                continue
+            login_url = str(entry.get("login_url", "")).strip()
+            if not login_url:
+                continue
+            if login_url.startswith("/"):
+                login_url = f"{base_url}{login_url}"
+            if "target.com" in login_url:
+                continue
+
+            role = entry.get("role")
+            auth_type_name = str(entry.get("auth_type", "form_login")).upper()
+            try:
+                auth_type = AuthType[auth_type_name]
+            except KeyError:
+                auth_type = AuthType.FORM_LOGIN
+
+            login_config = LoginConfig(
+                role=role,
+                auth_type=auth_type,
+                login_url=login_url,
+                username=entry.get("username"),
+                password=entry.get("password"),
+                api_key=entry.get("api_key"),
+                bearer_token=entry.get("bearer_token"),
+                custom_headers=entry.get("custom_headers", {}) or {},
+                login_data=entry.get("login_data", {}) or {},
+                token_field_path=entry.get("token_field_path", "data.access_token"),
+                expected_status_success=int(entry.get("expected_status_success", 200)),
+                cookie_names=entry.get("cookie_names", []) or [],
+            )
+            ok = await auth_engine.register_login_flow(login_config)
+            if ok:
+                enabled_roles.append(role)
+
+        auth_results = await auth_engine.authenticate_all_roles() if enabled_roles else {}
+        authenticated_roles = [role for role, ok in auth_results.items() if ok]
+
+        for role in authenticated_roles:
+            headers, cookie_header = await auth_engine.get_auth_for_role(role)
+            cookies = {}
+            if cookie_header:
+                for chunk in cookie_header.split(";"):
+                    if "=" in chunk:
+                        k, v = chunk.strip().split("=", 1)
+                        cookies[k] = v
+            self.request_context.add_or_update_role(
+                role=role,
+                headers=headers,
+                cookies=cookies,
+                authenticated=True,
+                source="auth_engine",
+            )
+
+        param_extractor = ParameterExtractor()
+        response_analyzer = ResponseAnalyzer()
+        idor_engine = IDOREngine(request_engine, param_extractor, response_analyzer)
+        access_engine = AccessControlEngine(request_engine, response_analyzer)
+
+        endpoints = self._extract_idor_candidate_endpoints(base_url)
+        idor_total = 0
+        access_total = 0
+
+        if authenticated_roles and endpoints:
+            roles_for_idor = authenticated_roles[:2] if len(authenticated_roles) > 1 else authenticated_roles
+            low_role = authenticated_roles[0]
+            high_role = authenticated_roles[1] if len(authenticated_roles) > 1 else authenticated_roles[0]
+
+            for endpoint in endpoints:
+                try:
+                    idor_findings = await idor_engine.test_endpoint(
+                        endpoint,
+                        method="GET",
+                        roles=roles_for_idor,
+                    )
+                    idor_total += len(idor_findings)
+                    for f in idor_findings:
+                        self.findings.add(f.to_finding())
+                except Exception as e:
+                    errors.append(f"IDOR {endpoint}: {e}")
+
+                try:
+                    ac_findings = await access_engine.test_unauthorized_endpoint_access(
+                        endpoint,
+                        required_role=high_role,
+                    )
+                    access_total += len(ac_findings)
+                    for f in ac_findings:
+                        self.findings.add(f.to_finding())
+                except Exception as e:
+                    errors.append(f"AC unauth {endpoint}: {e}")
+
+                if len(authenticated_roles) > 1:
+                    try:
+                        ac_pe = await access_engine.test_privilege_escalation(
+                            endpoint,
+                            low_role=low_role,
+                            high_role=high_role,
+                        )
+                        access_total += len(ac_pe)
+                        for f in ac_pe:
+                            self.findings.add(f.to_finding())
+                    except Exception as e:
+                        errors.append(f"AC privilege {endpoint}: {e}")
+
+        return {
+            "executed": True,
+            "enabled_roles": enabled_roles,
+            "authenticated_roles": authenticated_roles,
+            "endpoints_tested": len(endpoints),
+            "idor_findings": idor_total,
+            "access_control_findings": access_total,
+            "errors": errors[:20],
+        }
+
+    def _register_crawl_security_findings(
+        self,
+        crawl_url: str,
+        crawl_result: Optional[Dict],
+        gating_signals: Optional[Dict],
+    ) -> None:
+        """Create explicit findings from crawler-observed security leaks."""
+        summary = {}
+        if isinstance(crawl_result, dict):
+            summary = crawl_result.get("summary", {}) or {}
+        gating = gating_signals or {}
+
+        debug_page_exposed = bool(
+            summary.get("debug_page_exposed") or gating.get("debug_page_exposed")
+        )
+
+        debug_indicators = []
+        for item in (summary.get("debug_indicators") or []) + (gating.get("debug_indicators") or []):
+            if item and item not in debug_indicators:
+                debug_indicators.append(str(item))
+
+        leaked_routes = []
+        for item in (summary.get("leaked_routes") or []) + (gating.get("leaked_routes") or []):
+            if item and item not in leaked_routes:
+                leaked_routes.append(str(item))
+
+        if debug_page_exposed:
+            evidence_lines = [
+                "Application exposed a framework debug page over HTTP.",
+                f"Target: {crawl_url}",
+            ]
+            if debug_indicators:
+                evidence_lines.append("Indicators: " + ", ".join(debug_indicators[:6]))
+            if leaked_routes:
+                evidence_lines.append("Leaked routes: " + ", ".join(leaked_routes[:8]))
+
+            finding = Finding(
+                type=FindingType.MISCONFIGURATION,
+                severity=Severity.HIGH,
+                location=crawl_url,
+                description="Debug page exposed (DEBUG=True) allowing framework internals and route disclosure",
+                cwe="CWE-489",
+                owasp="A05:2021 - Security Misconfiguration",
+                tool="crawler",
+                evidence="\n".join(evidence_lines),
+                remediation=(
+                    "Disable framework debug mode in production (DEBUG=False), "
+                    "use custom error handlers, and restrict diagnostic views."
+                ),
+                impact=(
+                    "Attackers can enumerate internal URL patterns and framework details, "
+                    "reducing effort needed for targeted endpoint abuse."
+                ),
+                exploitability="HIGH",
+                verification_steps=(
+                    "Request an invalid path and verify the response does not disclose framework "
+                    "version, URLConf, or full route lists."
+                ),
+            )
+            self.findings.add(finding)
+            self.log("Added finding: debug page exposure detected by crawler", "WARN")
+
+        # If routes are leaked but no API endpoint was captured as live, register a separate disclosure.
+        if leaked_routes and not any("/api" in ep.lower() for ep in self.cache.endpoints):
+            leak_finding = Finding(
+                type=FindingType.INFO_DISCLOSURE,
+                severity=Severity.MEDIUM,
+                location=crawl_url,
+                description="API route disclosure observed in server response content",
+                cwe="CWE-200",
+                owasp="A01:2021 - Broken Access Control",
+                tool="crawler",
+                evidence="Leaked API routes: " + ", ".join(leaked_routes[:12]),
+                remediation="Remove route listings from unauthenticated responses and generic 404/500 pages.",
+                impact="Leaked endpoint inventory helps attackers map hidden API surfaces.",
+                exploitability="MEDIUM",
+                verification_steps="Request non-existent paths and confirm route details are not disclosed.",
+            )
+            self.findings.add(leak_finding)
+            self.log("Added finding: API route disclosure from debug/content leak", "WARN")
 
     def _collect_security_strengths(self) -> list[str]:
         """Extract verified positive security signals from executed tool outputs."""
@@ -1885,6 +2404,12 @@ class AutomationScannerV2:
                             f"{gating_signals['parameter_count']} parameters, "
                             f"{gating_signals['reflection_count']} reflections", "SUCCESS")
 
+                    self._register_crawl_security_findings(
+                        crawl_url=crawl_url,
+                        crawl_result=crawl_adapter.crawl_result,
+                        gating_signals=gating_signals,
+                    )
+
                     if self.strict_gating_loop:
                         gating_targets = self.strict_gating_loop.get_all_targets()
                         enabled = [t for t, tg in gating_targets.items() if tg.can_run]
@@ -1916,8 +2441,47 @@ class AutomationScannerV2:
         else:
             self.log(f"✓ Crawler gate passed: {gate_report['endpoints_discovered']} endpoints discovered", "SUCCESS")
 
+            # JS-aware discovery augments server-side crawl for modern SPA/API traffic.
+            self._run_js_aware_discovery(crawl_url)
+            # Wave 2: secondary enrichment and passive security posture checks.
+            self._run_zap_enrichment(crawl_url)
+            self._run_api_schema_import(crawl_url)
+            self._run_passive_analysis(crawl_url)
+
+        self._evaluate_discovery_quality()
+
+        # Run auth/access-control/IDOR checks before active exploitation so role contexts are available.
+        self._run_auth_access_control_assessment(crawl_url)
+
         # PHASE 5: Active exploitation always runs and is filtered only at proof/report stage
-        if self.initialize_exploitation_engines():
+        discovery_state = DiscoveryState(
+            endpoints_count=len(self.cache.endpoints),
+            controllable_params_count=len(self.cache.params),
+            api_endpoints_count=int(self.js_discovery_summary.get("api_endpoints", 0)) + int(self.api_schema_summary.get("endpoints", 0)),
+            js_discovery_success=bool(self.js_discovery_summary.get("executed", False)),
+            js_network_calls_captured=int(self.js_discovery_summary.get("network_requests", 0)),
+            crawler_success=bool(gate_report.get("crawler_succeeded", False)),
+            external_intel_count=len(self.cache.subdomains),
+            zap_endpoints_count=int(self.zap_discovery_summary.get("endpoints", 0)),
+        )
+        ready, ready_reason = check_exploitation_readiness(discovery_state, phase_name="PHASE 5")
+
+        if not bool(self.js_discovery_summary.get("executed", False)):
+            ready = False
+            ready_reason = "JS discovery failed - exploitation aborted by hard policy"
+
+        if len(self.cache.params) == 0:
+            ready = False
+            ready_reason = "No parameters discovered - exploitation aborted by hard policy"
+
+        if self.discovery_quality.get("should_abort_exploitation"):
+            self.log("Scan aborted: insufficient attack surface (discovery quality too weak)", "ERROR")
+            ready = False
+            ready_reason = "Discovery quality scorer flagged weak attack surface"
+
+        if not ready:
+            self.log(f"Active exploitation skipped: {ready_reason}", "WARN")
+        elif self.initialize_exploitation_engines():
             scheme = "https" if self.profile.is_https else "http"
             base_url = f"{scheme}://{self.profile.host}"
             fallback_endpoints = self._build_fallback_endpoints_for_exploitation()
@@ -2106,6 +2670,29 @@ class AutomationScannerV2:
 
         # Promotion layer: elevate hardening findings with corroboration/context rules.
         correlated_findings = self._apply_promotion_logic(correlated_findings)
+
+        # Wave 2: Global confidence enforcement. Drop low-confidence findings before reporting.
+        high_confidence_findings = []
+        for finding in correlated_findings:
+            if not isinstance(finding, dict):
+                high_confidence_findings.append(finding)
+                continue
+
+            base_conf = float(finding.get("confidence", 0.0) or 0.0)
+            source = str(finding.get("tool", "internal") or "internal")
+            scored_conf = GlobalConfidenceSystem.score(
+                base_confidence=base_conf,
+                corroborated=bool(finding.get("corroborated", False)),
+                validated=bool(finding.get("verification") == "VERIFIED"),
+                source="zap" if "zap" in source.lower() else "internal",
+            )
+            finding["confidence"] = scored_conf
+            finding["confidence_percentage"] = GlobalConfidenceSystem.as_percentage(scored_conf)
+
+            if GlobalConfidenceSystem.should_report(scored_conf):
+                high_confidence_findings.append(finding)
+
+        correlated_findings = high_confidence_findings
         
         # Phase 4: Enhanced confidence scoring
         if self.enhanced_confidence:
@@ -2210,6 +2797,28 @@ class AutomationScannerV2:
         coverage_report["manual_out_of_scope"] = self.manual_out_of_scope_report
 
         proof_report = self.generate_proof_based_final_report()
+        phase5_risk_report = self._build_phase5_risk_report(proof_report)
+
+        owasp_summary_for_report: dict[str, int] = {}
+        for finding in self.findings.get_all():
+            owasp_value = finding.owasp
+            if isinstance(owasp_value, Enum):
+                owasp_value = owasp_value.value
+            owasp_key = str(owasp_value) if owasp_value else "Unmapped"
+            owasp_summary_for_report[owasp_key] = owasp_summary_for_report.get(owasp_key, 0) + 1
+
+        confirmed_summary = proof_report.get("summary", {}) if isinstance(proof_report, dict) else {}
+        confirmed_severity = confirmed_summary.get("by_severity", {}) if isinstance(confirmed_summary, dict) else {}
+        findings_summary = {
+            "critical": int(confirmed_severity.get("CRITICAL", 0)),
+            "high": int(confirmed_severity.get("HIGH", 0)),
+            "medium": int(confirmed_severity.get("MEDIUM", 0)),
+            "low": int(confirmed_severity.get("LOW", 0)),
+            "info": int(confirmed_severity.get("INFO", 0)),
+            "total": int(confirmed_summary.get("total_confirmed", 0)),
+            "owasp": owasp_summary_for_report,
+            "confirmed_by_type": confirmed_summary.get("by_type", {}),
+        }
 
         report = {
             "profile": self.profile.to_dict(),
@@ -2255,8 +2864,20 @@ class AutomationScannerV2:
             "risk_aggregation": risk_report,
             # Phase 5: Proof-based confirmed exploitation findings
             "confirmed_exploitation": proof_report,
+            # Phase 5: strict risk scoring from confirmed exploitation only
+            "phase5_risk": phase5_risk_report,
+            # Shared findings summary for parity with HTML
+            "findings_summary": findings_summary,
             "service_fingerprints": self.service_fingerprints,
+            "certificate_assessments": self.certificate_assessments,
+            "host_network_assessment": self.host_network_assessment,
             "prioritized_subdomains": self.prioritized_subdomains,
+            "js_discovery": self.js_discovery_summary,
+            "zap_discovery": self.zap_discovery_summary,
+            "api_schema": self.api_schema_summary,
+            "discovery_quality": self.discovery_quality,
+            "auth_access_control": self.auth_access_control_summary,
+            "request_context": self.request_context.summary(),
             "manual_out_of_scope": self.manual_out_of_scope_report,
         }
 
@@ -2309,17 +2930,30 @@ class AutomationScannerV2:
                 "denied_tools": denied_tools,
                 "missing_tools": missing_tools,
                 "manual_out_of_scope": self.manual_out_of_scope_report,
+                "js_endpoints": self.js_discovery_summary.get("endpoints", 0),
+                "js_api_endpoints": self.js_discovery_summary.get("api_endpoints", 0),
+                "js_network_requests": self.js_discovery_summary.get("network_requests", 0),
+                "zap_endpoints": self.zap_discovery_summary.get("endpoints", 0),
+                "zap_params": self.zap_discovery_summary.get("params", 0),
+                "api_schema_endpoints": self.api_schema_summary.get("endpoints", 0),
+                "api_schema_params": self.api_schema_summary.get("params", 0),
+                "discovery_quality_score": self.discovery_quality.get("score", 0),
+                "discovery_quality_status": self.discovery_quality.get("status", "UNKNOWN"),
+                "auth_roles": len(self.auth_access_control_summary.get("authenticated_roles", [])),
+                "idor_findings": self.auth_access_control_summary.get("idor_findings", 0),
+                "access_control_findings": self.auth_access_control_summary.get("access_control_findings", 0),
                 **discovery_lists,
             }
 
             findings_summary = {
-                "critical": severity_counts.get(Severity.CRITICAL, 0),
-                "high": severity_counts.get(Severity.HIGH, 0),
-                "medium": severity_counts.get(Severity.MEDIUM, 0),
-                "low": severity_counts.get(Severity.LOW, 0),
-                "info": severity_counts.get(Severity.INFO, 0),
-                "total": sum(severity_counts.values()),
+                "critical": int(confirmed_severity.get("CRITICAL", 0)),
+                "high": int(confirmed_severity.get("HIGH", 0)),
+                "medium": int(confirmed_severity.get("MEDIUM", 0)),
+                "low": int(confirmed_severity.get("LOW", 0)),
+                "info": int(confirmed_severity.get("INFO", 0)),
+                "total": int(confirmed_summary.get("total_confirmed", 0)),
                 "owasp": owasp_summary,
+                "confirmed_by_type": confirmed_summary.get("by_type", {}),
             }
 
             HTMLReportGenerator.generate(
@@ -2336,7 +2970,10 @@ class AutomationScannerV2:
                 security_strengths=self._collect_security_strengths(),
                 confirmed_exploitation=proof_report,
                 service_fingerprints=self.service_fingerprints,
+                certificate_assessments=self.certificate_assessments,
+                host_network_assessment=self.host_network_assessment,
                 prioritized_subdomains=self.prioritized_subdomains,
+                auth_access_control_summary=self.auth_access_control_summary,
                 output_path=html_file,
             )
             self.log(f"HTML report generated: {html_file}", "SUCCESS")
@@ -2557,6 +3194,7 @@ class AutomationScannerV2:
         self.log("PHASE 5: ACTIVE EXPLOITATION - Attempting to validate vulnerabilities with proof", "INFO")
         
         exploitation_results = []
+        tested_vectors = 0
         
         # Endpoints can come from graph or fallback cache-derived targets.
         if endpoints:
@@ -2572,12 +3210,18 @@ class AutomationScannerV2:
         
         self.log(f"Testing {len(endpoints_to_test)} endpoint(s) for active vulnerabilities...", "INFO")
         
-        # Create session for exploitation (reuses cookies across attempts)
+        # Create per-role sessions for role-segmented exploitation attempts.
         import requests
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "VAPT-Automated-Engine/1.0 (Vulnerability Assessment)"
-        })
+        role_sessions: Dict[str, requests.Session] = {}
+        for role in self.request_context.active_roles(include_anonymous=True):
+            role_session = requests.Session()
+            role_session.headers.update({
+                "User-Agent": "VAPT-Automated-Engine/1.0 (Vulnerability Assessment)"
+            })
+            if role != "anonymous":
+                role_headers = self.request_context.build_headers(role)
+                role_session.headers.update(role_headers)
+            role_sessions[role] = role_session
         
         # Test each endpoint
         for endpoint_obj in endpoints_to_test[:10]:  # Limit to top 10 to avoid timeout
@@ -2590,61 +3234,94 @@ class AutomationScannerV2:
                 continue
             
             self.log(f"Testing {endpoint} ({method}) with {len(params)} parameter(s)", "INFO")
-            
-            # Test each parameter - PHASE 3: STRICT PARAMETER FILTERING
-            for param in params[:3]:  # Limit params to avoid timeout
-                param_name = param.get("name") if isinstance(param, dict) else str(param)
-                
-                # FILTER: Skip non-user-controllable parameters
+
+            raw_params = []
+            for param in params:
+                if isinstance(param, dict):
+                    raw_params.append({
+                        "name": str(param.get("name", "")),
+                        "source": str(param.get("source", "url_param")),
+                        "value": str(param.get("value", "")),
+                    })
+                else:
+                    raw_params.append({"name": str(param), "source": "url_param", "value": ""})
+
+            # Wave 1: classify and gate parameters before exploitation.
+            classified_params = classify_parameters(endpoint=endpoint, method=method, params=raw_params)
+            controllable_params = filter_controllable(classified_params)
+            high_conf_params = filter_high_confidence(controllable_params, threshold=0.70)
+            high_conf_params = sorted(high_conf_params, key=lambda p: p.exploitability_score, reverse=True)[:3]
+
+            if not high_conf_params:
+                self.log(f"Skipping {endpoint}: no high-confidence controllable parameters", "DEBUG")
+                continue
+
+            for param_obj in high_conf_params:
+                param_name = param_obj.name
                 if self._should_skip_parameter(param_name):
-                    self.log(f"Skipping {param_name}: not user-controllable", "DEBUG")
+                    self.log(f"Skipping {param_name}: static filter matched", "DEBUG")
                     continue
                 
-                # Try SSRF exploitation
-                try:
-                    ssrf_result = self.ssrf_engine.exploit_ssrf(
-                        endpoint=endpoint,
-                        parameter=param_name,
-                        base_url=base_url,
-                        http_method=method,
-                        session=session
-                    )
-                    if ssrf_result:
-                        exploitation_results.append(ssrf_result)
-                        # Add to proof-based reporter
-                        self.proof_reporter.add_from_exploitation_result(ssrf_result)
-                except Exception as e:
-                    self.log(f"SSRF exploitation error: {e}", "DEBUG")
-                
-                # Try XSS exploitation
-                try:
-                    xss_result = self.xss_engine.exploit_xss(
-                        endpoint=endpoint,
-                        parameter=param_name,
-                        base_url=base_url,
-                        http_method=method,
-                        session=session
-                    )
-                    if xss_result:
-                        exploitation_results.append(xss_result)
-                        self.proof_reporter.add_from_exploitation_result(xss_result)
-                except Exception as e:
-                    self.log(f"XSS exploitation error: {e}", "DEBUG")
-                
-                # Try SQL injection exploitation
-                try:
-                    sqli_result = self.sqli_engine.exploit_sqli(
-                        endpoint=endpoint,
-                        parameter=param_name,
-                        base_url=base_url,
-                        http_method=method,
-                        session=session
-                    )
-                    if sqli_result:
-                        exploitation_results.append(sqli_result)
-                        self.proof_reporter.add_from_exploitation_result(sqli_result)
-                except Exception as e:
-                    self.log(f"SQLi exploitation error: {e}", "DEBUG")
+                for role, session in role_sessions.items():
+                    # Try SSRF exploitation
+                    try:
+                        tested_vectors += 1
+                        self.proof_reporter.register_test_attempt(1)
+                        ssrf_findings = self.ssrf_engine.exploit_ssrf_findings(
+                            endpoint=endpoint,
+                            parameter=param_name,
+                            base_url=base_url,
+                            http_method=method,
+                            session=session
+                        )
+                        for finding in ssrf_findings:
+                            finding_dict = finding.to_exploitation_dict()
+                            finding_dict["role"] = role
+                            exploitation_results.append(finding_dict)
+                            self._ingest_exploitation_feedback(finding_dict)
+                            self.proof_reporter.add_from_exploitation_result(finding)
+                    except Exception as e:
+                        self.log(f"SSRF exploitation error: {e}", "DEBUG")
+
+                    # Try XSS exploitation
+                    try:
+                        tested_vectors += 1
+                        self.proof_reporter.register_test_attempt(1)
+                        xss_findings = self.xss_engine.exploit_xss_findings(
+                            endpoint=endpoint,
+                            parameter=param_name,
+                            base_url=base_url,
+                            http_method=method,
+                            session=session
+                        )
+                        for finding in xss_findings:
+                            finding_dict = finding.to_exploitation_dict()
+                            finding_dict["role"] = role
+                            exploitation_results.append(finding_dict)
+                            self._ingest_exploitation_feedback(finding_dict)
+                            self.proof_reporter.add_from_exploitation_result(finding)
+                    except Exception as e:
+                        self.log(f"XSS exploitation error: {e}", "DEBUG")
+
+                    # Try SQL injection exploitation
+                    try:
+                        tested_vectors += 1
+                        self.proof_reporter.register_test_attempt(1)
+                        sqli_findings = self.sqli_engine.exploit_sqli_findings(
+                            endpoint=endpoint,
+                            parameter=param_name,
+                            base_url=base_url,
+                            http_method=method,
+                            session=session
+                        )
+                        for finding in sqli_findings:
+                            finding_dict = finding.to_exploitation_dict()
+                            finding_dict["role"] = role
+                            exploitation_results.append(finding_dict)
+                            self._ingest_exploitation_feedback(finding_dict)
+                            self.proof_reporter.add_from_exploitation_result(finding)
+                    except Exception as e:
+                        self.log(f"SQLi exploitation error: {e}", "DEBUG")
         
         # Wait for OOB callbacks
         self.log("Waiting for out-of-band callbacks (5 seconds)...", "INFO")
@@ -2655,11 +3332,78 @@ class AutomationScannerV2:
         oob_confirmed = self.ssrf_engine.check_oob_callbacks()
         for oob_finding in oob_confirmed:
             exploitation_results.append(oob_finding)
+            self._ingest_exploitation_feedback(oob_finding)
             self.proof_reporter.add_from_exploitation_result(oob_finding)
         
         self.log(f"Exploitation phase complete: {len(exploitation_results)} vulnerabilities found", "INFO")
+        self.log(f"Exploitation vectors tested: {tested_vectors}", "INFO")
         
         return exploitation_results
+
+    def _ingest_exploitation_feedback(self, finding: Dict[str, Any]) -> None:
+        """Feed newly confirmed endpoint/param signals back into discovery cache/graph."""
+        endpoint = str(finding.get("endpoint") or finding.get("location") or "").strip()
+        parameter = str(finding.get("parameter") or "").strip()
+
+        if endpoint:
+            self.cache.add_endpoint(endpoint, source_tool="exploitation_feedback", confidence=1.0)
+            self.cache.add_live_endpoint(endpoint, source_tool="exploitation_feedback")
+        if parameter:
+            self.cache.add_param(parameter, source_tool="exploitation_feedback", confidence=1.0)
+
+        if self.endpoint_graph and endpoint:
+            try:
+                method = str(finding.get("method") or "GET").upper()
+                self.endpoint_graph.add_endpoint(endpoint, [parameter] if parameter else [], method)
+            except Exception:
+                pass
+
+    def _build_phase5_risk_report(self, proof_report: Dict[str, Any]) -> Dict[str, Any]:
+        """Run strict risk scoring only on confirmed exploitation findings."""
+        risk_engine = RiskEngine()
+        findings = proof_report.get("findings", []) if isinstance(proof_report, dict) else []
+        for finding in findings:
+            try:
+                proof = finding.get("proof") or {}
+                confidence = float(proof.get("confidence", finding.get("confidence", 0.0)) or 0.0)
+                owasp_category = str(finding.get("owasp") or "A03_INJECTION")
+                sanitized_owasp = owasp_category.split(":", 1)[0].replace("-", "_")
+                if sanitized_owasp.startswith("A10"):
+                    sanitized_owasp = "A10_SSRF"
+                elif sanitized_owasp.startswith("A01"):
+                    sanitized_owasp = "A01_BROKEN_ACCESS_CONTROL"
+                elif sanitized_owasp.startswith("A07"):
+                    sanitized_owasp = "A07_AUTH_FAILURES"
+                elif sanitized_owasp.startswith("A03"):
+                    sanitized_owasp = "A03_INJECTION"
+                elif sanitized_owasp not in {
+                    "A01_BROKEN_ACCESS_CONTROL",
+                    "A02_CRYPTOGRAPHIC_FAILURES",
+                    "A03_INJECTION",
+                    "A04_INSECURE_DESIGN",
+                    "A05_SECURITY_MISCONFIGURATION",
+                    "A06_VULNERABLE_COMPONENTS",
+                    "A07_AUTH_FAILURES",
+                    "A08_DATA_INTEGRITY_FAILURES",
+                    "A09_LOGGING_MONITORING_FAILURES",
+                    "A10_SSRF",
+                }:
+                    sanitized_owasp = "A03_INJECTION"
+
+                risk_engine.calculate_risk(
+                    endpoint=str(finding.get("endpoint", "")),
+                    parameter=str(finding.get("parameter", "")),
+                    vulnerability_type=str(finding.get("type", "UNKNOWN")),
+                    owasp_category=sanitized_owasp,
+                    confidence_score=confidence,
+                    corroboration_count=1,
+                    tools=["exploitation_engine"],
+                    payload_success_rate=1.0,
+                    privilege_level=str(finding.get("role", "UNAUTHENTICATED")).upper(),
+                )
+            except Exception:
+                continue
+        return risk_engine.to_dict()
 
     def _build_fallback_endpoints_for_exploitation(self) -> List[Dict]:
         """Build minimal endpoint/param targets from discovery cache when crawler graph is unavailable."""
@@ -2700,10 +3444,21 @@ class AutomationScannerV2:
         for prefix in skip_prefixes:
             if param_name.lower().startswith(prefix):
                 return True
+
+        # SKIP: WordPress/form-builder and crawler noise parameters.
+        if re.match(r"^form_fields\[[^\]]+\]$", param_name, re.IGNORECASE):
+            return True
+        if param_name.lower().startswith("form_"):
+            return True
+
+        # SKIP: Tracking/analytics-like parameter patterns.
+        if re.match(r"^(utm_|ga_|fbclid$|gclid$|msclkid$)", param_name, re.IGNORECASE):
+            return True
         
         # SKIP: Known static parameters
         skip_params = {
             "utm_source", "utm_medium", "utm_campaign",  # Analytics
+            "utm_term", "utm_content",                   # Analytics extension
             "fbclid", "gclid", "msclkid",               # Tracking IDs
             "ref", "referrer",                          # Referrers
             "timestamp", "nonce", "state",              # Tokens/state
@@ -2711,6 +3466,8 @@ class AutomationScannerV2:
             "format", "type",                           # Format params
             "lang", "language", "locale",               # Localization
             "version", "v",                             # Version params
+            "post_id", "form_id", "referer_title",      # WP form metadata
+            "queried_id",                                # WP query metadata
         }
         
         if param_name.lower() in skip_params:
@@ -2719,23 +3476,92 @@ class AutomationScannerV2:
         # Otherwise: INCLUDE this parameter for testing
         return False
 
+    def _build_hosts_for_infra_assessment(self) -> List[str]:
+        """Build host list for per-host port scan, service fingerprinting, and TLS checks."""
+        hosts = {self.profile.host}
+        discovered = sorted(self.cache.subdomains) if self.cache else []
+        if discovered and self.cache:
+            try:
+                hosts.update(self.cache.verify_subdomains(discovered))
+            except Exception:
+                hosts.update(discovered)
+        return sorted(h for h in hosts if h)
+
+    def _scan_common_ports(self, host: str) -> List[int]:
+        """Perform a lightweight TCP connect scan on common service ports."""
+        common_ports = [
+            21, 22, 25, 53, 80, 110, 143, 443, 465, 587,
+            993, 995, 3306, 5432, 6379, 8080, 8081, 8443,
+            9000, 9200, 27017,
+        ]
+
+        open_ports: List[int] = []
+        for port in common_ports:
+            try:
+                with socket.create_connection((host, port), timeout=0.6):
+                    open_ports.append(port)
+            except Exception:
+                continue
+        return sorted(open_ports)
+
 
     def run_service_fingerprinting(self) -> List[Dict]:
-        """Fingerprint discovered services and ports to improve attack context."""
+        """Run per-host port scan + service fingerprinting + certificate checks."""
         try:
-            host = self.profile.host
-            ports = self.cache.get_discovered_ports() if self.cache else []
-            if not ports:
-                ports = [80, 443, 8080, 8081]
+            hosts = self._build_hosts_for_infra_assessment()
+            self.log(
+                f"Running per-host infra assessment on {len(hosts)} host(s): port scan + service fingerprint + TLS checks",
+                "INFO",
+            )
 
-            self.log(f"Running service fingerprinting on {host} ports: {ports}", "INFO")
-            fingerprints = self.fingerprint_engine.fingerprint_port_range(host, ports, use_common_only=False)
-            self.service_fingerprints = [fp.to_dict() for fp in fingerprints]
-            self.log(f"Service fingerprinting complete: {len(self.service_fingerprints)} service(s) identified", "INFO")
+            all_fingerprints: List[Dict] = []
+            all_cert_checks: List[Dict] = []
+            host_rows: List[Dict] = []
+
+            for host in hosts:
+                open_ports = self._scan_common_ports(host)
+                for port in open_ports:
+                    self.cache.add_port(port)
+
+                fingerprint_ports = open_ports or [80, 443, 8080, 8081]
+                host_fingerprints = self.fingerprint_engine.fingerprint_port_range(
+                    host,
+                    fingerprint_ports,
+                    use_common_only=False,
+                )
+                host_fp_dicts = [fp.to_dict() for fp in host_fingerprints]
+                all_fingerprints.extend(host_fp_dicts)
+
+                tls_ports = [p for p in open_ports if p in {443, 8443}] or [443]
+                host_cert_checks = self.certificate_checker.check_host(host, tls_ports)
+                all_cert_checks.extend(host_cert_checks)
+
+                host_rows.append({
+                    "host": host,
+                    "open_ports": open_ports,
+                    "fingerprints": host_fp_dicts,
+                    "certificate_checks": host_cert_checks,
+                })
+
+                self.log(
+                    f"[{host}] open_ports={len(open_ports)} fingerprints={len(host_fp_dicts)} cert_checks={len(host_cert_checks)}",
+                    "INFO",
+                )
+
+            self.host_network_assessment = host_rows
+            self.service_fingerprints = all_fingerprints
+            self.certificate_assessments = all_cert_checks
+
+            self.log(
+                f"Infrastructure assessment complete: hosts={len(hosts)}, fingerprints={len(self.service_fingerprints)}, cert_checks={len(self.certificate_assessments)}",
+                "INFO",
+            )
             return self.service_fingerprints
         except Exception as e:
-            self.log(f"Service fingerprinting failed: {e}", "WARN")
+            self.log(f"Infrastructure assessment failed: {e}", "WARN")
             self.service_fingerprints = []
+            self.certificate_assessments = []
+            self.host_network_assessment = []
             return []
     
     def prioritize_subdomain_targets(self) -> List[Dict]:

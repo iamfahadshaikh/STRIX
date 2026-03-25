@@ -4,7 +4,7 @@ Normalized findings model: deduplicated, OWASP-mapped, actionable intelligence.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Set, List, Optional
+from typing import Set, List, Optional, Dict, Any
 from datetime import datetime
 
 
@@ -45,6 +45,12 @@ class Finding:
     cwe: Optional[str] = None
     owasp: Optional[str] = None  # e.g., "A03:2021"
     tool: str = "unknown"
+    endpoint: str = ""
+    method: str = ""
+    parameter: str = ""
+    category: str = ""
+    confidence: float = 0.0
+    proof: Dict[str, Any] = field(default_factory=dict)
     evidence: str = ""
     evidence_file: str = ""
     evidence_line: int = 0
@@ -55,14 +61,114 @@ class Finding:
     discovered_at: str = field(default_factory=lambda: datetime.now().isoformat())
     
     def __hash__(self):
-        """Deduplication hash: type + location + CWE"""
-        return hash((self.type, self.location, self.cwe))
+        """Deduplication hash: method + endpoint/location + parameter + category/type."""
+        return hash(
+            (
+                (self.method or "").upper(),
+                (self.endpoint or self.location or "").rstrip("/").lower(),
+                (self.parameter or "").strip().lower(),
+                (self.category or self.type.value or "").strip().lower(),
+            )
+        )
     
     def __eq__(self, other):
-        """Deduplication equality: only type, location, CWE matter"""
+        """Deduplication equality aligned with endpoint+method+parameter+category."""
         if not isinstance(other, Finding):
             return False
-        return (self.type, self.location, self.cwe) == (other.type, other.location, other.cwe)
+        return (
+            (self.method or "").upper(),
+            (self.endpoint or self.location or "").rstrip("/").lower(),
+            (self.parameter or "").strip().lower(),
+            (self.category or self.type.value or "").strip().lower(),
+        ) == (
+            (other.method or "").upper(),
+            (other.endpoint or other.location or "").rstrip("/").lower(),
+            (other.parameter or "").strip().lower(),
+            (other.category or other.type.value or "").strip().lower(),
+        )
+
+    def to_exploitation_dict(self) -> Dict[str, Any]:
+        """Compatibility adapter for proof/reporting pipelines that still consume dicts."""
+        endpoint = self.endpoint or self.location
+        return {
+            "type": self.type.value,
+            "severity": self.severity.value,
+            "endpoint": endpoint,
+            "location": self.location or endpoint,
+            "method": self.method,
+            "parameter": self.parameter,
+            "payload": self.proof.get("payload", ""),
+            "confidence": float(self.confidence or 0.0),
+            "proof": self.proof or {},
+            "description": self.description,
+            "cwe": self.cwe,
+            "owasp": self.owasp,
+            "tool": self.tool,
+            "evidence": self.evidence,
+            "impact": self.impact,
+            "exploitability": self.exploitability,
+            "verification_steps": self.verification_steps,
+        }
+
+    @staticmethod
+    def _coerce_finding_type(value: Any) -> FindingType:
+        if isinstance(value, FindingType):
+            return value
+        text = str(value or "OTHER").strip()
+        for item in FindingType:
+            if text.upper() in {item.name.upper(), item.value.upper()}:
+                return item
+        if text.lower() in {"sqli", "sql", "sqlinjection", "sql injection"}:
+            return FindingType.SQLI
+        if text.lower() in {"xss", "crosssitescripting", "cross-site scripting"}:
+            return FindingType.XSS
+        return FindingType.OTHER
+
+    @staticmethod
+    def _coerce_severity(value: Any) -> Severity:
+        if isinstance(value, Severity):
+            return value
+        text = str(value or "INFO").strip().upper()
+        if text == "INFORMATIONAL":
+            text = "INFO"
+        return Severity[text] if text in Severity.__members__ else Severity.INFO
+
+    @staticmethod
+    def from_exploitation_dict(data: Dict[str, Any]) -> "Finding":
+        """Create a strict Finding from exploitation-engine dict output."""
+        proof = data.get("proof") if isinstance(data.get("proof"), dict) else {}
+        endpoint = str(data.get("endpoint") or data.get("location") or "")
+        parameter = str(data.get("parameter") or "")
+        vuln_type = Finding._coerce_finding_type(data.get("type"))
+        severity = Finding._coerce_severity(data.get("severity") or "HIGH")
+        category = str(data.get("category") or data.get("type") or vuln_type.value)
+        method = str(data.get("method") or data.get("http_method") or "GET").upper()
+        confidence = float(data.get("confidence", 0.0) or 0.0)
+        description = str(data.get("description") or f"Confirmed {vuln_type.value} exploitation signal")
+        payload = str(data.get("payload") or data.get("payload_true") or "")
+        if payload and "payload" not in proof:
+            proof["payload"] = payload
+
+        return Finding(
+            type=vuln_type,
+            severity=severity,
+            location=endpoint,
+            description=description,
+            cwe=data.get("cwe"),
+            owasp=data.get("owasp"),
+            tool=str(data.get("tool") or "exploitation_engine"),
+            endpoint=endpoint,
+            method=method,
+            parameter=parameter,
+            category=category,
+            confidence=confidence,
+            proof=proof,
+            evidence=str(data.get("evidence") or proof.get("evidence") or ""),
+            remediation=str(data.get("remediation") or ""),
+            impact=str(data.get("impact") or ""),
+            exploitability=str(data.get("exploitability") or ""),
+            verification_steps=str(data.get("verification_steps") or ""),
+        )
 
 
 class FindingsRegistry:
@@ -148,6 +254,12 @@ class FindingsRegistry:
                     "cwe": f.cwe,
                     "owasp": f.owasp.value if isinstance(f.owasp, Enum) else f.owasp,
                     "tool": f.tool,
+                    "endpoint": f.endpoint,
+                    "method": f.method,
+                    "parameter": f.parameter,
+                    "category": f.category,
+                    "confidence": f.confidence,
+                    "proof": f.proof,
                     "evidence": f.evidence[:200],  # Truncate
                     "evidence_file": f.evidence_file,
                     "evidence_line": f.evidence_line,

@@ -43,6 +43,8 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
+from param_intelligence import classify_parameters, filter_controllable, filter_high_confidence
+
 logger = logging.getLogger(__name__)
 
 
@@ -281,6 +283,17 @@ class GatingLoopOrchestrator:
             summary_lines.append(f"  {i}. {targets.tool_name} (priority {targets.priority})")
 
         return "\n".join(summary_lines)
+
+    def has_valid_params(self, endpoint: str, method: str, params: List[Dict], threshold: float = 0.70) -> bool:
+        """Return True only when endpoint has controllable, high-confidence parameters."""
+        try:
+            enriched = classify_parameters(endpoint=endpoint, method=method, params=params)
+            controllable = filter_controllable(enriched)
+            high_conf = filter_high_confidence(controllable, threshold=threshold)
+            return len(high_conf) > 0
+        except Exception:
+            # Fail closed: if parameter intelligence fails, do not claim valid params.
+            return False
 
     def to_dict(self) -> dict:
         """Export gating decisions as dict"""

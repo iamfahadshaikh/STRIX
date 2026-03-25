@@ -4,10 +4,14 @@ Purpose: Report only confirmed vulnerabilities with explicit proof and evidence
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
+from payload_execution_validator import PayloadExecutionValidator
+from findings_model import Finding
+from validation_engine import validate_finding_proof
+from global_confidence_system import GlobalConfidenceSystem
 
 logger = logging.getLogger(__name__)
 
@@ -83,11 +87,18 @@ class ProofBasedReporter:
     - Confidence must be > 0.7 for reporting
     """
     
-    MIN_CONFIDENCE_FOR_REPORTING = 0.70
+    MIN_CONFIDENCE_FOR_REPORTING = 0.85
+    FALSE_POSITIVE_KILL_SWITCH_THRESHOLD = 5
     
     def __init__(self):
         self.confirmed_vulnerabilities: List[ConfirmedVulnerability] = []
         self.rejected_findings: List[Dict] = []
+        self.total_tested_vectors: int = 0
+        self.discarded_false_positive_patterns: int = 0
+
+    def register_test_attempt(self, count: int = 1) -> None:
+        """Track how many exploit vectors were tested (for report honesty)."""
+        self.total_tested_vectors += max(0, int(count))
     
     def add_confirmed_vulnerability(self, vuln_type: str, severity: str,
                                    endpoint: str, parameter: str,
@@ -143,10 +154,26 @@ class ProofBasedReporter:
         
         self.confirmed_vulnerabilities.append(vuln)
         logger.info(f"Confirmed {severity} {vuln_type}: {endpoint}?{parameter}=...")
+
+        # Debug logging for validation transparency.
+        baseline_hash = details.get("baseline_response_hash", "n/a")
+        payload_hash = details.get("payload_response_hash", "n/a")
+        diff_score = details.get("diff_score", "n/a")
+        validation_method = details.get("validation_method", confirmation_method.value)
+        logger.info(
+            "CONFIRMED_VULN_DEBUG type=%s endpoint=%s param=%s baseline_hash=%s payload_hash=%s diff_score=%s validation=%s",
+            vuln_type,
+            endpoint,
+            parameter,
+            baseline_hash,
+            payload_hash,
+            diff_score,
+            validation_method,
+        )
         
         return vuln
     
-    def add_from_exploitation_result(self, exploitation_result: Dict) -> Optional[ConfirmedVulnerability]:
+    def add_from_exploitation_result(self, exploitation_result: Union[Dict, Finding]) -> Optional[ConfirmedVulnerability]:
         """
         Add vulnerability from exploitation engine result
         
@@ -158,8 +185,77 @@ class ProofBasedReporter:
         - confidence: confidence score
         - proof: dict with proof details
         """
+        if isinstance(exploitation_result, Finding):
+            exploitation_result = exploitation_result.to_exploitation_dict()
+
         # Map proof details to confirmation method
         proof_dict = exploitation_result.get("proof", {})
+        confidence = float(exploitation_result.get("confidence", 0.0) or 0.0)
+
+        # Wave 1: strict proof validation engine (type-aware, evidence-driven)
+        strict_validation = validate_finding_proof(
+            vuln_type=exploitation_result.get("type", ""),
+            proof=proof_dict,
+            confidence=confidence,
+        )
+        if not strict_validation.valid:
+            self.rejected_findings.append({
+                "reason": strict_validation.reason,
+                "type": exploitation_result.get("type", "Unknown"),
+                "endpoint": exploitation_result.get("endpoint", "unknown"),
+                "parameter": exploitation_result.get("parameter", "unknown"),
+            })
+            logger.info(
+                "Rejected by ValidationEngine type=%s endpoint=%s reason=%s",
+                exploitation_result.get("type", "Unknown"),
+                exploitation_result.get("endpoint", "unknown"),
+                strict_validation.reason,
+            )
+            return None
+
+        confidence = max(0.0, min(1.0, confidence + strict_validation.confidence_adjustment))
+
+        valid, reason = PayloadExecutionValidator.validate_exploitation_proof(
+            vuln_type=exploitation_result.get("type", ""),
+            proof=proof_dict,
+            confidence=confidence,
+        )
+        if not valid:
+            self.rejected_findings.append({
+                "reason": reason,
+                "type": exploitation_result.get("type", "Unknown"),
+                "endpoint": exploitation_result.get("endpoint", "unknown"),
+                "parameter": exploitation_result.get("parameter", "unknown"),
+            })
+            logger.info(
+                "Rejected exploitation result type=%s endpoint=%s reason=%s",
+                exploitation_result.get("type", "Unknown"),
+                exploitation_result.get("endpoint", "unknown"),
+                reason,
+            )
+            return None
+
+        # Wave 2: global confidence policy gate (report only high-confidence findings)
+        confidence = GlobalConfidenceSystem.score(
+            base_confidence=confidence,
+            corroborated=False,
+            validated=True,
+            source="internal",
+        )
+        if not GlobalConfidenceSystem.should_report(confidence):
+            self.rejected_findings.append({
+                "reason": f"Global confidence gate: {confidence:.2f} < {GlobalConfidenceSystem.REPORT_THRESHOLD:.2f}",
+                "type": exploitation_result.get("type", "Unknown"),
+                "endpoint": exploitation_result.get("endpoint", "unknown"),
+                "parameter": exploitation_result.get("parameter", "unknown"),
+            })
+            logger.info(
+                "Rejected by GlobalConfidence gate type=%s endpoint=%s confidence=%.2f",
+                exploitation_result.get("type", "Unknown"),
+                exploitation_result.get("endpoint", "unknown"),
+                confidence,
+            )
+            return None
         
         if proof_dict.get("callback_id"):
             confirmation_method = ConfirmationMethod.CALLBACK
@@ -194,7 +290,7 @@ class ProofBasedReporter:
             parameter=exploitation_result.get("parameter", "unknown"),
             payload=payload_value,
             confirmation_method=confirmation_method,
-            confidence=exploitation_result.get("confidence", 0.0),
+            confidence=confidence,
             details=proof_dict,
             reproduction_steps=self._generate_reproduction_steps(
                 exploitation_result.get("type"),
@@ -290,19 +386,25 @@ class ProofBasedReporter:
         
         Returns: Dict with executive summary and detailed findings
         """
-        total_confirmed = len(self.confirmed_vulnerabilities)
+        filtered_vulns = self._apply_false_positive_kill_switch(self.confirmed_vulnerabilities)
+        total_confirmed = len(filtered_vulns)
         
         # Count by severity
         by_severity = {}
-        for vuln in self.confirmed_vulnerabilities:
+        for vuln in filtered_vulns:
             key = vuln.severity
             by_severity[key] = by_severity.get(key, 0) + 1
         
         # Count by type
         by_type = {}
-        for vuln in self.confirmed_vulnerabilities:
+        for vuln in filtered_vulns:
             key = vuln.type
             by_type[key] = by_type.get(key, 0) + 1
+
+        tested_vectors = self.total_tested_vectors
+        if tested_vectors <= 0:
+            tested_vectors = total_confirmed + len(self.rejected_findings)
+        discarded_total = max(0, tested_vectors - total_confirmed)
         
         return {
             "summary": {
@@ -312,8 +414,12 @@ class ProofBasedReporter:
                 "by_severity": by_severity,
                 "by_type": by_type,
                 "rejected_low_confidence": len(self.rejected_findings),
+                "tested_vectors": tested_vectors,
+                "confirmed_vectors": total_confirmed,
+                "discarded_vectors": discarded_total,
+                "discarded_false_positive_patterns": self.discarded_false_positive_patterns,
             },
-            "findings": [v.to_dict() for v in self.confirmed_vulnerabilities],
+            "findings": [v.to_dict() for v in filtered_vulns],
             "statistics": {
                 "critical": by_severity.get("CRITICAL", 0),
                 "high": by_severity.get("HIGH", 0),
@@ -322,6 +428,40 @@ class ProofBasedReporter:
                 "critical_and_high": by_severity.get("CRITICAL", 0) + by_severity.get("HIGH", 0),
             }
         }
+
+    def _apply_false_positive_kill_switch(
+        self,
+        vulnerabilities: List[ConfirmedVulnerability],
+    ) -> List[ConfirmedVulnerability]:
+        """Discard repeated identical vuln signatures across many endpoints."""
+        groups: Dict[tuple, List[ConfirmedVulnerability]] = {}
+        for vuln in vulnerabilities:
+            signature = (
+                vuln.type,
+                vuln.parameter,
+                vuln.payload_used,
+                vuln.proof.method.value,
+            )
+            groups.setdefault(signature, []).append(vuln)
+
+        kept: List[ConfirmedVulnerability] = []
+        for signature, items in groups.items():
+            unique_endpoints = {item.endpoint for item in items}
+            if len(unique_endpoints) > self.FALSE_POSITIVE_KILL_SWITCH_THRESHOLD:
+                self.discarded_false_positive_patterns += len(items)
+                self.rejected_findings.append({
+                    "reason": (
+                        f"False-positive pattern kill switch: signature repeated across "
+                        f"{len(unique_endpoints)} endpoints"
+                    ),
+                    "type": signature[0],
+                    "parameter": signature[1],
+                    "payload": signature[2],
+                })
+                continue
+            kept.extend(items)
+
+        return kept
     
     def has_critical_findings(self) -> bool:
         """Check if report contains CRITICAL severity findings"""

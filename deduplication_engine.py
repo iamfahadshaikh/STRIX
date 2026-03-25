@@ -33,7 +33,7 @@ class DeduplicationEngine:
     Intelligent finding deduplication
     
     Deduplication Strategy:
-    1. Group by endpoint + vuln_type
+    1. Group by method + endpoint + parameter + category
     2. Check evidence overlap (fuzzy match)
     3. Merge duplicates, keep highest confidence
     4. Apply corroboration bonus
@@ -60,7 +60,7 @@ class DeduplicationEngine:
         if not findings:
             return []
         
-        # Group by endpoint + vuln_type
+        # Group by method + endpoint + parameter + category
         groups = defaultdict(list)
         for finding in findings:
             key = self._get_dedup_key(finding)
@@ -84,11 +84,13 @@ class DeduplicationEngine:
     
     def _get_dedup_key(self, finding: Dict) -> tuple:
         """Get deduplication key for finding"""
-        endpoint = self._normalize_endpoint(finding.get("location", ""))
-        vuln_type = self._normalize_vuln_type(finding.get("type", ""))
-        
-        # Key: (endpoint, vuln_type)
-        return (endpoint, vuln_type)
+        endpoint = self._normalize_endpoint(finding.get("endpoint") or finding.get("location", ""))
+        parameter = self._normalize_parameter(finding.get("parameter", ""))
+        category = self._normalize_vuln_type(finding.get("category") or finding.get("type", ""))
+        method = str(finding.get("method") or finding.get("http_method") or "GET").strip().upper()
+
+        # Key: (method, endpoint, parameter, category)
+        return (method, endpoint, parameter, category)
     
     def _normalize_endpoint(self, endpoint: str) -> str:
         """Normalize endpoint for comparison"""
@@ -119,6 +121,12 @@ class DeduplicationEngine:
         }
         
         return mappings.get(normalized, normalized)
+
+    def _normalize_parameter(self, parameter: str) -> str:
+        """Normalize parameter for comparison."""
+        if not parameter:
+            return ""
+        return str(parameter).strip().lower()
     
     def _merge_duplicates(self, findings: List[Dict]) -> Dict:
         """

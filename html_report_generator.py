@@ -124,6 +124,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <div class="section">
+            <h2>🔐 Auth + Access Control Summary</h2>
+            {auth_access_control_html}
+        </div>
+
+        <div class="section">
             <h2>📝 Findings Summary</h2>
             {findings_summary_section_html}
         </div>
@@ -181,6 +186,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <div class="section">
+            <h2>🔐 TLS Certificate Health (All Hosts)</h2>
+            {certificate_assessments_html}
+        </div>
+
+        <div class="section">
+            <h2>🌐 Host Network Assessment</h2>
+            {host_network_assessment_html}
+        </div>
+
+        <div class="section">
             <h2>🎯 Prioritized Subdomain Targets</h2>
             {prioritized_subdomains_html}
         </div>
@@ -214,12 +229,17 @@ class HTMLReportGenerator:
         security_strengths: Optional[List[str]] = None,
         confirmed_exploitation: Optional[Dict[str, Any]] = None,
         service_fingerprints: Optional[List[Dict[str, Any]]] = None,
+        certificate_assessments: Optional[List[Dict[str, Any]]] = None,
+        host_network_assessment: Optional[List[Dict[str, Any]]] = None,
         prioritized_subdomains: Optional[List[Dict[str, Any]]] = None,
+        auth_access_control_summary: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Generate HTML report from intelligence data."""
         
         # Extract stats (robust to missing keys)
         total_findings = intelligence_report.get('total_findings', len(correlated_findings))
+        if findings_summary:
+            total_findings = int(findings_summary.get("total", total_findings) or 0)
         severity_counts = {}
         for cf in correlated_findings:
             # Support both object-based and dict-based findings
@@ -265,10 +285,13 @@ class HTMLReportGenerator:
         coverage_section_html = HTMLReportGenerator._render_coverage(coverage_report)
         target_intel_html = HTMLReportGenerator._render_target_intel(target, discovery_summary)
         strengths_section_html = HTMLReportGenerator._render_strengths(security_strengths or [])
+        auth_access_control_html = HTMLReportGenerator._render_auth_access_control(auth_access_control_summary)
         
         # PHASE 5: Confirmed exploitation findings (new)
         confirmed_exploitation_html = HTMLReportGenerator._render_confirmed_exploitation(confirmed_exploitation)
         service_fingerprints_html = HTMLReportGenerator._render_service_fingerprints(service_fingerprints or [])
+        certificate_assessments_html = HTMLReportGenerator._render_certificate_assessments(certificate_assessments or [])
+        host_network_assessment_html = HTMLReportGenerator._render_host_network_assessment(host_network_assessment or [])
         prioritized_subdomains_html = HTMLReportGenerator._render_prioritized_subdomains(prioritized_subdomains or [])
         
         # Fill template
@@ -284,6 +307,7 @@ class HTMLReportGenerator:
             multi_tool_count=multi_tool_count,
             target_intel_html=target_intel_html,
             discovery_section_html=discovery_section_html,
+            auth_access_control_html=auth_access_control_html,
             findings_summary_section_html=findings_summary_section_html,
             strengths_section_html=strengths_section_html,
             top_findings_html=top_findings_html,
@@ -295,6 +319,8 @@ class HTMLReportGenerator:
             coverage_section_html=coverage_section_html,
             confirmed_exploitation_html=confirmed_exploitation_html,
             service_fingerprints_html=service_fingerprints_html,
+            certificate_assessments_html=certificate_assessments_html,
+            host_network_assessment_html=host_network_assessment_html,
             prioritized_subdomains_html=prioritized_subdomains_html
         )
         
@@ -719,6 +745,9 @@ class HTMLReportGenerator:
             <div class="stat-card"><div class="label">Reflections</div><div class="value">{discovery_summary.get('reflections', 0)}</div></div>
             <div class="stat-card"><div class="label">Subdomains</div><div class="value">{discovery_summary.get('subdomains', 0)}</div></div>
             <div class="stat-card"><div class="label">Open Ports</div><div class="value">{discovery_summary.get('ports', 0)}</div></div>
+            <div class="stat-card"><div class="label">JS Endpoints</div><div class="value">{discovery_summary.get('js_endpoints', 0)}</div></div>
+            <div class="stat-card"><div class="label">JS API Endpoints</div><div class="value">{discovery_summary.get('js_api_endpoints', 0)}</div></div>
+            <div class="stat-card"><div class="label">Auth Roles</div><div class="value">{discovery_summary.get('auth_roles', 0)}</div></div>
         </div>
         <div class="detail-block">
             <h3>API Endpoints Found</h3>
@@ -746,6 +775,7 @@ class HTMLReportGenerator:
             return "<p>No findings summary available.</p>"
 
         owasp = findings_summary.get("owasp", {}) or {}
+        confirmed_by_type = findings_summary.get("confirmed_by_type", {}) or {}
         owasp_rows = []
         for category, count in sorted(owasp.items(), key=lambda item: (-item[1], item[0]))[:10]:
             owasp_rows.append(
@@ -760,10 +790,46 @@ class HTMLReportGenerator:
             <div class="stat-card"><div class="label">Low</div><div class="value severity-low">{findings_summary.get('low', 0)}</div></div>
             <div class="stat-card"><div class="label">Info</div><div class="value">{findings_summary.get('info', 0)}</div></div>
             <div class="stat-card"><div class="label">Total</div><div class="value">{findings_summary.get('total', 0)}</div></div>
+            <div class="stat-card"><div class="label">Confirmed SQLi/SSRF/XSS</div><div class="value">{confirmed_by_type.get('SQLi', 0)}/{confirmed_by_type.get('SSRF', 0)}/{confirmed_by_type.get('XSS', 0)}</div></div>
         </div>
         <div class="compliance-card">
             <h3>OWASP Mapping Distribution</h3>
             {''.join(owasp_rows) or '<p>No OWASP-mapped findings.</p>'}
+        </div>
+        """
+
+    @staticmethod
+    def _render_auth_access_control(summary: Optional[Dict[str, Any]]) -> str:
+        if not summary:
+            return "<p>No auth/access-control assessment data available.</p>"
+
+        enabled_roles = summary.get("enabled_roles", []) or []
+        authenticated_roles = summary.get("authenticated_roles", []) or []
+        errors = summary.get("errors", []) or []
+
+        role_tags = ''.join([f"<span class='tool-tag mono'>{r}</span>" for r in authenticated_roles])
+        if not role_tags:
+            role_tags = "<span class='tool-tag'>No authenticated roles</span>"
+
+        error_rows = ''.join([
+            f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(err)}</span></div>"
+            for err in errors[:10]
+        ])
+
+        return f"""
+        <div class="stats-grid">
+            <div class="stat-card"><div class="label">Executed</div><div class="value">{'Yes' if summary.get('executed') else 'No'}</div></div>
+            <div class="stat-card"><div class="label">Configured Roles</div><div class="value">{len(enabled_roles)}</div></div>
+            <div class="stat-card"><div class="label">Authenticated Roles</div><div class="value">{len(authenticated_roles)}</div></div>
+            <div class="stat-card"><div class="label">Endpoints Tested</div><div class="value">{summary.get('endpoints_tested', 0)}</div></div>
+            <div class="stat-card"><div class="label">IDOR Findings</div><div class="value">{summary.get('idor_findings', 0)}</div></div>
+            <div class="stat-card"><div class="label">Access-Control Findings</div><div class="value">{summary.get('access_control_findings', 0)}</div></div>
+        </div>
+        <div class="detail-block">
+            <h3>Authenticated Roles</h3>
+            <div class="tools-list">{role_tags}</div>
+            <h3 style="margin-top:12px;">Errors</h3>
+            {error_rows or '<p>No errors recorded.</p>'}
         </div>
         """
     
@@ -775,16 +841,22 @@ class HTMLReportGenerator:
         
         summary = confirmed_exploitation.get("summary", {})
         total = summary.get("total_confirmed", 0)
+        tested = summary.get("tested_vectors", 0)
+        discarded = summary.get("discarded_vectors", 0)
+        rejected_low_conf = summary.get("rejected_low_confidence", 0)
+        discarded_patterns = summary.get("discarded_false_positive_patterns", 0)
         severity_breakdown = summary.get("by_severity", {})
         by_type = summary.get("by_type", {})
         
         # Build summary cards
         summary_html = f"""
         <div class="stats-grid">
-            <div class="stat-card"><div class="label">Total Confirmed</div><div class="value">{total}</div></div>
-            <div class="stat-card"><div class="label">CRITICAL SQLi</div><div class="value severity-critical">{by_type.get('SQLi', 0)}</div></div>
-            <div class="stat-card"><div class="label">HIGH SSRF</div><div class="value severity-high">{by_type.get('SSRF', 0)}</div></div>
-            <div class="stat-card"><div class="label">HIGH XSS</div><div class="value severity-high">{by_type.get('XSS', 0)}</div></div>
+            <div class="stat-card"><div class="label">Tested Vectors</div><div class="value">{tested}</div></div>
+            <div class="stat-card"><div class="label">Confirmed</div><div class="value">{total}</div></div>
+            <div class="stat-card"><div class="label">Discarded</div><div class="value">{discarded}</div></div>
+            <div class="stat-card"><div class="label">Discarded (Low Confidence)</div><div class="value">{rejected_low_conf}</div></div>
+            <div class="stat-card"><div class="label">Discarded (Pattern Kill Switch)</div><div class="value">{discarded_patterns}</div></div>
+            <div class="stat-card"><div class="label">Confirmed SQLi/SSRF/XSS</div><div class="value">{by_type.get('SQLi', 0)}/{by_type.get('SSRF', 0)}/{by_type.get('XSS', 0)}</div></div>
         </div>
         """
         
@@ -796,8 +868,9 @@ class HTMLReportGenerator:
             severity = finding.get("severity", "MEDIUM").lower()
             endpoint = finding.get("endpoint", "?")
             param = finding.get("parameter", "?")
-            confidence = int(finding.get("confidence", 0) * 100)
-            proof_type = finding.get("proof_type", "response_diff")
+            proof = finding.get("proof", {}) if isinstance(finding.get("proof"), dict) else {}
+            confidence = int(float(proof.get("confidence", finding.get("confidence", 0)) or 0.0) * 100)
+            proof_type = proof.get("method", finding.get("proof_type", "response_diff"))
             
             findings_html += f"""
             <div class="finding-card {severity}">
@@ -863,6 +936,82 @@ class HTMLReportGenerator:
             </table>
         </div>
         """
+
+    @staticmethod
+    def _render_certificate_assessments(cert_checks: List[Dict[str, Any]]) -> str:
+        """Render TLS certificate chain validity and expiry data."""
+        if not cert_checks:
+            return "<p>No certificate checks available.</p>"
+
+        rows = []
+        for cert in cert_checks:
+            host = cert.get("host", "?")
+            port = cert.get("port", "?")
+            status = cert.get("status", "UNKNOWN")
+            chain_valid = cert.get("chain_valid", False)
+            chain_complete = cert.get("chain_complete", False)
+            expires_at = cert.get("expires_at", "n/a")
+            days_left = cert.get("days_until_expiry", "n/a")
+            issuer = cert.get("issuer", "n/a")
+
+            rows.append(f"""
+            <tr>
+                <td><strong>{host}:{port}</strong></td>
+                <td>{status}</td>
+                <td>{'Yes' if chain_valid else 'No'}</td>
+                <td>{'Yes' if chain_complete else 'No'}</td>
+                <td>{days_left}</td>
+                <td>{expires_at}</td>
+                <td>{issuer}</td>
+            </tr>
+            """)
+
+        return f"""
+        <div class="chart-container">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead style="background: #f8f9fa;">
+                    <tr>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Host:Port</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Status</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Chain Valid</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Chain Complete</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Days Left</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Expires At</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Issuer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {''.join(rows)}
+                </tbody>
+            </table>
+        </div>
+        """
+
+    @staticmethod
+    def _render_host_network_assessment(host_rows: List[Dict[str, Any]]) -> str:
+        """Render per-host open ports + assessment summary."""
+        if not host_rows:
+            return "<p>No host network assessment data available.</p>"
+
+        cards = []
+        for row in host_rows:
+            host = row.get("host", "?")
+            ports = row.get("open_ports", []) or []
+            port_tags = ''.join([f"<span class='tool-tag mono'>{p}</span>" for p in ports]) or "<span class='tool-tag'>No open common ports</span>"
+            fp_count = len(row.get("fingerprints", []) or [])
+            cert_count = len(row.get("certificate_checks", []) or [])
+
+            cards.append(f"""
+            <div class="compliance-card" style="margin-bottom:12px;">
+                <h3>{host}</h3>
+                <div class="compliance-item"><span>Service Fingerprints</span><span><strong>{fp_count}</strong></span></div>
+                <div class="compliance-item"><span>Certificate Checks</span><span><strong>{cert_count}</strong></span></div>
+                <div style="margin-top:8px;"><strong>Open Ports:</strong></div>
+                <div class="tools-list" style="margin-top:6px;">{port_tags}</div>
+            </div>
+            """)
+
+        return ''.join(cards)
     
     @staticmethod
     def _render_prioritized_subdomains(subdomains: List[Dict[str, Any]]) -> str:
