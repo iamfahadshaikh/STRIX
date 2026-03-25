@@ -7,7 +7,8 @@ import logging
 import hashlib
 import difflib
 import re
-from typing import Dict, Optional, Tuple, List
+import json
+from typing import Dict, Optional, Tuple, List, Any
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
@@ -24,6 +25,7 @@ class DiffingStrategy(Enum):
     ERROR_SIGNATURE = "error_signature"   # SQL/error fingerprints
     REFLECTION = "reflection"             # Payload reflected in response
     TIMING = "timing"                     # Response time difference
+    JSON_STRUCTURE = "json_structure"     # JSON object diff (new/changed keys)
 
 
 @dataclass
@@ -112,11 +114,25 @@ class ResponseDiffingEngine:
         "attribute": r"on\w+\s*=|\"[^\"]*\"",
         "url": r"javascript:|data:",
     }
+
+    SENSITIVE_JSON_KEYS = {
+        "password", "passwd", "pwd", "token", "access_token", "refresh_token",
+        "secret", "api_key", "apikey", "private_key", "ssn", "credit_card",
+        "authorization", "session", "jwt",
+    }
     
     def __init__(self):
         self.baselines: Dict[str, HTTPResponse] = {}
         self.payloads: Dict[str, HTTPResponse] = {}
         self.diffs: Dict[str, DiffResult] = {}
+
+    VOLATILE_PATTERNS = [
+        r"csrf[_-]?token[\"'\s:=]+[A-Za-z0-9_\-\.]+",
+        r"access[_-]?token[\"'\s:=]+[A-Za-z0-9_\-\.]+",
+        r"refresh[_-]?token[\"'\s:=]+[A-Za-z0-9_\-\.]+",
+        r"\b[0-9]{10,13}\b",
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    ]
     
     def capture_baseline(self, endpoint: str, response_text: str, 
                          status_code: int = 200, response_time: float = 0.0,
@@ -247,6 +263,15 @@ class ResponseDiffingEngine:
         else:
             timing_score = 0.0  # Raised from 0.45 - small delays are noise
         strategies_scores[DiffingStrategy.TIMING] = timing_score
+
+        # Strategy 7: JSON structural drift (new/changed/sensitive fields)
+        json_diff = self.compare_json(baseline.body, payload_response.body)
+        json_score = 0.0
+        if json_diff.get("sensitive_leak"):
+            json_score = 0.95
+        elif json_diff.get("new_fields") or json_diff.get("changed_fields"):
+            json_score = 0.75
+        strategies_scores[DiffingStrategy.JSON_STRUCTURE] = json_score
         
         # Select best strategy
         best_strategy = max(strategies_scores.items(), key=lambda x: x[1])
@@ -282,20 +307,104 @@ class ResponseDiffingEngine:
             diff_result.analysis_notes.append(f"Payload reflected in {context} context")
         if error_sig:
             diff_result.analysis_notes.append(f"Error signature detected: {error_type}")
+        if json_diff.get("new_fields") or json_diff.get("changed_fields"):
+            diff_result.analysis_notes.append(
+                f"JSON diff new={len(json_diff.get('new_fields', []))}, changed={len(json_diff.get('changed_fields', []))}, sensitive={json_diff.get('sensitive_leak', False)}"
+            )
         
         if best_confidence >= 0.70:
             logger.info(f"Diff result for {endpoint}: {best_strategy_enum.value} "
                        f"({best_confidence:.2f} confidence) - ACCEPTED")
         
         return diff_result
+
+    def compare_json(self, baseline_body: str, payload_body: str) -> Dict[str, Any]:
+        """Compare JSON payloads and surface structural/security-significant changes."""
+        baseline_json = self._safe_json_loads(baseline_body)
+        payload_json = self._safe_json_loads(payload_body)
+        if baseline_json is None or payload_json is None:
+            return {
+                "new_fields": [],
+                "changed_fields": [],
+                "sensitive_leak": False,
+                "confidence": 0.0,
+            }
+
+        new_fields: List[str] = []
+        changed_fields: List[str] = []
+        self._walk_json_diff(baseline_json, payload_json, "", new_fields, changed_fields)
+
+        sensitive_leak = any(
+            segment.lower() in self.SENSITIVE_JSON_KEYS
+            for path in (new_fields + changed_fields)
+            for segment in path.replace("[", ".").replace("]", "").split(".")
+            if segment
+        )
+
+        confidence = 0.0
+        if sensitive_leak:
+            confidence = 0.95
+        elif new_fields or changed_fields:
+            confidence = 0.75
+
+        return {
+            "new_fields": new_fields,
+            "changed_fields": changed_fields,
+            "sensitive_leak": sensitive_leak,
+            "confidence": confidence,
+        }
+
+    def _safe_json_loads(self, body: str) -> Optional[Any]:
+        try:
+            return json.loads(body)
+        except Exception:
+            return None
+
+    def _walk_json_diff(
+        self,
+        baseline: Any,
+        payload: Any,
+        path: str,
+        new_fields: List[str],
+        changed_fields: List[str],
+    ) -> None:
+        if isinstance(baseline, dict) and isinstance(payload, dict):
+            baseline_keys = set(baseline.keys())
+            payload_keys = set(payload.keys())
+            for key in sorted(payload_keys - baseline_keys):
+                new_fields.append(f"{path}.{key}" if path else str(key))
+            for key in sorted(baseline_keys & payload_keys):
+                next_path = f"{path}.{key}" if path else str(key)
+                self._walk_json_diff(baseline[key], payload[key], next_path, new_fields, changed_fields)
+            return
+
+        if isinstance(baseline, list) and isinstance(payload, list):
+            if len(payload) > len(baseline):
+                new_fields.append(f"{path}[]" if path else "[]")
+            compare_len = min(len(baseline), len(payload))
+            for idx in range(compare_len):
+                self._walk_json_diff(baseline[idx], payload[idx], f"{path}[{idx}]", new_fields, changed_fields)
+            return
+
+        if baseline != payload:
+            changed_fields.append(path or "$root")
     
     def _calculate_body_similarity(self, baseline: str, payload_response: str) -> float:
         """
         Calculate body similarity using SequenceMatcher
         Returns 0.0 - 1.0 (1.0 = identical)
         """
-        matcher = difflib.SequenceMatcher(None, baseline, payload_response)
+        baseline_norm = self._normalize_for_diff(baseline)
+        payload_norm = self._normalize_for_diff(payload_response)
+        matcher = difflib.SequenceMatcher(None, baseline_norm, payload_norm)
         return matcher.ratio()
+
+    def _normalize_for_diff(self, body: str) -> str:
+        """Remove high-churn tokens to reduce false diffs."""
+        normalized = body or ""
+        for pattern in self.VOLATILE_PATTERNS:
+            normalized = re.sub(pattern, "<redacted>", normalized, flags=re.IGNORECASE)
+        return normalized
     
     def _check_reflection(self, payload: str, response_body: str) -> Tuple[bool, str]:
         """

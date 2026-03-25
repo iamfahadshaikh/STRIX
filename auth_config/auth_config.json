@@ -1,0 +1,108 @@
+{
+  "authentication_engines": [
+    {
+      "enabled": true,
+      "description": "Example: Form-based login",
+      "role": "user",
+      "auth_type": "form_login",
+      "login_url": "https://target.com/login",
+      "username": "user@example.com",
+      "password": "password123",
+      "login_data": {
+        "email": "user@example.com",
+        "password": "password123"
+      },
+      "token_extract_field": "token",
+      "token_field_path": "data.access_token",
+      "expected_status_success": 200,
+      "cookie_names": ["session", "sessionid"]
+    },
+    {
+      "enabled": false,
+      "description": "Example: JSON login with JWT token",
+      "role": "admin",
+      "auth_type": "json_login",
+      "login_url": "https://target.com/api/auth/login",
+      "login_data": {
+        "email": "admin@example.com",
+        "password": "admin_pass"
+      },
+      "token_extract_field": "token",
+      "token_field_path": "data.token",
+      "expected_status_success": 200,
+      "cookie_names": []
+    },
+    {
+      "enabled": false,
+      "description": "Example: API Key authentication",
+      "role": "api_service",
+      "auth_type": "api_key",
+      "api_key": "sk_live_your_api_key_here",
+      "custom_headers": {
+        "X-API-Key": "sk_live_your_api_key_here"
+      }
+    },
+    {
+      "enabled": false,
+      "description": "Example: Bearer token",
+      "role": "oauth_user",
+      "auth_type": "bearer_token",
+      "bearer_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+  ],
+  "idor_testing": {
+    "enabled": true,
+    "mutation_strategies": [
+      "increment",
+      "decrement",
+      "zero",
+      "negative",
+      "random_id",
+      "known_ids"
+    ],
+    "parameter_patterns": [
+      "user_id",
+      "account_id",
+      "order_id",
+      "invoice_id",
+      "product_id",
+      "post_id",
+      "message_id"
+    ],
+    "sensitive_endpoints": [
+      "/api/users/{id}",
+      "/api/accounts/{id}",
+      "/api/orders/{id}",
+      "/api/profiles/{id}",
+      "/api/messages/{id}"
+    ]
+  },
+  "access_control_testing": {
+    "enabled": true,
+    "test_privilege_escalation": true,
+    "test_unauthorized_access": true,
+    "test_method_tampering": true,
+    "test_role_headers": true,
+    "admin_endpoints": [
+      "/admin",
+      "/admin/users",
+      "/api/admin",
+      "/api/management",
+      "/internal",
+      "/api/internal"
+    ],
+    "methods": ["GET", "POST", "PUT", "DELETE"]
+  },
+  "request_settings": {
+    "timeout": 30.0,
+    "max_retries": 3,
+    "verify_ssl": false,
+    "follow_redirects": true
+  },
+  "report_settings": {
+    "output_format": "json",
+    "include_evidence": true,
+    "severity_filter": "MEDIUM",
+    "deduplicate_findings": true
+  }
+}

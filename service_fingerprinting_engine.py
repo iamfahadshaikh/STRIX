@@ -250,7 +250,7 @@ class ServiceFingerprintingEngine:
         """
         try:
             url = f"{protocol}://{host}:{port}/"
-            response = requests.head(url, timeout=5, verify=False, follow_redirects=False)
+            response = requests.head(url, timeout=5, verify=False, allow_redirects=False)
             
             tech_stack = []
             confidence = 0.5
