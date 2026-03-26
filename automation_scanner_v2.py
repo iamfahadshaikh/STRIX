@@ -57,7 +57,7 @@ from subdomain_prioritization import SubdomainPrioritizationEngine
 from ssl_certificate_checker import SSLCertificateChecker
 from proof_based_reporter import ProofBasedReporter, ConfirmationMethod
 from request_context import RequestContextManager
-from js_browser_discovery import JSBrowserDiscovery
+from js_browser_discovery import JSBrowserDiscovery, validate_playwright_environment
 from core.request_engine import RequestEngine
 from core.session_manager import AuthType
 from modules.auth_engine import AuthEngine, LoginConfig
@@ -115,8 +115,10 @@ class AutomationScannerV2:
         skip_tool_check: bool = False,
         custom_budget: int | None = None,
         manual_out_of_scope_mode: str = "ask",
+        strict_js_required: bool = False,
     ) -> None:
         self.target = target
+        self.strict_js_required = strict_js_required
         self.start_time = datetime.now()
         self.correlation_id = self.start_time.strftime("%Y%m%d_%H%M%S")
 
@@ -241,6 +243,8 @@ class AutomationScannerV2:
             "access_control_findings": 0,
             "errors": [],
         }
+        self.scan_status: str = "completed"
+        self.abort_reason: str | None = None
 
         # Error semantics counters for planning influence
         self.error_counters = {
@@ -2442,7 +2446,32 @@ class AutomationScannerV2:
             self.log(f"✓ Crawler gate passed: {gate_report['endpoints_discovered']} endpoints discovered", "SUCCESS")
 
             # JS-aware discovery augments server-side crawl for modern SPA/API traffic.
-            self._run_js_aware_discovery(crawl_url)
+            try:
+                validate_playwright_environment()
+                self._run_js_aware_discovery(crawl_url)
+            except Exception as e:
+                js_failure_reason = f"JS-aware discovery failure: {e}"
+                self.js_discovery_summary = {
+                    "executed": False,
+                    "playwright_used": False,
+                    "success": False,
+                    "endpoints": 0,
+                    "api_endpoints": 0,
+                    "js_assets": 0,
+                    "network_requests": 0,
+                    "requests_captured": 0,
+                    "api_calls_detected": 0,
+                    "params": 0,
+                    "error": str(e),
+                }
+                if self.strict_js_required:
+                    self.abort_reason = js_failure_reason
+                    self.scan_status = "aborted"
+                    self.log(self.abort_reason, "ERROR")
+                    self.log("Aborting active scan due to strict JS discovery policy", "ERROR")
+                    self._write_report()
+                    return
+                self.log(f"{js_failure_reason} - continuing without JS discovery", "WARN")
             # Wave 2: secondary enrichment and passive security posture checks.
             self._run_zap_enrichment(crawl_url)
             self._run_api_schema_import(crawl_url)
@@ -2458,7 +2487,7 @@ class AutomationScannerV2:
             endpoints_count=len(self.cache.endpoints),
             controllable_params_count=len(self.cache.params),
             api_endpoints_count=int(self.js_discovery_summary.get("api_endpoints", 0)) + int(self.api_schema_summary.get("endpoints", 0)),
-            js_discovery_success=bool(self.js_discovery_summary.get("executed", False)),
+            js_discovery_success=bool(self.js_discovery_summary.get("success", False)),
             js_network_calls_captured=int(self.js_discovery_summary.get("network_requests", 0)),
             crawler_success=bool(gate_report.get("crawler_succeeded", False)),
             external_intel_count=len(self.cache.subdomains),
@@ -2466,7 +2495,7 @@ class AutomationScannerV2:
         )
         ready, ready_reason = check_exploitation_readiness(discovery_state, phase_name="PHASE 5")
 
-        if not bool(self.js_discovery_summary.get("executed", False)):
+        if not bool(self.js_discovery_summary.get("success", False)):
             ready = False
             ready_reason = "JS discovery failed - exploitation aborted by hard policy"
 
@@ -2819,8 +2848,19 @@ class AutomationScannerV2:
             "owasp": owasp_summary_for_report,
             "confirmed_by_type": confirmed_summary.get("by_type", {}),
         }
+        raw_severity_counts = self.findings.count_by_severity()
+        raw_total_findings = len(self.findings.get_all())
+        if findings_summary["total"] == 0 and raw_total_findings > 0:
+            findings_summary["critical"] = int(raw_severity_counts.get("CRITICAL", 0))
+            findings_summary["high"] = int(raw_severity_counts.get("HIGH", 0))
+            findings_summary["medium"] = int(raw_severity_counts.get("MEDIUM", 0))
+            findings_summary["low"] = int(raw_severity_counts.get("LOW", 0))
+            findings_summary["info"] = int(raw_severity_counts.get("INFO", 0))
+            findings_summary["total"] = raw_total_findings
 
         report = {
+            "scan_status": self.scan_status,
+            "abort_reason": self.abort_reason,
             "profile": self.profile.to_dict(),
             "ledger": self.ledger.to_dict(),
             "plan": plan_serialized,
@@ -2914,6 +2954,8 @@ class AutomationScannerV2:
                         continue
 
             discovery_summary = {
+                "scan_status": self.scan_status,
+                "abort_reason": self.abort_reason,
                 "endpoints": len(self.cache.endpoints),
                 "live_endpoints": len(self.cache.live_endpoints),
                 "params": len(self.cache.params),
@@ -2955,6 +2997,13 @@ class AutomationScannerV2:
                 "owasp": owasp_summary,
                 "confirmed_by_type": confirmed_summary.get("by_type", {}),
             }
+            if findings_summary["total"] == 0 and self.findings.get_all():
+                findings_summary["critical"] = int(severity_counts.get("CRITICAL", 0))
+                findings_summary["high"] = int(severity_counts.get("HIGH", 0))
+                findings_summary["medium"] = int(severity_counts.get("MEDIUM", 0))
+                findings_summary["low"] = int(severity_counts.get("LOW", 0))
+                findings_summary["info"] = int(severity_counts.get("INFO", 0))
+                findings_summary["total"] = len(self.findings.get_all())
 
             HTMLReportGenerator.generate(
                 target=self.profile.host,
@@ -3676,6 +3725,11 @@ def main() -> None:
         default="ask",
         help="After scan, run denied/skipped tools on discovered API/pages (yes/no/skip or interactive ask)",
     )
+    parser.add_argument(
+        "--strict-js-required",
+        action="store_true",
+        help="Fail-fast and abort scan if JS/Playwright discovery fails",
+    )
     args = parser.parse_args()
 
     # If --check-tools requested, run interactive tool checker and exit
@@ -3728,6 +3782,7 @@ def main() -> None:
         skip_tool_check=args.skip_install,
         custom_budget=args.budget,
         manual_out_of_scope_mode=args.manual_out_of_scope,
+        strict_js_required=args.strict_js_required,
     )
 
     # Optional pre-flight installers (when target is provided)
