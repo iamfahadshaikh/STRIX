@@ -6,11 +6,46 @@ fallback because fake JS success states create low-quality attack surfaces.
 
 import importlib
 import logging
+import os
 import time
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set
 from urllib.parse import parse_qs, urlparse, urljoin
 
 logger = logging.getLogger(__name__)
+
+
+def validate_playwright_environment() -> bool:
+    """Validate Python Playwright + Chromium availability.
+
+    This performs a minimal launch/close cycle. Any failure is treated as
+    fatal because JS discovery has a strict no-fallback contract.
+    """
+    try:
+        playwright_module = importlib.import_module("playwright")
+        playwright_file = str(getattr(playwright_module, "__file__", ""))
+
+        # Debian/apt package variant sometimes expects Node CLI at this path.
+        # If missing, fail fast with explicit remediation before launching driver.
+        if playwright_file.startswith("/usr/lib/python3/dist-packages/"):
+            node_cli = "/usr/share/nodejs/playwright/cli.js"
+            if not os.path.exists(node_cli):
+                raise RuntimeError(
+                    "Detected distro Playwright package with missing Node CLI "
+                    f"({node_cli}). Use a Python venv and install Playwright via pip."
+                )
+
+        playwright_sync_api = importlib.import_module("playwright.sync_api")
+        sync_playwright = getattr(playwright_sync_api, "sync_playwright")
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            browser.close()
+        return True
+    except Exception as e:
+        raise RuntimeError(
+            "Playwright not properly installed. Use Python Playwright only: "
+            "'pip install playwright' and 'python -m playwright install chromium'."
+        ) from e
 
 
 class JSBrowserDiscovery:
@@ -19,10 +54,17 @@ class JSBrowserDiscovery:
         self.max_pages = max_pages
 
     def discover(self, base_url: str, role_headers: Optional[Dict[str, Dict[str, str]]] = None) -> Dict:
+        logger.info("JS_DISCOVERY_START target=%s", base_url)
         role_headers = role_headers or {}
         pw_result = self._discover_with_playwright(base_url, role_headers)
         if not pw_result or not pw_result.get("success", False):
             raise Exception("JS discovery failed - aborting scan")
+        logger.info(
+            "JS_DISCOVERY_SUCCESS requests=%d responses=%d api_calls=%d",
+            len(pw_result.get("requests", [])),
+            len(pw_result.get("responses", [])),
+            len(pw_result.get("api_calls", [])),
+        )
         return pw_result
 
     def _discover_with_playwright(self, base_url: str, role_headers: Dict[str, Dict[str, str]]) -> Optional[Dict]:
@@ -43,18 +85,24 @@ class JSBrowserDiscovery:
 
         requests_captured = 0
         api_calls_detected = 0
+        requests_list: List[Dict[str, str]] = []
+        responses_list: List[Dict[str, str]] = []
+        api_calls_list: List[Dict[str, str]] = []
+
+        browser = None
+        context = None
+        page = None
 
         try:
             with sync_playwright() as p:
-                browser = None
                 launch_error = None
-                for _ in range(2):
+                for _ in range(3):
                     try:
                         browser = p.chromium.launch(headless=True)
                         break
                     except Exception as e:
                         launch_error = e
-                        time.sleep(0.8)
+                        time.sleep(1.0)
 
                 if browser is None:
                     raise Exception(f"Chromium launch failed after retry: {launch_error}")
@@ -103,10 +151,12 @@ class JSBrowserDiscovery:
                         if not self._is_same_host(base_url, url):
                             return
                         requests_captured += 1
+                        responses_list.append({"url": url, "status": str(resp.status)})
                         network_requests.add(url)
                         endpoints.add(self._path_only(url))
                         if self._is_api_like(url):
                             api_calls_detected += 1
+                            api_calls_list.append({"url": url, "source": "response"})
                             api_endpoints.add(self._path_only(url))
                         for param_name in parse_qs(urlparse(url).query).keys():
                             params.add(param_name)
@@ -120,10 +170,12 @@ class JSBrowserDiscovery:
                         if not self._is_same_host(base_url, url):
                             return
                         requests_captured += 1
+                        requests_list.append({"url": url, "method": req.method})
                         network_requests.add(url)
                         endpoints.add(self._path_only(url))
                         if self._is_api_like(url):
                             api_calls_detected += 1
+                            api_calls_list.append({"url": url, "source": "request"})
                             api_endpoints.add(self._path_only(url))
                         for param_name in parse_qs(urlparse(url).query).keys():
                             params.add(param_name)
@@ -151,15 +203,33 @@ class JSBrowserDiscovery:
                             if self._is_api_like(url):
                                 api_endpoints.add(self._path_only(url))
                                 api_calls_detected += 1
+                                api_calls_list.append({"url": url, "source": "runtime_hook"})
                             for param_name in parse_qs(urlparse(url).query).keys():
                                 params.add(param_name)
                 except Exception:
                     pass
-
-                browser.close()
         except Exception as e:
-            logger.error("Playwright discovery failed: %s", e)
-            raise
+            reason = str(e)
+            if "Connection.init" in reason or "_playwright" in reason:
+                reason = f"Playwright driver bootstrap failure: {reason}"
+            logger.error("JS_DISCOVERY_FAILED: %s", reason)
+            raise RuntimeError(reason) from e
+        finally:
+            try:
+                if page is not None:
+                    page.close()
+            except Exception:
+                pass
+            try:
+                if context is not None:
+                    context.close()
+            except Exception:
+                pass
+            try:
+                if browser is not None:
+                    browser.close()
+            except Exception:
+                pass
 
         success = requests_captured > 0 and len(endpoints) > 0
 
@@ -169,6 +239,9 @@ class JSBrowserDiscovery:
             "playwright_used": True,
             "requests_captured": requests_captured,
             "api_calls_detected": api_calls_detected,
+            "requests": requests_list,
+            "responses": responses_list,
+            "api_calls": api_calls_list,
             "endpoints": sorted(endpoints),
             "api_endpoints": sorted(api_endpoints),
             "js_assets": sorted(js_assets),
@@ -182,6 +255,10 @@ class JSBrowserDiscovery:
                 "params": len(params),
             },
         }
+
+        if len(result["requests"]) == 0 or len(result["api_calls"]) == 0:
+            logger.error("JS_DISCOVERY_FAILED: JS discovery produced no signals")
+            raise Exception("JS discovery produced no signals")
 
         if not result["success"]:
             raise Exception("JS discovery failed - aborting scan")

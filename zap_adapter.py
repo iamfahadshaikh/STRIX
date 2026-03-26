@@ -8,6 +8,7 @@ import json
 import logging
 import subprocess
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -54,6 +55,8 @@ class ZAPDiscoveryResult:
 class ZAPAdapter:
     def __init__(self, timeout_seconds: int = 300):
         self.timeout_seconds = timeout_seconds
+        self.api_base_url = "http://localhost:8090"
+        self._managed_container_name: Optional[str] = None
 
     def run_intelligence_scan(self, target_url: str, include_active_scan: bool = True) -> ZAPDiscoveryResult:
         """Run API-driven ZAP intelligence workflow.
@@ -61,6 +64,8 @@ class ZAPAdapter:
         ZAP is used as a secondary intelligence source and optional corroborator.
         """
         try:
+            self._ensure_api_ready()
+
             # 1. Spider
             spider = self._api_get("spider", "action", "scan", {"url": target_url, "maxChildren": 0, "recurse": True})
             spider_id = str(spider.get("scan") or "")
@@ -133,13 +138,100 @@ class ZAPAdapter:
                 error=f"ZAP API intelligence scan failed: {e}",
                 source="zap_api",
             )
+        finally:
+            self._stop_managed_api_container()
 
     def _api_get(self, component: str, operation_type: str, operation: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        base = f"http://localhost:8090/JSON/{component}/{operation_type}/{operation}/"
+        base = f"{self.api_base_url}/JSON/{component}/{operation_type}/{operation}/"
         resp = requests.get(base, params=params or {}, timeout=20)
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, dict) else {}
+
+    def _is_api_reachable(self) -> bool:
+        try:
+            resp = requests.get(f"{self.api_base_url}/JSON/core/view/version/", timeout=3)
+            return resp.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _ensure_api_ready(self) -> None:
+        """Ensure ZAP API is available; start a managed Docker daemon if not."""
+        if self._is_api_reachable():
+            return
+
+        self._start_managed_api_container()
+        max_wait = max(60, min(self.timeout_seconds, 180))
+        start = time.time()
+        while (time.time() - start) < max_wait:
+            if self._is_api_reachable():
+                return
+            time.sleep(1.5)
+        raise TimeoutError(f"ZAP API not reachable on localhost:8090 after startup attempt ({int(max_wait)}s)")
+
+    def _start_managed_api_container(self) -> None:
+        if self._managed_container_name:
+            return
+
+        container_name = f"vapt-zap-api-{uuid.uuid4().hex[:8]}"
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-d",
+            "--name",
+            container_name,
+            "-p",
+            "8090:8090",
+            "zaproxy/zap-stable",
+            "zap.sh",
+            "-daemon",
+            "-host",
+            "0.0.0.0",
+            "-port",
+            "8090",
+            "-config",
+            "api.disablekey=true",
+            "-config",
+            "api.addrs.addr.name=.*",
+            "-config",
+            "api.addrs.addr.regex=true",
+            "-config",
+            "autoupdate.checkOnStart=false",
+            "-config",
+            "autoupdate.installAddonUpdates=false",
+            "-config",
+            "autoupdate.downloadNewRelease=false",
+        ]
+
+        try:
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=40,
+                check=False,
+            )
+            if completed.returncode != 0:
+                err = (completed.stderr or completed.stdout or "unknown docker error").strip()
+                raise RuntimeError(f"Unable to start managed ZAP API container: {self._docker_error_hint(err)}")
+            self._managed_container_name = container_name
+        except FileNotFoundError as e:
+            raise RuntimeError(f"Docker not available for managed ZAP API startup: {self._docker_error_hint(str(e))}") from e
+
+    def _stop_managed_api_container(self) -> None:
+        if not self._managed_container_name:
+            return
+        try:
+            subprocess.run(
+                ["docker", "rm", "-f", self._managed_container_name],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        finally:
+            self._managed_container_name = None
 
     def _wait_scan_status(self, component: str, scan_id: str) -> None:
         start = time.time()
@@ -182,37 +274,50 @@ class ZAPAdapter:
     def run_baseline_docker(self, target_url: str, output_dir: Path) -> ZAPDiscoveryResult:
         """Run ZAP baseline scan in Docker and parse JSON output."""
         zap_json_path = output_dir / "zap.json"
-        cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "-t",
-            "-v",
-            f"{str(output_dir.resolve())}:/zap/wrk:rw",
-            "owasp/zap2docker-stable",
-            "zap-baseline.py",
-            "-t",
-            target_url,
-            "-J",
-            "zap.json",
-        ]
+        image_candidates = ["zaproxy/zap-stable", "owasp/zap2docker-stable"]
 
         try:
-            logger.info("[ZAP] Running baseline docker scan")
-            completed = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                check=False,
-            )
+            last_error = "Unknown ZAP error"
+            for image in image_candidates:
+                cmd = [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-t",
+                    "-v",
+                    f"{str(output_dir.resolve())}:/zap/wrk:rw",
+                    image,
+                    "zap-baseline.py",
+                    "-t",
+                    target_url,
+                    "-J",
+                    "zap.json",
+                ]
 
-            if completed.returncode != 0:
-                err = (completed.stderr or completed.stdout or "Unknown ZAP error").strip()
+                logger.info("[ZAP] Running baseline docker scan with image %s", image)
+                completed = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout_seconds,
+                    check=False,
+                )
+                if completed.returncode == 0:
+                    break
+
+                last_error = (completed.stderr or completed.stdout or "Unknown ZAP error").strip()
+                if "pull access denied" in last_error.lower() or "repository does not exist" in last_error.lower():
+                    continue
                 return ZAPDiscoveryResult(
                     executed=True,
                     success=False,
-                    error=f"ZAP baseline failed: {err}",
+                    error=f"ZAP baseline failed: {self._docker_error_hint(last_error)}",
+                )
+            else:
+                return ZAPDiscoveryResult(
+                    executed=True,
+                    success=False,
+                    error=f"ZAP baseline failed: {self._docker_error_hint(last_error)}",
                 )
 
             if not zap_json_path.exists():
@@ -228,11 +333,23 @@ class ZAPAdapter:
             return parsed
 
         except FileNotFoundError as e:
-            return ZAPDiscoveryResult(executed=True, success=False, error=f"Docker not available: {e}")
+            return ZAPDiscoveryResult(executed=True, success=False, error=f"Docker not available: {self._docker_error_hint(str(e))}")
         except subprocess.TimeoutExpired:
             return ZAPDiscoveryResult(executed=True, success=False, error="ZAP baseline timed out")
         except Exception as e:  # noqa: BLE001
             return ZAPDiscoveryResult(executed=True, success=False, error=f"ZAP execution error: {e}")
+
+    def _docker_error_hint(self, raw_error: str) -> str:
+        text = str(raw_error or "").strip()
+        lower = text.lower()
+        if "docker-desktop wsl2 distribution" in lower or "enable the docker desktop wsl2 integration" in lower:
+            return (
+                f"{text}. Fix: enable Docker Desktop WSL integration for this distro, "
+                "or run scanner from PowerShell/Command Prompt where Docker daemon is reachable."
+            )
+        if "cannot connect to the docker daemon" in lower or "docker daemon" in lower:
+            return f"{text}. Fix: start Docker Desktop/daemon before running ZAP."
+        return text
 
     def _parse_zap_json(self, zap_json_path: Path) -> ZAPDiscoveryResult:
         try:

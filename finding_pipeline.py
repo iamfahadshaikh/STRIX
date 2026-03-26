@@ -14,6 +14,7 @@ Flow:
 """
 
 import logging
+import json
 import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Import the existing Finding model if available
 try:
-    from findings_model import Finding, Severity
+    from findings_model import Finding, Severity, FindingType
     FINDING_MODEL_AVAILABLE = True
 except ImportError:
     FINDING_MODEL_AVAILABLE = False
@@ -52,6 +53,11 @@ except ImportError:
         source: str = "unknown"
         timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
+    @dataclass
+    class FindingType:
+        OTHER = "Other"
+        MISCONFIGURATION = "Misconfiguration"
+
 
 class FindingParser:
     """
@@ -60,6 +66,64 @@ class FindingParser:
     
     def __init__(self):
         logger.info("[FindingParser] Initialized")
+
+    def _build_finding(
+        self,
+        category: str,
+        endpoint: str,
+        parameter: Optional[str],
+        method: str,
+        severity: Any,
+        confidence: float,
+        proof: Dict[str, Any],
+        evidence: Any,
+        source: str,
+        description: Optional[str] = None,
+    ) -> Finding:
+        """Construct a finding compatible with either legacy or normalized models."""
+        finding_id = str(uuid.uuid4())
+        evidence_str = evidence if isinstance(evidence, str) else json.dumps(evidence or {}, ensure_ascii=True)
+        description_text = description or str(category or "Security finding")
+
+        # New normalized model path
+        try:
+            if isinstance(severity, str):
+                sev_key = severity.upper()
+                sev_value = Severity[sev_key] if hasattr(Severity, "__members__") and sev_key in Severity.__members__ else Severity.INFO
+            else:
+                sev_value = severity
+
+            finding_type = FindingType.MISCONFIGURATION if str(source).lower() == "passive" else FindingType.OTHER
+            return Finding(
+                type=finding_type,
+                severity=sev_value,
+                location=endpoint,
+                description=description_text,
+                tool=source,
+                endpoint=endpoint,
+                method=method,
+                parameter=parameter or "",
+                category=category,
+                confidence=float(confidence or 0.0),
+                proof=proof or {},
+                evidence=evidence_str,
+            )
+        except TypeError:
+            pass
+
+        # Legacy model fallback path
+        return Finding(
+            id=finding_id,
+            category=category,
+            endpoint=endpoint,
+            parameter=parameter,
+            method=method,
+            severity=severity,
+            confidence=float(confidence or 0.0),
+            proof=proof or {},
+            evidence=evidence if isinstance(evidence, dict) else {"raw": evidence},
+            source=source,
+        )
     
     def parse_exploitation_result(self, result: Dict, source: str) -> Optional[Finding]:
         """
@@ -80,7 +144,6 @@ class FindingParser:
             return None
         
         try:
-            finding_id = result.get("id") or str(uuid.uuid4())
             category = result.get("type") or result.get("category", "Unknown")
             endpoint = result.get("endpoint", "unknown")
             parameter = result.get("parameter")
@@ -91,8 +154,7 @@ class FindingParser:
             # Determine severity from confidence
             severity = self._confidence_to_severity(confidence, category)
             
-            finding = Finding(
-                id=finding_id,
+            finding = self._build_finding(
                 category=category,
                 endpoint=endpoint,
                 parameter=parameter,
@@ -102,9 +164,10 @@ class FindingParser:
                 proof=proof,
                 evidence=result.get("evidence", {}),
                 source=source,
+                description=str(result.get("description") or f"{category} indicator"),
             )
             
-            logger.debug(f"Parsed finding: {finding.id} ({category}) from {source}")
+            logger.debug(f"Parsed finding ({category}) from {source}")
             return finding
         
         except Exception as e:
@@ -128,7 +191,6 @@ class FindingParser:
             return None
         
         try:
-            finding_id = str(uuid.uuid4())
             alert_name = alert.get("alert", "Unknown")
             url = alert.get("url", "unknown")
             endpoint = self._extract_endpoint(url)
@@ -142,8 +204,7 @@ class FindingParser:
             # Map ZAP severity to our severity
             severity = self._zap_severity_to_severity(alert.get("riskcode", 1))
             
-            finding = Finding(
-                id=finding_id,
+            finding = self._build_finding(
                 category=alert_name,
                 endpoint=endpoint,
                 parameter=parameter,
@@ -153,9 +214,10 @@ class FindingParser:
                 proof={"source": "zap", "alert": alert_name},
                 evidence={"zap_alert": alert},
                 source="zap",
+                description=str(alert.get("description") or f"ZAP alert: {alert_name}"),
             )
             
-            logger.debug(f"Parsed ZAP alert: {finding.id} ({alert_name}) from {endpoint}")
+            logger.debug(f"Parsed ZAP alert ({alert_name}) from {endpoint}")
             return finding
         
         except Exception as e:
@@ -179,7 +241,6 @@ class FindingParser:
             return None
         
         try:
-            finding_id = finding_dict.get("id") or str(uuid.uuid4())
             category = finding_dict.get("category", "Unknown")
             endpoint = finding_dict.get("endpoint", "unknown")
             parameter = finding_dict.get("parameter")
@@ -187,8 +248,7 @@ class FindingParser:
             severity = finding_dict.get("severity", "Low")
             confidence = float(finding_dict.get("confidence", 0.95))
             
-            finding = Finding(
-                id=finding_id,
+            finding = self._build_finding(
                 category=category,
                 endpoint=endpoint,
                 parameter=parameter,
@@ -198,9 +258,10 @@ class FindingParser:
                 proof={},
                 evidence=finding_dict.get("evidence", {}),
                 source="passive",
+                description=str(finding_dict.get("description") or category),
             )
             
-            logger.debug(f"Parsed passive finding: {finding.id} ({category}) from {endpoint}")
+            logger.debug(f"Parsed passive finding ({category}) from {endpoint}")
             return finding
         
         except Exception as e:
@@ -306,7 +367,8 @@ class FindingPipeline:
     def reject_finding(self, finding: Finding, reason: str) -> None:
         """Reject a finding during validation."""
         finding_dict = asdict(finding) if hasattr(finding, '__dataclass_fields__') else finding.__dict__
-        logger.warning(f"Rejected finding {finding.id}: {reason}")
+        finding_id = getattr(finding, "id", getattr(finding, "category", "unknown"))
+        logger.warning(f"Rejected finding {finding_id}: {reason}")
         self.rejected_findings.append(finding)
     
     def summary(self) -> Dict[str, Any]:
@@ -324,7 +386,7 @@ class FindingPipeline:
         """Count findings by source."""
         counts = {}
         for finding in self.findings:
-            source = finding.source
+            source = getattr(finding, "source", getattr(finding, "tool", "unknown"))
             counts[source] = counts.get(source, 0) + 1
         return counts
     
