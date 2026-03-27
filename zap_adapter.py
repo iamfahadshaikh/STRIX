@@ -73,8 +73,14 @@ class ZAPAdapter:
                 self._wait_scan_status("spider", spider_id)
 
             # 2. AJAX Spider
+            try:
+                self._api_get("ajaxSpider", "action", "setOptionMaxDuration", {"Integer": 2})
+                self._api_get("ajaxSpider", "action", "setOptionMaxCrawlDepth", {"Integer": 6})
+            except Exception:
+                logger.debug("ZAP ajaxSpider option tuning unavailable; using defaults")
             self._api_get("ajaxSpider", "action", "scan", {"url": target_url, "inScope": False})
-            self._wait_ajax_spider()
+            if not self._wait_ajax_spider():
+                logger.warning("ZAP ajaxSpider timed out; continuing with spider/passive data")
 
             # 3. Optional active scan
             if include_active_scan:
@@ -247,15 +253,16 @@ class ZAPAdapter:
             time.sleep(1.5)
         raise TimeoutError(f"ZAP {component} scan timed out")
 
-    def _wait_ajax_spider(self) -> None:
+    def _wait_ajax_spider(self) -> bool:
         start = time.time()
-        while (time.time() - start) < self.timeout_seconds:
+        ajax_timeout = min(90, max(20, self.timeout_seconds // 3))
+        while (time.time() - start) < ajax_timeout:
             status = self._api_get("ajaxSpider", "view", "status", {})
             raw = str(status.get("status") or "")
             if raw.lower() == "stopped":
-                return
+                return True
             time.sleep(1.5)
-        raise TimeoutError("ZAP ajaxSpider timed out")
+        return False
 
     def _wait_passive_scan_queue(self) -> None:
         start = time.time()

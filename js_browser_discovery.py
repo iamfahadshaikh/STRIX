@@ -1,7 +1,7 @@
-"""Strict Playwright JS discovery with hard fail behavior.
+"""Playwright JS discovery used as an optional enrichment source.
 
-Discovery must be browser-backed and request-driven. There is no HTTP parsing
-fallback because fake JS success states create low-quality attack surfaces.
+Discovery remains browser-backed and request-driven, but low-signal outcomes
+are reported without forcing hard scan failure.
 """
 
 import importlib
@@ -17,8 +17,7 @@ logger = logging.getLogger(__name__)
 def validate_playwright_environment() -> bool:
     """Validate Python Playwright + Chromium availability.
 
-    This performs a minimal launch/close cycle. Any failure is treated as
-    fatal because JS discovery has a strict no-fallback contract.
+    This performs a minimal launch/close cycle.
     """
     try:
         playwright_module = importlib.import_module("playwright")
@@ -57,8 +56,10 @@ class JSBrowserDiscovery:
         logger.info("JS_DISCOVERY_START target=%s", base_url)
         role_headers = role_headers or {}
         pw_result = self._discover_with_playwright(base_url, role_headers)
-        if not pw_result or not pw_result.get("success", False):
-            raise Exception("JS discovery failed - aborting scan")
+        if not pw_result:
+            raise Exception("JS discovery runtime failed")
+        if not pw_result.get("success", False):
+            logger.warning("JS_DISCOVERY_LOW_SIGNAL: browser ran but produced limited signals")
         logger.info(
             "JS_DISCOVERY_SUCCESS requests=%d responses=%d api_calls=%d",
             len(pw_result.get("requests", [])),
@@ -231,7 +232,7 @@ class JSBrowserDiscovery:
             except Exception:
                 pass
 
-        success = requests_captured > 0 and len(endpoints) > 0
+        success = requests_captured > 0 or len(endpoints) > 0 or len(params) > 0
 
         result = {
             "executed": True,
@@ -256,12 +257,8 @@ class JSBrowserDiscovery:
             },
         }
 
-        if len(result["requests"]) == 0 or len(result["api_calls"]) == 0:
-            logger.error("JS_DISCOVERY_FAILED: JS discovery produced no signals")
-            raise Exception("JS discovery produced no signals")
-
         if not result["success"]:
-            raise Exception("JS discovery failed - aborting scan")
+            result["warning"] = "JS discovery executed but returned no useful network signals"
 
         return result
 

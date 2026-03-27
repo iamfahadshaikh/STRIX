@@ -1,8 +1,7 @@
-"""
-STRICT EXECUTION HANDLER — Fail-fast enforcement for weak discovery states.
+"""Execution handler for exploitation readiness.
 
-Purpose: Abort exploitation phase if discovery hasn't gathered enough signals.
-No fake success states. If JS discovery = 0, if params = 0, if API calls = 0 → ABORT.
+Hard abort is reserved for true zero-surface outcomes.
+Weak/partial discovery signals are treated as caution states.
 """
 
 import logging
@@ -95,11 +94,8 @@ class StrictExecutionHandler:
     Rules:
     ------
     ABORT if:
-    1. controllable_params == 0 (no injection targets)
-    2. endpoints == 0 (no targets at all)
-    3. api_endpoints == 0 AND js_calls == 0 (no API discovery)
-    4. ALL discovery sources failed (crawler, JS, ZAP)
-    5. quality == FAILED (not enough signals)
+    1. endpoints == 0 AND controllable_params == 0 (no usable surface)
+    2. quality == FAILED and no source produced any signal
     
     WARN if:
     - quality == WEAK (but continue with caution)
@@ -112,9 +108,9 @@ class StrictExecutionHandler:
     """
     
     # Hard thresholds
-    MIN_ENDPOINTS_FOR_EXPLOITATION = 1
-    MIN_CONTROLLABLE_PARAMS = 0  # If 0, check other signals
-    MIN_API_OR_JS_SIGNALS = 1  # At least one of: API endpoints or JS calls
+    MIN_ENDPOINTS_FOR_EXPLOITATION = 0
+    MIN_CONTROLLABLE_PARAMS = 0
+    MIN_API_OR_JS_SIGNALS = 0
     
     def __init__(self):
         logger.info("[StrictExecutionHandler] Initialized with hard discovery gates")
@@ -134,37 +130,30 @@ class StrictExecutionHandler:
         
         checks = []
         
-        # Check 1: Endpoints
-        if discovery_state.endpoints_count < self.MIN_ENDPOINTS_FOR_EXPLOITATION:
-            reason = f"Zero endpoints discovered"
+        # Check 1: Zero-surface hard stop
+        if discovery_state.endpoints_count == 0 and discovery_state.controllable_params_count == 0:
+            reason = "No endpoints or parameters discovered"
             checks.append((False, reason))
             logger.critical(f"[{phase_name}] ABORT: {reason}")
             return False, reason
         else:
-            checks.append((True, f"Endpoints: {discovery_state.endpoints_count}"))
+            checks.append((True, f"Endpoints={discovery_state.endpoints_count}, Params={discovery_state.controllable_params_count}"))
         
-        # Check 2: Controllable parameters (allow 0 if other signals present)
-        if discovery_state.controllable_params_count == 0:
-            # Check if we have API or JS signals
-            has_api_or_js = (discovery_state.api_endpoints_count > 0 or
-                            discovery_state.js_network_calls_captured > 0)
-            
-            if not has_api_or_js:
-                reason = "Zero controllable params AND no API/JS signals"
+        # Check 2: Overall discovery quality
+        if discovery_state.quality == DiscoveryQuality.FAILED:
+            any_source_signal = (
+                discovery_state.crawler_success
+                or discovery_state.js_discovery_success
+                or discovery_state.zap_endpoints_count > 0
+                or discovery_state.api_endpoints_count > 0
+                or discovery_state.external_intel_count > 0
+            )
+            if not any_source_signal:
+                reason = "Discovery quality FAILED: no source produced useful signals"
                 checks.append((False, reason))
                 logger.critical(f"[{phase_name}] ABORT: {reason}")
                 return False, reason
-            else:
-                checks.append((True, f"Params: 0, but API/JS signals present"))
-        else:
-            checks.append((True, f"Controllable params: {discovery_state.controllable_params_count}"))
-        
-        # Check 3: Overall discovery quality
-        if discovery_state.quality == DiscoveryQuality.FAILED:
-            reason = f"Discovery quality FAILED: insufficient signals from all sources"
-            checks.append((False, reason))
-            logger.critical(f"[{phase_name}] ABORT: {reason}")
-            return False, reason
+            checks.append((True, "Discovery quality FAILED but at least one source signaled; proceeding cautiously"))
         elif discovery_state.quality == DiscoveryQuality.WEAK:
             reason = f"Discovery quality WEAK: {discovery_state.quality.value}"
             logger.warning(f"[{phase_name}] WARNING: {reason} (proceeding with caution)")
@@ -172,7 +161,7 @@ class StrictExecutionHandler:
         else:
             checks.append((True, f"Discovery quality: {discovery_state.quality.value}"))
         
-        # Check 4: At least one discovery source
+        # Check 3: At least one discovery source (warning only)
         sources_ok = [
             ("Crawler", discovery_state.crawler_success),
             ("JS Discovery", discovery_state.js_discovery_success),
@@ -181,10 +170,7 @@ class StrictExecutionHandler:
         
         successful_sources = [name for name, success in sources_ok if success]
         if not successful_sources:
-            reason = "No discovery sources succeeded (Crawler, JS, ZAP all failed)"
-            checks.append((False, reason))
-            logger.critical(f"[{phase_name}] ABORT: {reason}")
-            return False, reason
+            checks.append((True, "No primary discovery source succeeded; continuing with low confidence"))
         else:
             checks.append((True, f"Sources: {', '.join(successful_sources)}"))
         
