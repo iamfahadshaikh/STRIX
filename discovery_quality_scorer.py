@@ -8,39 +8,48 @@ def score_discovery(metrics: Dict) -> Dict:
     params = int(metrics.get("params", 0) or 0)
     api_calls = int(metrics.get("api_calls", 0) or 0)
     js_success = bool(metrics.get("js_success", False))
+    source_signals = int(metrics.get("source_signals", 0) or 0)
 
     score = 0
-    if endpoints >= 50:
+    if endpoints >= 20:
+        score += 40
+    elif endpoints >= 5:
         score += 30
-    elif endpoints >= 20:
-        score += 20
     elif endpoints > 0:
-        score += 10
-
-    if params >= 20:
-        score += 30
-    elif params >= 5:
         score += 20
+
+    if params >= 15:
+        score += 45
+    elif params >= 5:
+        score += 35
     elif params > 0:
-        score += 10
+        score += 25
 
     if api_calls >= 10:
-        score += 25
-    elif api_calls > 0:
         score += 15
+    elif api_calls > 0:
+        score += 8
+
+    if source_signals >= 20:
+        score += 10
+    elif source_signals > 0:
+        score += 5
 
     if js_success:
-        score += 15
+        score += 5
 
-    if score >= 80:
+    if score >= 75:
         status = "STRONG"
-    elif score >= 50:
+    elif score >= 45:
         status = "ACCEPTABLE"
     else:
         status = "WEAK"
 
+    # Only hard-abort when no meaningful attack surface exists.
+    should_abort = endpoints == 0 and params == 0
+
     return {
         "score": score,
         "status": status,
-        "should_abort_exploitation": status == "WEAK" and params == 0 and api_calls == 0,
+        "should_abort_exploitation": should_abort,
     }

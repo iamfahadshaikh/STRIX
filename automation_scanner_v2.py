@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import re
+import shutil
 import socket
 import ssl
 import subprocess
@@ -15,7 +16,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urljoin
 from urllib.request import Request, urlopen
 
 from decision_ledger import DecisionLedger, DecisionEngine, Decision
@@ -229,6 +230,13 @@ class AutomationScannerV2:
             "endpoints": 0,
             "params": 0,
         }
+        self.multi_source_summary: Dict[str, Any] = {
+            "executed": False,
+            "sources": {},
+            "urls": 0,
+            "endpoints": 0,
+            "params": 0,
+        }
         self.discovery_quality: Dict[str, Any] = {
             "score": 0,
             "status": "UNKNOWN",
@@ -348,6 +356,135 @@ class AutomationScannerV2:
         path_lower = str(path or "").lower()
         return "/api" in path_lower or path_lower.endswith(".json") or "graphql" in path_lower
 
+    def _is_scannable_discovery_url(self, value: str) -> bool:
+        value = str(value or "").strip()
+        if not value.startswith(("http://", "https://")):
+            return False
+        parsed = urlparse(value)
+        host = parsed.netloc.lower()
+        base = (self.profile.base_domain or self.profile.host).lower()
+        if host == self.profile.host.lower() or host.endswith(f".{base}"):
+            return True
+        return False
+
+    def _extract_urls_from_text(self, text: str) -> list[str]:
+        if not text:
+            return []
+        found = re.findall(r"https?://[^\s\"'<>]+", text)
+        return [u.strip() for u in found if self._is_scannable_discovery_url(u.strip())]
+
+    def _run_discovery_source_command(self, command: str, stdin_text: str | None = None, timeout: int = 40) -> list[str]:
+        try:
+            completed = subprocess.run(
+                command,
+                shell=True,
+                input=stdin_text,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        except Exception:
+            return []
+
+        content = f"{completed.stdout or ''}\n{completed.stderr or ''}"
+        urls = set()
+        for line in content.splitlines():
+            line = line.strip()
+            if self._is_scannable_discovery_url(line):
+                urls.add(line)
+            else:
+                for candidate in self._extract_urls_from_text(line):
+                    urls.add(candidate)
+        return sorted(urls)
+
+    def _discover_endpoints_from_js_assets(self, base_url: str) -> list[str]:
+        """Fallback endpoint extraction from JS sources when crawler output is sparse."""
+        discovered_urls: set[str] = set()
+        try:
+            import requests
+
+            response = requests.get(base_url, timeout=12, verify=False)
+            body = response.text if response is not None else ""
+            script_sources = set(re.findall(r"<script[^>]+src=[\"']([^\"']+)[\"']", body, re.IGNORECASE))
+
+            endpoint_pattern = re.compile(r"(?:(?:https?://[^\"'\s]+)|(?:/[A-Za-z0-9_\-./]+(?:\?[A-Za-z0-9_\-=&.%]+)?))")
+            for src in script_sources:
+                js_url = src if src.startswith("http") else urljoin(base_url, src)
+                if not self._is_scannable_discovery_url(js_url):
+                    continue
+                try:
+                    js_resp = requests.get(js_url, timeout=10, verify=False)
+                except Exception:
+                    continue
+                for match in endpoint_pattern.findall(js_resp.text or ""):
+                    candidate = match.strip()
+                    if not candidate:
+                        continue
+                    if candidate.startswith("/"):
+                        candidate = urljoin(base_url, candidate)
+                    if self._is_scannable_discovery_url(candidate):
+                        discovered_urls.add(candidate)
+        except Exception:
+            return []
+
+        return sorted(discovered_urls)
+
+    def _run_multi_source_discovery(self, base_url: str) -> None:
+        """Aggregate URL/param discovery from passive and crawl-focused sources."""
+        sources: dict[str, int] = {}
+        discovered_urls: set[str] = set()
+
+        tool_commands = [
+            ("gau", f"gau --subs {self.profile.base_domain or self.profile.host}"),
+            ("waybackurls", f"echo {self.profile.base_domain or self.profile.host} | waybackurls"),
+            ("hakrawler", f"echo {base_url} | hakrawler -plain -depth 2"),
+        ]
+
+        for source_name, command in tool_commands:
+            if shutil.which(source_name) is None:
+                sources[source_name] = 0
+                continue
+            urls = self._run_discovery_source_command(command, timeout=45)
+            sources[source_name] = len(urls)
+            discovered_urls.update(urls)
+
+        js_fallback_urls = self._discover_endpoints_from_js_assets(base_url)
+        sources["js_regex"] = len(js_fallback_urls)
+        discovered_urls.update(js_fallback_urls)
+
+        added_endpoints = 0
+        added_params = 0
+        for url in sorted(discovered_urls):
+            path = urlparse(url).path or "/"
+            if not path:
+                continue
+            before_ep = len(self.cache.endpoints)
+            self.cache.add_endpoint(url, source_tool="multi_source", confidence=0.78)
+            if self._is_api_like_path(path):
+                self.cache.live_endpoints.add(path)
+            if len(self.cache.endpoints) > before_ep:
+                added_endpoints += 1
+
+            for param_name in parse_qs(urlparse(url).query).keys():
+                before_param = len(self.cache.params)
+                self.cache.add_param(param_name, source_tool="multi_source", confidence=0.72)
+                if len(self.cache.params) > before_param:
+                    added_params += 1
+
+        self.multi_source_summary = {
+            "executed": True,
+            "sources": sources,
+            "urls": len(discovered_urls),
+            "endpoints": added_endpoints,
+            "params": added_params,
+        }
+        self.log(
+            "Multi-source discovery merged: "
+            f"{added_endpoints} endpoints, {added_params} params, "
+            f"sources={sources}",
+            "INFO",
+        )
+
     def _run_js_aware_discovery(self, base_url: str) -> None:
         """Run browser-assisted JS discovery and merge signals into cache."""
         try:
@@ -382,6 +519,7 @@ class AutomationScannerV2:
                 "requests_captured": int(result.get("requests_captured", 0)),
                 "api_calls_detected": int(result.get("api_calls_detected", 0)),
                 "params": int(stats.get("params", 0)),
+                "warning": result.get("warning"),
             }
             self.log(
                 "JS-aware discovery merged: "
@@ -390,9 +528,11 @@ class AutomationScannerV2:
                 f"{self.js_discovery_summary['params']} params",
                 "INFO",
             )
+            if not self.js_discovery_summary["success"]:
+                self.log("JS-aware discovery returned low signal; continuing with other sources", "WARN")
         except Exception as e:
             self.js_discovery_summary = {
-                "executed": False,
+                "executed": True,
                 "playwright_used": False,
                 "success": False,
                 "endpoints": 0,
@@ -404,8 +544,7 @@ class AutomationScannerV2:
                 "params": 0,
                 "error": str(e),
             }
-            self.log(f"JS-aware discovery failed: {e}", "ERROR")
-            raise
+            self.log(f"JS-aware discovery failed: {e} (non-fatal)", "WARN")
 
     def _run_zap_enrichment(self, base_url: str) -> None:
         """Run ZAP API intelligence flow, fallback to baseline docker if API fails."""
@@ -515,6 +654,10 @@ class AutomationScannerV2:
             reflections=len(self.cache.reflections),
             js_calls=int(self.js_discovery_summary.get("network_requests", 0)),
             zap_urls=int(self.zap_discovery_summary.get("endpoints", 0)),
+            gau_urls=int(self.multi_source_summary.get("sources", {}).get("gau", 0)),
+            wayback_urls=int(self.multi_source_summary.get("sources", {}).get("waybackurls", 0)),
+            hakrawler_urls=int(self.multi_source_summary.get("sources", {}).get("hakrawler", 0)),
+            js_regex_urls=int(self.multi_source_summary.get("sources", {}).get("js_regex", 0)),
         )
         quality_state = assess_discovery_status(quality_metrics)
 
@@ -522,13 +665,13 @@ class AutomationScannerV2:
             "endpoints": len(self.cache.endpoints),
             "params": len(self.cache.params),
             "api_calls": self.js_discovery_summary.get("network_requests", 0),
-            "js_success": bool(self.js_discovery_summary.get("executed", False)),
+            "js_success": bool(self.js_discovery_summary.get("success", False)),
+            "source_signals": int(self.multi_source_summary.get("urls", 0)),
         }
         self.discovery_quality = score_discovery(metrics)
         self.discovery_quality["metrics"] = quality_metrics
         self.discovery_quality["status_metrics"] = quality_state
-        if quality_state in {"WEAK", "FAILED"}:
-            self.discovery_quality["should_abort_exploitation"] = True
+        self.discovery_quality["should_abort_exploitation"] = quality_state == "FAILED"
         self.log(
             "Discovery quality: "
             f"{self.discovery_quality.get('status')} "
@@ -1889,6 +2032,23 @@ class AutomationScannerV2:
             self.log("Manual out-of-scope sweep: nothing to run", "INFO")
             return
 
+        host_level_tools = {
+            "ping", "nmap_quick", "nmap_vuln", "sslscan", "testssl",
+            "openssl_connect", "openssl_showcerts", "openssl_status", "openssl_state",
+            "findomain", "sublist3r", "assetfinder", "dnsrecon",
+        }
+
+        estimated_total_runs = 0
+        for tool_name in candidate_tools:
+            estimated_total_runs += 1 if tool_name in host_level_tools else len(targets)
+
+        self.log(
+            "Manual out-of-scope sweep started: "
+            f"tools={len(candidate_tools)}, targets={len(targets)}, "
+            f"estimated_runs={estimated_total_runs}",
+            "INFO",
+        )
+
         # Try to install missing tools for manual sweep.
         if self.tool_manager:
             for tool_name in candidate_tools:
@@ -1914,18 +2074,33 @@ class AutomationScannerV2:
                         "reason": f"install exception: {e}",
                     })
 
-        for tool_name in candidate_tools:
+        progress_index = 0
+        total_tools = len(candidate_tools)
+        for tool_idx, tool_name in enumerate(candidate_tools, start=1):
             # Host-level tools only need one run.
-            host_level = tool_name in {
-                "ping", "nmap_quick", "nmap_vuln", "sslscan", "testssl",
-                "openssl_connect", "openssl_showcerts", "openssl_status", "openssl_state",
-                "findomain", "sublist3r", "assetfinder", "dnsrecon",
-            }
+            host_level = tool_name in host_level_tools
             loop_targets = [self.profile.url] if host_level else targets
+            self.log(
+                f"[ManualSweep][Tool {tool_idx}/{total_tools}] {tool_name}: "
+                f"{len(loop_targets)} target(s)",
+                "INFO",
+            )
 
-            for target_url in loop_targets:
+            for target_idx, target_url in enumerate(loop_targets, start=1):
+                progress_index += 1
+                self.log(
+                    f"[ManualSweep][{progress_index}/{estimated_total_runs}] "
+                    f"{tool_name} -> {target_url} "
+                    f"(target {target_idx}/{len(loop_targets)})",
+                    "INFO",
+                )
                 should_skip, skip_reason = self._should_skip_manual_exploit_for_target(tool_name, target_url)
                 if should_skip:
+                    self.log(
+                        f"[ManualSweep][{progress_index}/{estimated_total_runs}] "
+                        f"SKIPPED {tool_name} on {target_url}: {skip_reason}",
+                        "WARN",
+                    )
                     self.manual_out_of_scope_report["non_actionable_failures"].append({
                         "tool": tool_name,
                         "target": target_url,
@@ -1936,12 +2111,22 @@ class AutomationScannerV2:
 
                 command = self._manual_command_for_tool(tool_name, target_url)
                 if not command:
+                    self.log(
+                        f"[ManualSweep][{progress_index}/{estimated_total_runs}] "
+                        f"UNAVAILABLE command template for {tool_name}",
+                        "WARN",
+                    )
                     self.manual_out_of_scope_report["missing_or_unavailable"].append({
                         "tool": tool_name,
                         "reason": "no command template",
                     })
                     break
                 result = self._execute_manual_tool_command(tool_name, command, target_url)
+                self.log(
+                    f"[ManualSweep][{progress_index}/{estimated_total_runs}] "
+                    f"{tool_name} outcome={result.get('outcome')} rc={result.get('return_code')}",
+                    "INFO",
+                )
                 if result.get("status") in {"SUCCESS", "PARTIAL"}:
                     self.manual_out_of_scope_report["executed"].append({
                         "tool": tool_name,
@@ -1963,6 +2148,14 @@ class AutomationScannerV2:
                         self.manual_out_of_scope_report["non_actionable_failures"].append(failure_payload)
                     else:
                         self.manual_out_of_scope_report["failed"].append(failure_payload)
+
+        self.log(
+            "Manual out-of-scope sweep complete: "
+            f"executed={len(self.manual_out_of_scope_report.get('executed', []))}, "
+            f"failed={len(self.manual_out_of_scope_report.get('failed', []))}, "
+            f"non_actionable={len(self.manual_out_of_scope_report.get('non_actionable_failures', []))}",
+            "INFO",
+        )
     
     def _extract_findings(self, tool: str, stdout: str, stderr: str, output_file: str | None = None) -> None:
         """
@@ -2440,42 +2633,47 @@ class AutomationScannerV2:
         # Report gate status
         gate_report = crawler_gate.get_gate_report()
         if not gate_report['crawler_succeeded']:
-            self.log(f"⚠️  PAYLOAD TESTING BLOCKED: {gate_report['failure_reason']}", "ERROR")
-            self.log(f"⚠️  Blocked tools: {', '.join(gate_report['blocked_tools'])}", "ERROR")
+            self.log(f"Crawler gate warning: {gate_report['failure_reason']} (continuing with alternative discovery sources)", "WARN")
         else:
             self.log(f"✓ Crawler gate passed: {gate_report['endpoints_discovered']} endpoints discovered", "SUCCESS")
 
-            # JS-aware discovery augments server-side crawl for modern SPA/API traffic.
-            try:
-                validate_playwright_environment()
-                self._run_js_aware_discovery(crawl_url)
-            except Exception as e:
-                js_failure_reason = f"JS-aware discovery failure: {e}"
-                self.js_discovery_summary = {
-                    "executed": False,
-                    "playwright_used": False,
-                    "success": False,
-                    "endpoints": 0,
-                    "api_endpoints": 0,
-                    "js_assets": 0,
-                    "network_requests": 0,
-                    "requests_captured": 0,
-                    "api_calls_detected": 0,
-                    "params": 0,
-                    "error": str(e),
-                }
-                if self.strict_js_required:
-                    self.abort_reason = js_failure_reason
-                    self.scan_status = "aborted"
-                    self.log(self.abort_reason, "ERROR")
-                    self.log("Aborting active scan due to strict JS discovery policy", "ERROR")
-                    self._write_report()
-                    return
-                self.log(f"{js_failure_reason} - continuing without JS discovery", "WARN")
-            # Wave 2: secondary enrichment and passive security posture checks.
-            self._run_zap_enrichment(crawl_url)
-            self._run_api_schema_import(crawl_url)
-            self._run_passive_analysis(crawl_url)
+        # Merge additional discovery sources before quality scoring.
+        self._run_multi_source_discovery(crawl_url)
+
+        # JS-aware discovery augments server-side crawl for modern SPA/API traffic.
+        try:
+            validate_playwright_environment()
+            self._run_js_aware_discovery(crawl_url)
+            if self.strict_js_required and not bool(self.js_discovery_summary.get("success", False)):
+                raise RuntimeError("JS discovery produced no usable signals")
+        except Exception as e:
+            js_failure_reason = f"JS-aware discovery failure: {e}"
+            self.js_discovery_summary = {
+                "executed": True,
+                "playwright_used": False,
+                "success": False,
+                "endpoints": 0,
+                "api_endpoints": 0,
+                "js_assets": 0,
+                "network_requests": 0,
+                "requests_captured": 0,
+                "api_calls_detected": 0,
+                "params": 0,
+                "error": str(e),
+            }
+            if self.strict_js_required:
+                self.abort_reason = js_failure_reason
+                self.scan_status = "aborted"
+                self.log(self.abort_reason, "ERROR")
+                self.log("Aborting active scan due to strict JS discovery policy", "ERROR")
+                self._write_report()
+                return
+            self.log(f"{js_failure_reason} - continuing without JS discovery", "WARN")
+
+        # Wave 2: secondary enrichment and passive security posture checks.
+        self._run_zap_enrichment(crawl_url)
+        self._run_api_schema_import(crawl_url)
+        self._run_passive_analysis(crawl_url)
 
         self._evaluate_discovery_quality()
 
@@ -2495,18 +2693,19 @@ class AutomationScannerV2:
         )
         ready, ready_reason = check_exploitation_readiness(discovery_state, phase_name="PHASE 5")
 
-        if not bool(self.js_discovery_summary.get("success", False)):
-            ready = False
-            ready_reason = "JS discovery failed - exploitation aborted by hard policy"
-
-        if len(self.cache.params) == 0:
-            ready = False
-            ready_reason = "No parameters discovered - exploitation aborted by hard policy"
-
         if self.discovery_quality.get("should_abort_exploitation"):
             self.log("Scan aborted: insufficient attack surface (discovery quality too weak)", "ERROR")
             ready = False
             ready_reason = "Discovery quality scorer flagged weak attack surface"
+
+        has_attack_surface = len(self.cache.endpoints) > 0 or len(self.cache.params) > 0
+        if not has_attack_surface:
+            ready = False
+            ready_reason = "No endpoints or parameters discovered after all discovery sources"
+        elif not ready:
+            self.log(f"Proceeding with low-confidence exploitation mode: {ready_reason}", "WARN")
+            ready = True
+            ready_reason = "Low-confidence mode enabled"
 
         if not ready:
             self.log(f"Active exploitation skipped: {ready_reason}", "WARN")
@@ -2565,17 +2764,17 @@ class AutomationScannerV2:
                 built_commands = self._build_payload_commands_from_graph(tool_name)
 
                 if not built_commands:
-                    reason = "No crawler-derived targets/params for payload execution"
-                    self.log(f"[{tool_name}] BLOCKED: {reason}", "WARN")
-                    self.execution_results.append({
-                        "tool": tool_name,
-                        "outcome": ToolOutcome.BLOCKED.value,
-                        "reason": reason,
-                        "duration": 0,
-                        "category": meta.get("category", "Exploitation"),
-                        "status": "BLOCKED",
-                        "failure_reason": "no_crawler_targets",
-                    })
+                    self.log(
+                        f"[{tool_name}] No crawler-derived payload targets; using scoped default command in low-confidence mode",
+                        "WARN",
+                    )
+                    scoped_cmd = self._scope_command(tool_name, cmd)
+                    plan_item = {"tool": tool_name, "command": scoped_cmd, **meta}
+                    if gated_targets:
+                        plan_item["gated_targets"] = gated_targets
+                    result = self._run_tool(plan_item, i, total)
+                    if current_phase and result and result.get("outcome") == ToolOutcome.SUCCESS_WITH_FINDINGS.value:
+                        phase_success[current_phase] = True
                     continue
 
                 for cmd_info in built_commands:
@@ -2913,6 +3112,7 @@ class AutomationScannerV2:
             "host_network_assessment": self.host_network_assessment,
             "prioritized_subdomains": self.prioritized_subdomains,
             "js_discovery": self.js_discovery_summary,
+            "multi_source_discovery": self.multi_source_summary,
             "zap_discovery": self.zap_discovery_summary,
             "api_schema": self.api_schema_summary,
             "discovery_quality": self.discovery_quality,
