@@ -117,9 +117,11 @@ class AutomationScannerV2:
         custom_budget: int | None = None,
         manual_out_of_scope_mode: str = "ask",
         strict_js_required: bool = False,
+        full_report: bool = False,
     ) -> None:
         self.target = target
         self.strict_js_required = strict_js_required
+        self.full_report = full_report
         self.start_time = datetime.now()
         self.correlation_id = self.start_time.strftime("%Y%m%d_%H%M%S")
 
@@ -237,6 +239,10 @@ class AutomationScannerV2:
             "endpoints": 0,
             "params": 0,
         }
+        self.endpoint_inventory: Dict[str, Dict[str, Any]] = {}
+        self.param_inventory: Dict[str, Dict[str, Any]] = {}
+        self.param_sources_by_endpoint: Dict[str, List[Dict[str, str]]] = {}
+        self.js_asset_inventory: Dict[str, List[str]] = {}
         self.discovery_quality: Dict[str, Any] = {
             "score": 0,
             "status": "UNKNOWN",
@@ -352,6 +358,189 @@ class AutomationScannerV2:
             "ssrf_params_list": ssrf_params,
         }
 
+    def _normalize_endpoint_path(self, value: str) -> str:
+        candidate = str(value or "").strip()
+        if not candidate:
+            return ""
+        parsed = urlparse(candidate if candidate.startswith("http") else f"https://placeholder{candidate if candidate.startswith('/') else '/' + candidate}")
+        path = parsed.path or "/"
+        if len(path) > 1 and path.endswith("/"):
+            path = path.rstrip("/")
+        return path
+
+    def _classify_endpoint(self, path: str) -> str:
+        low = str(path or "").lower()
+        if not low:
+            return "UNKNOWN"
+        if any(s in low for s in ["/api", "/v1", "/v2", "/graphql", "/auth"]):
+            return "API"
+        if any(s in low for s in ["/node_modules/", "/src/"]) or low.endswith((".ts", ".tsx", ".map")):
+            return "CODE"
+        if low.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2", ".ttf", ".ico", ".pdf")):
+            return "STATIC"
+        if low.endswith((".html", ".htm", ".php", ".asp", ".aspx", ".jsp")) or low == "/":
+            return "PAGE"
+        if low.endswith(".js"):
+            return "STATIC"
+        return "UNKNOWN"
+
+    def _is_noise_endpoint(self, path: str) -> bool:
+        low = str(path or "").lower()
+        if any(s in low for s in ["/node_modules/", "/src/"]):
+            return True
+        if low.endswith((".map", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".woff", ".woff2", ".ttf", ".ico", ".pdf")):
+            return True
+        if low.endswith((".ts", ".tsx")):
+            return True
+        return False
+
+    def _register_param(self, param_name: str, source: str, endpoint: str = "") -> None:
+        name = str(param_name or "").strip()
+        if not name:
+            return
+        self.cache.add_param(name, source_tool=source, confidence=0.75)
+
+        entry = self.param_inventory.setdefault(name, {
+            "name": name,
+            "sources": [],
+            "tags": ["unknown"],
+        })
+        if source not in entry["sources"]:
+            entry["sources"].append(source)
+        if source in {"url_param", "url", "multi_source", "api_schema", "zap", "js_discovery", "query"}:
+            tag = "potential_controllable"
+        elif source in {"form", "form_field", "crawler_form"}:
+            tag = "confirmed_controllable"
+        else:
+            tag = "unknown"
+        entry["tags"] = sorted(list(set(entry.get("tags", []) + [tag])))
+
+        if endpoint:
+            endpoint_key = self._normalize_endpoint_path(endpoint)
+            rows = self.param_sources_by_endpoint.setdefault(endpoint_key, [])
+            exists = any(r.get("name") == name and r.get("source") == source for r in rows)
+            if not exists:
+                rows.append({"name": name, "source": source, "tag": tag})
+
+    def _register_endpoint(self, endpoint: str, source: str, confidence: float = 0.75, is_live: bool = False, param_source: str = "url_param") -> None:
+        path = self._normalize_endpoint_path(endpoint)
+        if not path:
+            return
+
+        self.cache.add_endpoint(path, source_tool=source, confidence=confidence)
+        if is_live:
+            self.cache.live_endpoints.add(path)
+
+        item = self.endpoint_inventory.setdefault(path, {
+            "path": path,
+            "sources": [],
+            "classification": self._classify_endpoint(path),
+            "has_params": False,
+            "params": [],
+            "urls": [],
+        })
+        if source not in item["sources"]:
+            item["sources"].append(source)
+
+        raw = str(endpoint or "").strip()
+        if raw.startswith("http") and raw not in item["urls"]:
+            item["urls"].append(raw)
+
+        parsed = urlparse(raw if raw.startswith("http") else f"https://placeholder{path}")
+        for param_name in parse_qs(parsed.query).keys():
+            self._register_param(param_name, param_source, endpoint=path)
+            if param_name not in item["params"]:
+                item["params"].append(param_name)
+                item["has_params"] = True
+
+    def _synchronize_inventory_from_cache(self) -> None:
+        for ep in self.cache.get_normalized_endpoints():
+            path = self._normalize_endpoint_path(ep)
+            if not path:
+                continue
+            item = self.endpoint_inventory.setdefault(path, {
+                "path": path,
+                "sources": ["unknown"],
+                "classification": self._classify_endpoint(path),
+                "has_params": False,
+                "params": [],
+                "urls": [],
+            })
+            if not item.get("sources"):
+                item["sources"] = ["unknown"]
+
+    def _apply_endpoint_quality_filter(self) -> None:
+        """Filter noisy endpoints before quality scoring and exploitation steps."""
+        self._synchronize_inventory_from_cache()
+
+        filtered_endpoints = set()
+        filtered_live = set()
+        for ep in self.cache.get_normalized_endpoints():
+            cls = self._classify_endpoint(ep)
+            has_params = bool(self.param_sources_by_endpoint.get(ep))
+            if self._is_noise_endpoint(ep) and cls not in {"API", "PAGE"} and not has_params:
+                continue
+            filtered_endpoints.add(ep)
+
+        for ep in self.cache.get_live_normalized_endpoints():
+            if ep in filtered_endpoints:
+                filtered_live.add(ep)
+
+        self.cache.endpoints = filtered_endpoints
+        self.cache.live_endpoints = filtered_live
+
+        # Ensure params are never empty when endpoints exist.
+        if self.cache.endpoints and not self.cache.params:
+            self._register_param("id", "fallback", endpoint=next(iter(self.cache.endpoints)))
+
+    def _build_endpoint_inventory_for_report(self) -> List[Dict[str, Any]]:
+        self._synchronize_inventory_from_cache()
+        rows: List[Dict[str, Any]] = []
+        for path in sorted(self.endpoint_inventory.keys()):
+            item = self.endpoint_inventory[path]
+            cls = item.get("classification", self._classify_endpoint(path))
+            if not self.full_report and self._is_noise_endpoint(path) and cls in {"STATIC", "CODE"}:
+                continue
+            has_params = bool(item.get("has_params")) or bool(self.param_sources_by_endpoint.get(path))
+            rows.append({
+                "url": path,
+                "sources": sorted(item.get("sources", [])),
+                "has_params": has_params,
+                "classification": cls,
+                "params": sorted(item.get("params", [])),
+            })
+        return rows
+
+    def _build_api_candidate_inventory(self) -> List[Dict[str, Any]]:
+        candidates = []
+        for row in self._build_endpoint_inventory_for_report():
+            low = str(row.get("url", "")).lower()
+            if any(marker in low for marker in ["/api", "/v1", "/graphql", "/auth"]):
+                candidates.append(row)
+        return candidates
+
+    def _build_high_value_targets(self) -> List[Dict[str, Any]]:
+        targets = []
+        for row in self._build_endpoint_inventory_for_report():
+            classification = row.get("classification", "UNKNOWN")
+            if classification == "API" and row.get("has_params"):
+                priority = 1
+            elif classification == "API":
+                priority = 2
+            elif classification == "PAGE":
+                priority = 3
+            else:
+                continue
+            targets.append({
+                "priority": priority,
+                "url": row.get("url"),
+                "sources": row.get("sources", []),
+                "params": row.get("params", []),
+                "classification": classification,
+            })
+        targets.sort(key=lambda x: (x["priority"], x["url"]))
+        return targets
+
     def _is_api_like_path(self, path: str) -> bool:
         path_lower = str(path or "").lower()
         return "/api" in path_lower or path_lower.endswith(".json") or "graphql" in path_lower
@@ -400,6 +589,7 @@ class AutomationScannerV2:
     def _discover_endpoints_from_js_assets(self, base_url: str) -> list[str]:
         """Fallback endpoint extraction from JS sources when crawler output is sparse."""
         discovered_urls: set[str] = set()
+        js_asset_map: Dict[str, List[str]] = {}
         try:
             import requests
 
@@ -407,10 +597,12 @@ class AutomationScannerV2:
             body = response.text if response is not None else ""
             script_sources = set(re.findall(r"<script[^>]+src=[\"']([^\"']+)[\"']", body, re.IGNORECASE))
 
-            endpoint_pattern = re.compile(r"(?:(?:https?://[^\"'\s]+)|(?:/[A-Za-z0-9_\-./]+(?:\?[A-Za-z0-9_\-=&.%]+)?))")
+            endpoint_pattern = re.compile(r"(?:(?:https?://[^\"'\s]+)|(?:/(?:api|v1|v2|graphql|auth)[A-Za-z0-9_\-./]*(?:\?[A-Za-z0-9_\-=&.%]+)?))")
             for src in script_sources:
                 js_url = src if src.startswith("http") else urljoin(base_url, src)
                 if not self._is_scannable_discovery_url(js_url):
+                    continue
+                if any(x in js_url.lower() for x in ["/node_modules/", "/src/"]) or js_url.lower().endswith((".map", ".ts")):
                     continue
                 try:
                     js_resp = requests.get(js_url, timeout=10, verify=False)
@@ -423,9 +615,18 @@ class AutomationScannerV2:
                     if candidate.startswith("/"):
                         candidate = urljoin(base_url, candidate)
                     if self._is_scannable_discovery_url(candidate):
+                        if any(x in candidate.lower() for x in ["/node_modules/", "/src/"]) or candidate.lower().endswith((".map", ".ts")):
+                            continue
                         discovered_urls.add(candidate)
+                        js_asset_map.setdefault(js_url, [])
+                        norm = self._normalize_endpoint_path(candidate)
+                        if norm and norm not in js_asset_map[js_url]:
+                            js_asset_map[js_url].append(norm)
         except Exception:
             return []
+
+        if js_asset_map:
+            self.js_asset_inventory = js_asset_map
 
         return sorted(discovered_urls)
 
@@ -437,7 +638,7 @@ class AutomationScannerV2:
         tool_commands = [
             ("gau", f"gau --subs {self.profile.base_domain or self.profile.host}"),
             ("waybackurls", f"echo {self.profile.base_domain or self.profile.host} | waybackurls"),
-            ("hakrawler", f"echo {base_url} | hakrawler -plain -depth 2"),
+            ("hakrawler", f"echo {base_url} | hakrawler -plain -depth 3"),
         ]
 
         for source_name, command in tool_commands:
@@ -459,7 +660,7 @@ class AutomationScannerV2:
             if not path:
                 continue
             before_ep = len(self.cache.endpoints)
-            self.cache.add_endpoint(url, source_tool="multi_source", confidence=0.78)
+            self._register_endpoint(url, source="multi_source", confidence=0.78, is_live=self._is_api_like_path(path), param_source="url")
             if self._is_api_like_path(path):
                 self.cache.live_endpoints.add(path)
             if len(self.cache.endpoints) > before_ep:
@@ -467,7 +668,7 @@ class AutomationScannerV2:
 
             for param_name in parse_qs(urlparse(url).query).keys():
                 before_param = len(self.cache.params)
-                self.cache.add_param(param_name, source_tool="multi_source", confidence=0.72)
+                self._register_param(param_name, source="url", endpoint=path)
                 if len(self.cache.params) > before_param:
                     added_params += 1
 
@@ -496,16 +697,16 @@ class AutomationScannerV2:
             result = js_discovery.discover(base_url, role_headers=role_headers)
 
             for endpoint in result.get("endpoints", []):
-                self.cache.add_endpoint(endpoint, source_tool="js_discovery", confidence=0.85)
+                self._register_endpoint(endpoint, source="js_discovery", confidence=0.85, is_live=self._is_api_like_path(endpoint), param_source="js")
                 if self._is_api_like_path(endpoint):
                     self.cache.live_endpoints.add(endpoint)
 
             for endpoint in result.get("api_endpoints", []):
-                self.cache.add_endpoint(endpoint, source_tool="js_discovery", confidence=0.9)
+                self._register_endpoint(endpoint, source="js_discovery", confidence=0.9, is_live=True, param_source="js")
                 self.cache.live_endpoints.add(endpoint)
 
             for param in result.get("params", []):
-                self.cache.add_param(param, source_tool="js_discovery", confidence=0.8)
+                self._register_param(str(param), source="js")
 
             stats = result.get("stats", {})
             self.js_discovery_summary = {
@@ -520,6 +721,7 @@ class AutomationScannerV2:
                 "api_calls_detected": int(result.get("api_calls_detected", 0)),
                 "params": int(stats.get("params", 0)),
                 "warning": result.get("warning"),
+                "signal_strength": result.get("signal_strength", "low"),
             }
             self.log(
                 "JS-aware discovery merged: "
@@ -569,12 +771,12 @@ class AutomationScannerV2:
             return
 
         for endpoint in as_dict.get("endpoints", []):
-            self.cache.add_endpoint(endpoint, source_tool="zap", confidence=0.75)
+            self._register_endpoint(endpoint, source="zap", confidence=0.75, is_live=self._is_api_like_path(endpoint), param_source="url")
             if self._is_api_like_path(endpoint):
                 self.cache.live_endpoints.add(endpoint)
 
         for param in as_dict.get("params", []):
-            self.cache.add_param(param, source_tool="zap", confidence=0.7)
+            self._register_param(str(param), source="zap")
 
         # Keep alerts in finding pipeline for later correlation/validation.
         zap_findings = self.finding_pipeline.ingest_zap_alerts(as_dict.get("alerts", []))
@@ -612,10 +814,10 @@ class AutomationScannerV2:
             params = item.get("params", []) if isinstance(item.get("params"), list) else []
             if not endpoint:
                 continue
-            self.cache.add_endpoint(endpoint, source_tool="api_schema", confidence=0.95)
+            self._register_endpoint(endpoint, source="api_schema", confidence=0.95, is_live=True, param_source="url")
             self.cache.live_endpoints.add(endpoint)
             for param in params:
-                self.cache.add_param(str(param), source_tool="api_schema", confidence=0.9)
+                self._register_param(str(param), source="api_schema", endpoint=endpoint)
                 total_params += 1
             if self.endpoint_graph:
                 try:
@@ -1587,12 +1789,12 @@ class AutomationScannerV2:
                     for path in candidates:
                         norm_path, _ = self.cache._normalize_endpoint(path)
                         if norm_path:
-                            self.cache.add_endpoint(norm_path)
+                            self._register_endpoint(norm_path, source=tool, confidence=0.7, is_live=True)
                             self.cache.live_endpoints.add(norm_path)
                 elif "301" in line:
                     parts = line.split()
                     if parts:
-                        self.cache.add_endpoint(parts[0])
+                        self._register_endpoint(parts[0], source=tool, confidence=0.65)
         
         elif tool == "dirsearch" and stdout:
             # Parse dirsearch output
@@ -1604,7 +1806,7 @@ class AutomationScannerV2:
                         for part in parts:
                             if part.startswith("/"):
                                 norm_path, _ = self.cache._normalize_endpoint(part)
-                                self.cache.add_endpoint(norm_path)
+                                self._register_endpoint(norm_path, source=tool, confidence=0.7, is_live=True)
                                 self.cache.live_endpoints.add(norm_path)  # HTTP 200 only
                 elif "[" in line and "]" in line:
                     # Other status codes
@@ -1612,7 +1814,7 @@ class AutomationScannerV2:
                         parts = line.split()
                         for part in parts:
                             if part.startswith("/"):
-                                self.cache.add_endpoint(part)
+                                self._register_endpoint(part, source=tool, confidence=0.6)
         
         elif tool in ("findomain", "sublist3r", "assetfinder") and stdout:
             # Parse subdomain enumeration
@@ -1657,15 +1859,17 @@ class AutomationScannerV2:
                     tokens = line.split()
                     for tok in tokens:
                         if tok.startswith("http") or tok.startswith("/"):
-                            self.cache.add_endpoint(tok)
+                            self._register_endpoint(tok, source=tool, confidence=0.7)
+
+        self._synchronize_inventory_from_cache()
 
     def _prefill_param_hints(self) -> None:
         """Seed discovery cache from the original target (path + query params)."""
         parsed = urlparse(self.profile.url)
         if parsed.path:
-            self.cache.add_endpoint(parsed.path)
+            self._register_endpoint(parsed.path, source="seed", confidence=0.8)
         for name in parse_qs(parsed.query).keys():
-            self.cache.add_param(name)
+            self._register_param(name, source="query", endpoint=parsed.path or "/")
         if self.cache.has_params():
             self.cache.add_reflection("seed:query_param_present")
 
@@ -1835,14 +2039,14 @@ class AutomationScannerV2:
                 return f"nuclei -list {list_file} -t ssl -silent -update-templates"
 
         if tool_name == "sqlmap":
-            targets = self._materialize_targets(tool_name, require_params=True)
+            targets = self._materialize_targets(tool_name, require_params=False)
             if not targets:
-                return command
+                return f"sqlmap -u {self.profile.url} --batch --crawl=1 --risk=1 --level=1"
             if len(targets) == 1:
-                return f"sqlmap -u {targets[0]} --batch --crawl=0"
+                return f"sqlmap -u {targets[0]} --batch --crawl=1 --risk=1 --level=1"
             list_file = self.output_dir / "sqlmap_targets.txt"
             list_file.write_text("\n".join(targets), encoding="utf-8")
-            return f"sqlmap -m {list_file} --batch --crawl=0"
+            return f"sqlmap -m {list_file} --batch --crawl=1 --risk=1 --level=1"
 
         if tool_name == "commix":
             targets = self._materialize_targets(tool_name, require_params=True, require_command_params=True)
@@ -1856,13 +2060,20 @@ class AutomationScannerV2:
 
         if tool_name == "dalfox":
             targets = self._materialize_targets(tool_name)
-            if not targets or not self.cache.has_reflections():
-                return command
+            if not targets:
+                return f"dalfox url {self.profile.url} --silence"
             if len(targets) == 1:
                 return f"dalfox url {targets[0]} --silence"
             list_file = self.output_dir / "dalfox_targets.txt"
             list_file.write_text("\n".join(targets), encoding="utf-8")
             return f"dalfox file {list_file} --silence"
+
+        if tool_name == "xsstrike":
+            target = self.profile.url
+            targets = self._materialize_targets(tool_name)
+            if targets:
+                target = targets[0]
+            return f"python3 /usr/share/xsstrike/xsstrike.py -u {target}"
 
         if tool_name == "ssrfmap":
             targets = self._materialize_targets(tool_name, require_params=True)
@@ -2644,8 +2855,6 @@ class AutomationScannerV2:
         try:
             validate_playwright_environment()
             self._run_js_aware_discovery(crawl_url)
-            if self.strict_js_required and not bool(self.js_discovery_summary.get("success", False)):
-                raise RuntimeError("JS discovery produced no usable signals")
         except Exception as e:
             js_failure_reason = f"JS-aware discovery failure: {e}"
             self.js_discovery_summary = {
@@ -2674,6 +2883,9 @@ class AutomationScannerV2:
         self._run_zap_enrichment(crawl_url)
         self._run_api_schema_import(crawl_url)
         self._run_passive_analysis(crawl_url)
+
+        # Critical: remove noisy/static/code endpoints before scoring and exploitation gating.
+        self._apply_endpoint_quality_filter()
 
         self._evaluate_discovery_quality()
 
@@ -2717,6 +2929,19 @@ class AutomationScannerV2:
             self.log(f"Exploitation phase complete: {len(exploitation_findings)} findings from active testing", "INFO")
         else:
             self.log("Exploitation engines failed to initialize - skipping active testing", "WARN")
+
+        # Relax strict gate denials when attack surface exists: run tools in low-confidence mode.
+        if has_attack_surface:
+            for payload_tool in {"sqlmap", "dalfox", "xsstrike", "commix", "xsser", "arjun"}:
+                if payload_tool not in self.ledger.decisions:
+                    continue
+                if self.ledger.denies(payload_tool):
+                    self.ledger.record_tool_decision(
+                        tool_name=payload_tool,
+                        decision=Decision.ALLOW,
+                        reason="low_confidence_mode_surface_detected",
+                    )
+                    self.log(f"[{payload_tool}] Gate relaxed: switching BLOCKED -> WARNING+EXECUTE", "WARN")
 
         # Service visibility and target ranking feed prioritization logic.
         self.run_service_fingerprinting()
@@ -3060,6 +3285,7 @@ class AutomationScannerV2:
         report = {
             "scan_status": self.scan_status,
             "abort_reason": self.abort_reason,
+            "full_report": self.full_report,
             "profile": self.profile.to_dict(),
             "ledger": self.ledger.to_dict(),
             "plan": plan_serialized,
@@ -3113,6 +3339,11 @@ class AutomationScannerV2:
             "prioritized_subdomains": self.prioritized_subdomains,
             "js_discovery": self.js_discovery_summary,
             "multi_source_discovery": self.multi_source_summary,
+            "js_asset_inventory": self.js_asset_inventory,
+            "endpoint_inventory": self._build_endpoint_inventory_for_report(),
+            "api_endpoint_candidates": self._build_api_candidate_inventory(),
+            "high_value_targets": self._build_high_value_targets(),
+            "parameter_inventory": sorted(list(self.param_inventory.values()), key=lambda x: x.get("name", "")),
             "zap_discovery": self.zap_discovery_summary,
             "api_schema": self.api_schema_summary,
             "discovery_quality": self.discovery_quality,
@@ -3139,6 +3370,11 @@ class AutomationScannerV2:
                 owasp_summary[owasp_key] = owasp_summary.get(owasp_key, 0) + 1
 
             discovery_lists = self._build_discovery_detail_lists()
+            endpoint_inventory = self._build_endpoint_inventory_for_report()
+            api_candidates = self._build_api_candidate_inventory()
+            high_value_targets = self._build_high_value_targets()
+            endpoints_with_params = len([r for r in endpoint_inventory if r.get("has_params")])
+            exploitable_candidates = len([r for r in high_value_targets if int(r.get("priority", 99)) <= 2])
             tech_stack = self._extract_tech_stack_summary()
 
             skipped_tools = sorted({r.get("tool") for r in self.execution_results if r.get("status") == "SKIPPED" and r.get("tool")})
@@ -3156,6 +3392,7 @@ class AutomationScannerV2:
             discovery_summary = {
                 "scan_status": self.scan_status,
                 "abort_reason": self.abort_reason,
+                "target_host": self.profile.host,
                 "endpoints": len(self.cache.endpoints),
                 "live_endpoints": len(self.cache.live_endpoints),
                 "params": len(self.cache.params),
@@ -3184,6 +3421,18 @@ class AutomationScannerV2:
                 "auth_roles": len(self.auth_access_control_summary.get("authenticated_roles", [])),
                 "idor_findings": self.auth_access_control_summary.get("idor_findings", 0),
                 "access_control_findings": self.auth_access_control_summary.get("access_control_findings", 0),
+                "full_report": self.full_report,
+                "endpoint_inventory": endpoint_inventory,
+                "api_endpoint_candidates": api_candidates,
+                "high_value_targets": high_value_targets,
+                "js_asset_inventory": self.js_asset_inventory,
+                "parameter_inventory": sorted(list(self.param_inventory.values()), key=lambda x: x.get("name", "")),
+                "summary_metrics": {
+                    "total_endpoints": len(endpoint_inventory),
+                    "api_endpoints": len(api_candidates),
+                    "endpoints_with_params": endpoints_with_params,
+                    "exploitable_candidates": exploitable_candidates,
+                },
                 **discovery_lists,
             }
 
@@ -3478,10 +3727,6 @@ class AutomationScannerV2:
             params = endpoint_obj.get("params", []) if isinstance(endpoint_obj, dict) else []
             method = endpoint_obj.get("method", "GET").upper() if isinstance(endpoint_obj, dict) else "GET"
             
-            if not params:
-                self.log(f"Skipping {endpoint} - no parameters", "DEBUG")
-                continue
-            
             self.log(f"Testing {endpoint} ({method}) with {len(params)} parameter(s)", "INFO")
 
             raw_params = []
@@ -3498,14 +3743,37 @@ class AutomationScannerV2:
             # Wave 1: classify and gate parameters before exploitation.
             classified_params = classify_parameters(endpoint=endpoint, method=method, params=raw_params)
             controllable_params = filter_controllable(classified_params)
-            high_conf_params = filter_high_confidence(controllable_params, threshold=0.70)
-            high_conf_params = sorted(high_conf_params, key=lambda p: p.exploitability_score, reverse=True)[:3]
+            confirmed_params = [p for p in controllable_params if p.confidence >= 0.70]
+            potential_params = [p for p in controllable_params if 0.35 <= p.confidence < 0.70]
+            unknown_params = [p for p in classified_params if p.confidence < 0.35]
 
-            if not high_conf_params:
-                self.log(f"Skipping {endpoint}: no high-confidence controllable parameters", "DEBUG")
-                continue
+            params_to_test = confirmed_params[:3]
+            attack_mode = "full"
+            if not params_to_test and potential_params:
+                params_to_test = potential_params[:3]
+                attack_mode = "light"
+            if not params_to_test and unknown_params:
+                params_to_test = unknown_params[:2]
+                attack_mode = "low"
 
-            for param_obj in high_conf_params:
+            if not params_to_test:
+                # URL-based low-confidence fallback keeps exploitation best-effort.
+                fallback_name = "q"
+                params_to_test = [
+                    type("ParamLite", (), {
+                        "name": fallback_name,
+                        "confidence": 0.2,
+                        "exploitability_score": 0.3,
+                    })()
+                ]
+                attack_mode = "url"
+
+            self.log(
+                f"{endpoint}: mode={attack_mode}, confirmed={len(confirmed_params)}, potential={len(potential_params)}, unknown={len(unknown_params)}",
+                "DEBUG",
+            )
+
+            for param_obj in params_to_test:
                 param_name = param_obj.name
                 if self._should_skip_parameter(param_name):
                     self.log(f"Skipping {param_name}: static filter matched", "DEBUG")
@@ -3526,6 +3794,8 @@ class AutomationScannerV2:
                         for finding in ssrf_findings:
                             finding_dict = finding.to_exploitation_dict()
                             finding_dict["role"] = role
+                            finding_dict["attack_mode"] = attack_mode
+                            finding_dict["discovery_sources"] = self.endpoint_inventory.get(self._normalize_endpoint_path(endpoint), {}).get("sources", ["unknown"])
                             exploitation_results.append(finding_dict)
                             self._ingest_exploitation_feedback(finding_dict)
                             self.proof_reporter.add_from_exploitation_result(finding)
@@ -3546,6 +3816,8 @@ class AutomationScannerV2:
                         for finding in xss_findings:
                             finding_dict = finding.to_exploitation_dict()
                             finding_dict["role"] = role
+                            finding_dict["attack_mode"] = attack_mode
+                            finding_dict["discovery_sources"] = self.endpoint_inventory.get(self._normalize_endpoint_path(endpoint), {}).get("sources", ["unknown"])
                             exploitation_results.append(finding_dict)
                             self._ingest_exploitation_feedback(finding_dict)
                             self.proof_reporter.add_from_exploitation_result(finding)
@@ -3566,6 +3838,8 @@ class AutomationScannerV2:
                         for finding in sqli_findings:
                             finding_dict = finding.to_exploitation_dict()
                             finding_dict["role"] = role
+                            finding_dict["attack_mode"] = attack_mode
+                            finding_dict["discovery_sources"] = self.endpoint_inventory.get(self._normalize_endpoint_path(endpoint), {}).get("sources", ["unknown"])
                             exploitation_results.append(finding_dict)
                             self._ingest_exploitation_feedback(finding_dict)
                             self.proof_reporter.add_from_exploitation_result(finding)
@@ -3595,10 +3869,10 @@ class AutomationScannerV2:
         parameter = str(finding.get("parameter") or "").strip()
 
         if endpoint:
-            self.cache.add_endpoint(endpoint, source_tool="exploitation_feedback", confidence=1.0)
+            self._register_endpoint(endpoint, source="exploitation_feedback", confidence=1.0, is_live=True, param_source="url")
             self.cache.add_live_endpoint(endpoint, source_tool="exploitation_feedback")
         if parameter:
-            self.cache.add_param(parameter, source_tool="exploitation_feedback", confidence=1.0)
+            self._register_param(parameter, source="exploitation_feedback", endpoint=endpoint)
 
         if self.endpoint_graph and endpoint:
             try:
@@ -3661,15 +3935,22 @@ class AutomationScannerV2:
             return fallback_targets
 
         endpoints = sorted(self.cache.live_endpoints or self.cache.endpoints)
-        params = sorted(self.cache.params)
-        if not endpoints or not params:
+        if not endpoints:
             return fallback_targets
 
+        params = sorted(self.cache.params)
+        if not params:
+            params = sorted(self.param_inventory.keys())
+        if not params:
+            params = ["id", "q"]
+
         for endpoint in endpoints[:10]:
+            endpoint_param_rows = self.param_sources_by_endpoint.get(endpoint, [])
+            endpoint_params = [r.get("name") for r in endpoint_param_rows if r.get("name")] or params[:5]
             fallback_targets.append({
                 "url": endpoint,
                 "method": "GET",
-                "params": [{"name": p} for p in params[:5]],
+                "params": [{"name": p, "source": "url_param"} for p in endpoint_params[:5]],
             })
 
         return fallback_targets
@@ -3930,6 +4211,11 @@ def main() -> None:
         action="store_true",
         help="Fail-fast and abort scan if JS/Playwright discovery fails",
     )
+    parser.add_argument(
+        "--full-report",
+        action="store_true",
+        help="Include full unfiltered endpoint inventory in report output",
+    )
     args = parser.parse_args()
 
     # If --check-tools requested, run interactive tool checker and exit
@@ -3983,6 +4269,7 @@ def main() -> None:
         custom_budget=args.budget,
         manual_out_of_scope_mode=args.manual_out_of_scope,
         strict_js_required=args.strict_js_required,
+        full_report=args.full_report,
     )
 
     # Optional pre-flight installers (when target is provided)

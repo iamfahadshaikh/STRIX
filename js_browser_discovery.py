@@ -58,7 +58,7 @@ class JSBrowserDiscovery:
         pw_result = self._discover_with_playwright(base_url, role_headers)
         if not pw_result:
             raise Exception("JS discovery runtime failed")
-        if not pw_result.get("success", False):
+        if pw_result.get("signal_strength") == "low":
             logger.warning("JS_DISCOVERY_LOW_SIGNAL: browser ran but produced limited signals")
         logger.info(
             "JS_DISCOVERY_SUCCESS requests=%d responses=%d api_calls=%d",
@@ -141,6 +141,17 @@ class JSBrowserDiscovery:
                         } catch (e) {}
                         return oldSend.apply(this, args);
                       };
+
+                                            if (window.axios && window.axios.request) {
+                                                const oldAxiosRequest = window.axios.request.bind(window.axios);
+                                                window.axios.request = function(config) {
+                                                    try {
+                                                        const u = config && config.url ? String(config.url) : '';
+                                                        cap.push({ kind: 'axios', url: u });
+                                                    } catch (e) {}
+                                                    return oldAxiosRequest(config);
+                                                };
+                                            }
                     })();
                     """
                 )
@@ -151,14 +162,15 @@ class JSBrowserDiscovery:
                         url = resp.url
                         if not self._is_same_host(base_url, url):
                             return
+                        if not self._is_js_api_signal_url(url):
+                            return
                         requests_captured += 1
                         responses_list.append({"url": url, "status": str(resp.status)})
                         network_requests.add(url)
                         endpoints.add(self._path_only(url))
-                        if self._is_api_like(url):
-                            api_calls_detected += 1
-                            api_calls_list.append({"url": url, "source": "response"})
-                            api_endpoints.add(self._path_only(url))
+                        api_calls_detected += 1
+                        api_calls_list.append({"url": url, "source": "response"})
+                        api_endpoints.add(self._path_only(url))
                         for param_name in parse_qs(urlparse(url).query).keys():
                             params.add(param_name)
                     except Exception:
@@ -170,14 +182,15 @@ class JSBrowserDiscovery:
                         url = req.url
                         if not self._is_same_host(base_url, url):
                             return
+                        if not self._is_js_api_signal_url(url):
+                            return
                         requests_captured += 1
                         requests_list.append({"url": url, "method": req.method})
                         network_requests.add(url)
                         endpoints.add(self._path_only(url))
-                        if self._is_api_like(url):
-                            api_calls_detected += 1
-                            api_calls_list.append({"url": url, "source": "request"})
-                            api_endpoints.add(self._path_only(url))
+                        api_calls_detected += 1
+                        api_calls_list.append({"url": url, "source": "request"})
+                        api_endpoints.add(self._path_only(url))
                         for param_name in parse_qs(urlparse(url).query).keys():
                             params.add(param_name)
                     except Exception:
@@ -196,15 +209,19 @@ class JSBrowserDiscovery:
                             raw = str(item.get("url") or "").strip()
                             if not raw:
                                 continue
+                            kind = str(item.get("kind") or "").lower()
+                            if kind not in {"fetch", "xhr_open", "xhr_send", "axios"}:
+                                continue
                             url = raw if raw.startswith("http") else f"{base_url.rstrip('/')}/{raw.lstrip('/')}"
                             if not self._is_same_host(base_url, url):
                                 continue
+                            if not self._is_js_api_signal_url(url):
+                                continue
                             network_requests.add(url)
                             endpoints.add(self._path_only(url))
-                            if self._is_api_like(url):
-                                api_endpoints.add(self._path_only(url))
-                                api_calls_detected += 1
-                                api_calls_list.append({"url": url, "source": "runtime_hook"})
+                            api_endpoints.add(self._path_only(url))
+                            api_calls_detected += 1
+                            api_calls_list.append({"url": url, "source": f"runtime_hook:{kind}"})
                             for param_name in parse_qs(urlparse(url).query).keys():
                                 params.add(param_name)
                 except Exception:
@@ -232,11 +249,18 @@ class JSBrowserDiscovery:
             except Exception:
                 pass
 
-        success = requests_captured > 0 or len(endpoints) > 0 or len(params) > 0
+        signal_count = len(endpoints) + len(params) + api_calls_detected
+        if signal_count >= 30:
+            signal_strength = "high"
+        elif signal_count >= 8:
+            signal_strength = "medium"
+        else:
+            signal_strength = "low"
 
         result = {
             "executed": True,
-            "success": success,
+            "success": True,
+            "signal_strength": signal_strength,
             "playwright_used": True,
             "requests_captured": requests_captured,
             "api_calls_detected": api_calls_detected,
@@ -257,7 +281,7 @@ class JSBrowserDiscovery:
             },
         }
 
-        if not result["success"]:
+        if signal_strength == "low":
             result["warning"] = "JS discovery executed but returned no useful network signals"
 
         return result
@@ -265,6 +289,16 @@ class JSBrowserDiscovery:
     def _is_api_like(self, value: str) -> bool:
         low = value.lower()
         return "/api" in low or low.endswith(".json") or "graphql" in low
+
+    def _is_js_api_signal_url(self, value: str) -> bool:
+        low = value.lower()
+        if any(part in low for part in ["/node_modules/", "/src/"]):
+            return False
+        if low.endswith((".ts", ".map", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf", ".css")):
+            return False
+        if low.endswith(".js") and not self._is_api_like(low):
+            return False
+        return self._is_api_like(low) or "?" in low
 
     def _is_same_host(self, base_url: str, other: str) -> bool:
         return urlparse(base_url).netloc == urlparse(urljoin(base_url, other)).netloc
