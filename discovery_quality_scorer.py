@@ -11,14 +11,18 @@ def score_discovery(metrics: Dict) -> Dict:
     source_signals = int(metrics.get("source_signals", 0) or 0)
 
     score = 0
-    if endpoints >= 20:
+    if endpoints >= 30:
+        score += 45
+    elif endpoints >= 20:
         score += 40
     elif endpoints >= 5:
         score += 30
     elif endpoints > 0:
         score += 20
 
-    if params >= 15:
+    if params >= 20:
+        score += 50
+    elif params >= 15:
         score += 45
     elif params >= 5:
         score += 35

@@ -729,11 +729,82 @@ class HTMLReportGenerator:
         if not discovery_summary:
             return "<p>No discovery summary available.</p>"
 
+        target_host = str(discovery_summary.get("target_host") or "").strip()
+        full_report = bool(discovery_summary.get("full_report", False))
+        endpoint_inventory = discovery_summary.get("endpoint_inventory", []) or []
+        api_candidates = discovery_summary.get("api_endpoint_candidates", []) or []
+        high_value_targets = discovery_summary.get("high_value_targets", []) or []
+        js_assets = discovery_summary.get("js_asset_inventory", {}) or {}
+        parameter_inventory = discovery_summary.get("parameter_inventory", []) or []
+        summary_metrics = discovery_summary.get("summary_metrics", {}) or {}
+
         def _render_tags(values: Any, empty_label: str) -> str:
             values = values or []
             if not values:
                 return f"<span class='tool-tag'>{empty_label}</span>"
             return ''.join([f"<span class='tool-tag mono'>{v}</span>" for v in values[:100]])
+
+        def _clickable(url: str) -> str:
+            raw = str(url or "")
+            if raw.startswith("http"):
+                return f"<a class='mono' href='{raw}' target='_blank'>{raw}</a>"
+            if target_host:
+                absolute = f"https://{target_host}{raw if raw.startswith('/') else '/' + raw}"
+                return f"<a class='mono' href='{absolute}' target='_blank'>{raw}</a>"
+            return f"<span class='mono'>{raw}</span>"
+
+        max_rows = 1000 if full_report else 120
+        inv_rows = []
+        for row in endpoint_inventory[:max_rows]:
+            inv_rows.append(
+                "<tr>"
+                f"<td>{_clickable(str(row.get('url', '')))}</td>"
+                f"<td>{', '.join(row.get('sources', []) or ['unknown'])}</td>"
+                f"<td>{'yes' if row.get('has_params') else 'no'}</td>"
+                f"<td>{row.get('classification', 'UNKNOWN')}</td>"
+                "</tr>"
+            )
+
+        api_rows = []
+        for row in api_candidates[:max_rows]:
+            api_rows.append(
+                "<tr>"
+                f"<td>{_clickable(str(row.get('url', '')))}</td>"
+                f"<td>{', '.join(row.get('params', []) or []) or '-'}</td>"
+                f"<td>{', '.join(row.get('sources', []) or ['unknown'])}</td>"
+                "</tr>"
+            )
+
+        high_value_rows = []
+        for row in high_value_targets[:max_rows]:
+            high_value_rows.append(
+                "<tr>"
+                f"<td>{row.get('priority', '-')}</td>"
+                f"<td>{_clickable(str(row.get('url', '')))}</td>"
+                f"<td>{row.get('classification', 'UNKNOWN')}</td>"
+                f"<td>{', '.join(row.get('params', []) or []) or '-'}</td>"
+                f"<td>{', '.join(row.get('sources', []) or ['unknown'])}</td>"
+                "</tr>"
+            )
+
+        param_rows = []
+        for row in parameter_inventory[:max_rows]:
+            param_rows.append(
+                "<tr>"
+                f"<td>{row.get('name', '')}</td>"
+                f"<td>{', '.join(row.get('sources', []) or ['unknown'])}</td>"
+                f"<td>{', '.join(row.get('tags', []) or ['unknown'])}</td>"
+                "</tr>"
+            )
+
+        js_rows = []
+        for js_file, endpoints in list(js_assets.items())[:max_rows]:
+            js_rows.append(
+                "<tr>"
+                f"<td>{_clickable(js_file)}</td>"
+                f"<td>{', '.join(endpoints[:15]) if isinstance(endpoints, list) else ''}</td>"
+                "</tr>"
+            )
 
         return f"""
         <div class="stats-grid">
@@ -748,6 +819,10 @@ class HTMLReportGenerator:
             <div class="stat-card"><div class="label">JS Endpoints</div><div class="value">{discovery_summary.get('js_endpoints', 0)}</div></div>
             <div class="stat-card"><div class="label">JS API Endpoints</div><div class="value">{discovery_summary.get('js_api_endpoints', 0)}</div></div>
             <div class="stat-card"><div class="label">Auth Roles</div><div class="value">{discovery_summary.get('auth_roles', 0)}</div></div>
+            <div class="stat-card"><div class="label">Total Endpoints (Inventory)</div><div class="value">{summary_metrics.get('total_endpoints', 0)}</div></div>
+            <div class="stat-card"><div class="label">API Candidates</div><div class="value">{summary_metrics.get('api_endpoints', 0)}</div></div>
+            <div class="stat-card"><div class="label">Endpoints With Params</div><div class="value">{summary_metrics.get('endpoints_with_params', 0)}</div></div>
+            <div class="stat-card"><div class="label">Exploitable Candidates</div><div class="value">{summary_metrics.get('exploitable_candidates', 0)}</div></div>
         </div>
         <div class="detail-block">
             <h3>API Endpoints Found</h3>
@@ -766,6 +841,56 @@ class HTMLReportGenerator:
             <div class="tools-list">{_render_tags(discovery_summary.get('command_params_list', []), 'No command params found')}</div>
             <h3 style="margin-top:12px;">SSRF Params</h3>
             <div class="tools-list">{_render_tags(discovery_summary.get('ssrf_params_list', []), 'No ssrf params found')}</div>
+
+            <details style="margin-top:16px;">
+                <summary><strong>Full Endpoint Inventory ({len(endpoint_inventory)})</strong></summary>
+                <div style="overflow:auto; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr><th style="text-align:left;">URL</th><th style="text-align:left;">Sources</th><th style="text-align:left;">Has Params</th><th style="text-align:left;">Class</th></tr></thead>
+                        <tbody>{''.join(inv_rows) or '<tr><td colspan="4">No endpoint inventory</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </details>
+
+            <details style="margin-top:16px;">
+                <summary><strong>JavaScript Assets ({len(js_assets)})</strong></summary>
+                <div style="overflow:auto; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr><th style="text-align:left;">JS URL</th><th style="text-align:left;">Extracted Endpoints</th></tr></thead>
+                        <tbody>{''.join(js_rows) or '<tr><td colspan="2">No JS assets indexed</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </details>
+
+            <details style="margin-top:16px;">
+                <summary><strong>API Endpoint Candidates ({len(api_candidates)})</strong></summary>
+                <div style="overflow:auto; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr><th style="text-align:left;">URL</th><th style="text-align:left;">Params</th><th style="text-align:left;">Sources</th></tr></thead>
+                        <tbody>{''.join(api_rows) or '<tr><td colspan="3">No API candidates</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </details>
+
+            <details style="margin-top:16px;">
+                <summary><strong>High-Value Targets ({len(high_value_targets)})</strong></summary>
+                <div style="overflow:auto; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr><th style="text-align:left;">Priority</th><th style="text-align:left;">URL</th><th style="text-align:left;">Class</th><th style="text-align:left;">Params</th><th style="text-align:left;">Sources</th></tr></thead>
+                        <tbody>{''.join(high_value_rows) or '<tr><td colspan="5">No high-value targets</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </details>
+
+            <details style="margin-top:16px;">
+                <summary><strong>Parameter Inventory ({len(parameter_inventory)})</strong></summary>
+                <div style="overflow:auto; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr><th style="text-align:left;">Parameter</th><th style="text-align:left;">Source</th><th style="text-align:left;">Tag</th></tr></thead>
+                        <tbody>{''.join(param_rows) or '<tr><td colspan="3">No parameters</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </details>
         </div>
         """
 
@@ -868,9 +993,16 @@ class HTMLReportGenerator:
             severity = finding.get("severity", "MEDIUM").lower()
             endpoint = finding.get("endpoint", "?")
             param = finding.get("parameter", "?")
+            sources = finding.get("discovery_sources", []) or ["unknown"]
             proof = finding.get("proof", {}) if isinstance(finding.get("proof"), dict) else {}
             confidence = int(float(proof.get("confidence", finding.get("confidence", 0)) or 0.0) * 100)
             proof_type = proof.get("method", finding.get("proof_type", "response_diff"))
+
+            endpoint_link = endpoint
+            if isinstance(endpoint, str) and endpoint.startswith("http"):
+                endpoint_link = f"<a class='mono' href='{endpoint}' target='_blank'>{endpoint}</a>"
+            elif isinstance(endpoint, str) and endpoint.startswith("/"):
+                endpoint_link = f"<span class='mono'>{endpoint}</span>"
             
             findings_html += f"""
             <div class="finding-card {severity}">
@@ -882,8 +1014,9 @@ class HTMLReportGenerator:
                     </div>
                 </div>
                 <div class="finding-meta">
-                    <strong>Location:</strong> {endpoint} [{param}]<br>
-                    <strong>Confidence:</strong> {confidence}%
+                    <strong>Location:</strong> {endpoint_link} [{param}]<br>
+                    <strong>Confidence:</strong> {confidence}%<br>
+                    <strong>Discovery Source(s):</strong> {', '.join(str(s) for s in sources)}
                 </div>
             </div>
             """

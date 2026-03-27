@@ -67,7 +67,7 @@ class ZAPAdapter:
             self._ensure_api_ready()
 
             # 1. Spider
-            spider = self._api_get("spider", "action", "scan", {"url": target_url, "maxChildren": 0, "recurse": True})
+            spider = self._api_get("spider", "action", "scan", {"url": target_url, "maxChildren": 500, "recurse": True})
             spider_id = str(spider.get("scan") or "")
             if spider_id:
                 self._wait_scan_status("spider", spider_id)
@@ -76,6 +76,7 @@ class ZAPAdapter:
             try:
                 self._api_get("ajaxSpider", "action", "setOptionMaxDuration", {"Integer": 2})
                 self._api_get("ajaxSpider", "action", "setOptionMaxCrawlDepth", {"Integer": 6})
+                self._api_get("ajaxSpider", "action", "setOptionNumberOfBrowsers", {"Integer": 2})
             except Exception:
                 logger.debug("ZAP ajaxSpider option tuning unavailable; using defaults")
             self._api_get("ajaxSpider", "action", "scan", {"url": target_url, "inScope": False})
@@ -255,7 +256,7 @@ class ZAPAdapter:
 
     def _wait_ajax_spider(self) -> bool:
         start = time.time()
-        ajax_timeout = min(90, max(20, self.timeout_seconds // 3))
+        ajax_timeout = min(180, max(120, self.timeout_seconds // 2))
         while (time.time() - start) < ajax_timeout:
             status = self._api_get("ajaxSpider", "view", "status", {})
             raw = str(status.get("status") or "")
