@@ -119,6 +119,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <div class="section">
+            <h2>🧾 Management Action Plan</h2>
+            {management_plan_html}
+        </div>
+
+        <div class="section">
             <h2>🧪 Discovery Summary</h2>
             {discovery_section_html}
         </div>
@@ -173,6 +178,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="section">
             <h2>🏦 Business Risk Aggregation</h2>
             {risk_section_html}
+        </div>
+
+        <div class="section">
+            <h2>⚠️ Residual Risk And Limits</h2>
+            {residual_risk_html}
         </div>
 
         <div class="section">
@@ -283,6 +293,8 @@ class HTMLReportGenerator:
         vuln_section_html = HTMLReportGenerator._render_vulnerabilities(vulnerability_report)
         risk_section_html = HTMLReportGenerator._render_risk(risk_report)
         coverage_section_html = HTMLReportGenerator._render_coverage(coverage_report)
+        management_plan_html = HTMLReportGenerator._render_management_action_plan(discovery_summary, risk_report, auth_access_control_summary)
+        residual_risk_html = HTMLReportGenerator._render_residual_risk(discovery_summary, auth_access_control_summary)
         target_intel_html = HTMLReportGenerator._render_target_intel(target, discovery_summary)
         strengths_section_html = HTMLReportGenerator._render_strengths(security_strengths or [])
         auth_access_control_html = HTMLReportGenerator._render_auth_access_control(auth_access_control_summary)
@@ -305,6 +317,8 @@ class HTMLReportGenerator:
             medium_count=medium_count,
             avg_confidence=avg_confidence,
             multi_tool_count=multi_tool_count,
+            management_plan_html=management_plan_html,
+            residual_risk_html=residual_risk_html,
             target_intel_html=target_intel_html,
             discovery_section_html=discovery_section_html,
             auth_access_control_html=auth_access_control_html,
@@ -471,6 +485,14 @@ class HTMLReportGenerator:
                 evidence_file = cf.get("evidence_file", "")
                 evidence_line = cf.get("evidence_line", 0)
                 evidence_ref = f"{evidence_file}:{evidence_line}" if evidence_file and evidence_line else (evidence_file or "n/a")
+                confidence_basis = (cf.get("confidence_basis") or {}).get("reason", "No deterministic confidence basis available")
+                evidence_details = cf.get("evidence_details") or {}
+                request_line = HTMLReportGenerator._safe_text(evidence_details.get("request")) or "n/a"
+                response_snippet = HTMLReportGenerator._safe_text(evidence_details.get("response_snippet")) or "n/a"
+                status_code = HTMLReportGenerator._safe_text(evidence_details.get("status_code")) or "n/a"
+                evidence_timestamp = HTMLReportGenerator._safe_text(evidence_details.get("timestamp")) or "n/a"
+                tool_source = HTMLReportGenerator._safe_text(evidence_details.get("tool_source")) or "n/a"
+                repro_cmd = HTMLReportGenerator._safe_text(evidence_details.get("reproduction_command")) or "n/a"
                 html.append(f"""
                 <div class=\"finding-card {severity_class}\">
                     <div class=\"finding-header\">
@@ -482,13 +504,20 @@ class HTMLReportGenerator:
                     </div>
                     <div class=\"finding-meta\">
                         <strong>Location:</strong> {location}<br>
-                        <strong>Confidence:</strong> {conf_pct}%
+                        <strong>Confidence:</strong> {conf_pct}%<br>
+                        <strong>Confidence Basis:</strong> {confidence_basis}
                     </div>
                     <div class=\"finding-description\">
                         <strong>Issue:</strong> {description}<br>
                         <strong>Why Present:</strong> {root_cause}<br>
                         <strong>How Identified:</strong> {HTMLReportGenerator._safe_text(evidence) or 'Tool output matched vulnerability signatures.'}<br>
                         <strong>Evidence Ref:</strong> {evidence_ref}<br>
+                        <strong>Request:</strong> {request_line}<br>
+                        <strong>Status:</strong> {status_code}<br>
+                        <strong>Response Snippet:</strong> {response_snippet}<br>
+                        <strong>Evidence Timestamp:</strong> {evidence_timestamp}<br>
+                        <strong>Tool Source:</strong> {tool_source}<br>
+                        <strong>Reproduction Command:</strong> {repro_cmd}<br>
                         <strong>Impact:</strong> {impact}<br>
                         <strong>Exploitability:</strong> {exploitability}<br>
                         <strong>Remediation:</strong> {remediation}<br>
@@ -648,6 +677,8 @@ class HTMLReportGenerator:
 
         app = risk_report.get("application_risk", {})
         per_owasp = risk_report.get("per_owasp_category", {})
+        execution_quality = risk_report.get("execution_quality", {}) or {}
+        ssl_consistency = risk_report.get("ssl_consistency", {}) or {}
 
         owasp_rows = []
         for owasp, data in per_owasp.items():
@@ -656,6 +687,22 @@ class HTMLReportGenerator:
                 f"<div class='compliance-item'><span>{owasp}</span><span><strong>{data.get('critical',0)}/{data.get('high',0)}/{data.get('medium',0)}/{data.get('low',0)} (total {total})</strong></span></div>"
             )
 
+        execution_rows = ""
+        if execution_quality:
+            execution_rows = "".join([
+                f"<div class='compliance-item'><span>Quality Gap</span><span><strong>{execution_quality.get('has_quality_gap', False)}</strong></span></div>",
+                f"<div class='compliance-item'><span>Risk Floor</span><span><strong>{execution_quality.get('risk_floor', 'LOW')}</strong></span></div>",
+                f"<div class='compliance-item'><span>Blocked Scanner Tools</span><span><strong>{len(execution_quality.get('blocked_scanner_tools', []))}</strong></span></div>",
+                f"<div class='compliance-item'><span>Timed-Out Scanner Tools</span><span><strong>{len(execution_quality.get('timed_out_scanner_tools', []))}</strong></span></div>",
+            ])
+
+        ssl_rows = ""
+        if ssl_consistency:
+            ssl_rows = "".join([
+                f"<div class='compliance-item'><span>SSL Signal Conflict</span><span><strong>{ssl_consistency.get('has_conflict', False)}</strong></span></div>",
+                f"<div class='compliance-item'><span>Conflict Notes</span><span><strong>{len(ssl_consistency.get('conflicts', []))}</strong></span></div>",
+            ])
+
         return f"""
         <div class="stats-grid">
             <div class="stat-card"><div class="label">Risk Rating</div><div class="value">{app.get('risk_rating','UNKNOWN')}</div></div>
@@ -663,9 +710,84 @@ class HTMLReportGenerator:
             <div class="stat-card"><div class="label">Total Findings</div><div class="value">{app.get('total_findings',0)}</div></div>
         </div>
         <div class="compliance-card">
+            <h3>Risk Confidence Controls</h3>
+            <div class='compliance-item'><span>Confidence Adjusted</span><span><strong>{app.get('confidence_adjusted', False)}</strong></span></div>
+            <div class='compliance-item'><span>Original Risk</span><span><strong>{app.get('original_risk_rating', app.get('risk_rating', 'UNKNOWN'))}</strong></span></div>
+            {execution_rows or "<p>No execution quality adjustments were required.</p>"}
+            {ssl_rows}
+        </div>
+        <div class="compliance-card">
             <h3>OWASP Concentration</h3>
             <p style="color:#666; margin-bottom:10px;">Format is Critical/High/Medium/Low. If an OWASP row looks like 0/0/0/0 with findings elsewhere, those findings are often INFO-level and not counted in risk scoring.</p>
             {''.join(owasp_rows) or '<p>No OWASP aggregation.</p>'}
+        </div>
+        """
+
+    @staticmethod
+    def _render_management_action_plan(
+        discovery_summary: Optional[Dict[str, Any]],
+        risk_report: Optional[Dict[str, Any]],
+        auth_summary: Optional[Dict[str, Any]],
+    ) -> str:
+        discovery_summary = discovery_summary or {}
+        risk_report = risk_report or {}
+        auth_summary = auth_summary or {}
+
+        app_risk = (risk_report.get("application_risk") or {})
+        risk_rating = str(app_risk.get("risk_rating", "LOW"))
+        execution_quality = discovery_summary.get("execution_quality", {}) or {}
+        api_doc_count = int((discovery_summary.get("api_doc_exposure") or {}).get("count", 0) or 0)
+        focus_tracks = discovery_summary.get("service_focus_tracks", []) or []
+        auth_roles = len(auth_summary.get("authenticated_roles", []) or [])
+
+        posture = "low to moderate"
+        if risk_rating in {"HIGH", "CRITICAL"} or bool(execution_quality.get("has_quality_gap", False)):
+            posture = "elevated"
+
+        next_steps = [
+            "Separate endpoint triage into verified/probable/unverified before exploitation scoring.",
+            "Run authenticated scenarios (normal and low-privilege roles) for BOLA/IDOR coverage.",
+            "Prioritize API documentation paths for access-control and schema leakage checks.",
+        ]
+        if focus_tracks:
+            next_steps.append("Execute dedicated service-track testing on non-standard exposed ports.")
+
+        return f"""
+        <div class="compliance-card">
+            <h3>Executive Decision Narrative</h3>
+            <div class='compliance-item'><span>Current Posture</span><span><strong>{posture}</strong></span></div>
+            <div class='compliance-item'><span>Risk Rating</span><span><strong>{risk_rating}</strong></span></div>
+            <div class='compliance-item'><span>Execution Quality Gap</span><span><strong>{execution_quality.get('has_quality_gap', False)}</strong></span></div>
+            <div class='compliance-item'><span>Risk Floor</span><span><strong>{execution_quality.get('risk_floor', 'LOW')}</strong></span></div>
+            <div class='compliance-item'><span>API Doc Exposures</span><span><strong>{api_doc_count}</strong></span></div>
+            <div class='compliance-item'><span>Non-Standard Service Tracks</span><span><strong>{len(focus_tracks)}</strong></span></div>
+            <div class='compliance-item'><span>Authenticated Roles Tested</span><span><strong>{auth_roles}</strong></span></div>
+            <p style="color:#666; margin-top:10px;">Zero critical findings should not be treated as closure when authenticated workflows and service-track testing are incomplete.</p>
+        </div>
+        <div class="compliance-card" style="margin-top:12px;">
+            <h3>Priority Next Phase</h3>
+            {''.join([f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(item)}</span></div>" for item in next_steps])}
+        </div>
+        """
+
+    @staticmethod
+    def _render_residual_risk(discovery_summary: Optional[Dict[str, Any]], auth_summary: Optional[Dict[str, Any]]) -> str:
+        discovery_summary = discovery_summary or {}
+        auth_summary = auth_summary or {}
+        residual = list(discovery_summary.get("residual_risks", []) or [])
+
+        if int(auth_summary.get("endpoints_tested", 0) or 0) == 0:
+            residual.append("No authenticated endpoint test count recorded in this run.")
+        if not (discovery_summary.get("technical_parameters_list") or []):
+            pass
+        else:
+            residual.append("Technical metadata parameters were excluded from exploit payload candidates and need manual review only.")
+
+        rows = ''.join([f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(item)}</span></div>" for item in residual[:12]])
+        return f"""
+        <div class="compliance-card">
+            <h3>Assessment Boundaries</h3>
+            {rows or '<p>No explicit residual risks captured.</p>'}
         </div>
         """
 
@@ -688,6 +810,8 @@ class HTMLReportGenerator:
         denied_tools = coverage_report.get("denied", {}).get("tools", [])
         missing_tools = (coverage_report.get("missing", {}) or {}).get("missing_tools", [])
         manual = coverage_report.get("manual_out_of_scope", {}) or {}
+        execution_quality = coverage_report.get("execution_quality", {}) or {}
+        ssl_consistency = coverage_report.get("ssl_consistency", {}) or {}
         blocked_rows = []
         for tool in blocked_tools:
             blocked_rows.append(
@@ -698,14 +822,33 @@ class HTMLReportGenerator:
         denied_rows = ''.join([f"<span class='tool-tag mono'>{t}</span>" for t in denied_tools]) or "<span class='tool-tag'>None</span>"
         missing_rows = ''.join([f"<span class='tool-tag mono'>{t}</span>" for t in missing_tools]) or "<span class='tool-tag'>None</span>"
 
+        unique_counts = manual.get("unique_counts", {}) or {}
         manual_summary = f"""
         <div class='compliance-item'><span>Prompt Response</span><span><strong>{manual.get('prompt_response', 'skip')}</strong></span></div>
         <div class='compliance-item'><span>Attempted</span><span><strong>{manual.get('attempted', False)}</strong></span></div>
-        <div class='compliance-item'><span>Executed</span><span><strong>{len(manual.get('executed', []))}</strong></span></div>
-        <div class='compliance-item'><span>Failed (Actionable)</span><span><strong>{len(manual.get('failed', []))}</strong></span></div>
-        <div class='compliance-item'><span>Failed (Non-Actionable)</span><span><strong>{len(manual.get('non_actionable_failures', []))}</strong></span></div>
-        <div class='compliance-item'><span>Unavailable</span><span><strong>{len(manual.get('missing_or_unavailable', []))}</strong></span></div>
+        <div class='compliance-item'><span>Executed (Unique)</span><span><strong>{unique_counts.get('executed', len(manual.get('executed', [])))}</strong></span></div>
+        <div class='compliance-item'><span>Failed (Actionable, Unique)</span><span><strong>{unique_counts.get('failed', len(manual.get('failed', [])))}</strong></span></div>
+        <div class='compliance-item'><span>Failed (Non-Actionable, Unique)</span><span><strong>{unique_counts.get('non_actionable_failures', len(manual.get('non_actionable_failures', [])))}</strong></span></div>
+        <div class='compliance-item'><span>Unavailable (Unique)</span><span><strong>{unique_counts.get('missing_or_unavailable', len(manual.get('missing_or_unavailable', [])))}</strong></span></div>
         """
+
+        execution_quality_rows = ""
+        if execution_quality:
+            execution_quality_rows = f"""
+            <h3 style="margin-top:12px;">Execution Quality</h3>
+            <div class='compliance-item'><span>Quality Gap</span><span><strong>{execution_quality.get('has_quality_gap', False)}</strong></span></div>
+            <div class='compliance-item'><span>Risk Floor</span><span><strong>{execution_quality.get('risk_floor', 'LOW')}</strong></span></div>
+            <div class='compliance-item'><span>Blocked Scanner Tools</span><span><strong>{len(execution_quality.get('blocked_scanner_tools', []))}</strong></span></div>
+            <div class='compliance-item'><span>Timed-Out Scanner Tools</span><span><strong>{len(execution_quality.get('timed_out_scanner_tools', []))}</strong></span></div>
+            """
+
+        ssl_rows = ""
+        if ssl_consistency:
+            ssl_rows = f"""
+            <h3 style="margin-top:12px;">SSL Consistency</h3>
+            <div class='compliance-item'><span>Conflict Detected</span><span><strong>{ssl_consistency.get('has_conflict', False)}</strong></span></div>
+            <div class='compliance-item'><span>Conflict Notes</span><span><strong>{len(ssl_consistency.get('conflicts', []))}</strong></span></div>
+            """
 
         return f"""
         <div class="compliance-card">
@@ -721,6 +864,8 @@ class HTMLReportGenerator:
             <div class="tools-list">{missing_rows}</div>
             <h3 style="margin-top:12px;">Manual Out-of-Scope Sweep</h3>
             {manual_summary}
+            {execution_quality_rows}
+            {ssl_rows}
         </div>
         """
 
@@ -737,6 +882,9 @@ class HTMLReportGenerator:
         js_assets = discovery_summary.get("js_asset_inventory", {}) or {}
         parameter_inventory = discovery_summary.get("parameter_inventory", []) or []
         summary_metrics = discovery_summary.get("summary_metrics", {}) or {}
+        endpoint_confidence_counts = discovery_summary.get("endpoint_confidence_counts", {}) or {}
+        api_doc_exposure = discovery_summary.get("api_doc_exposure", {}) or {}
+        service_focus_tracks = discovery_summary.get("service_focus_tracks", []) or []
 
         def _render_tags(values: Any, empty_label: str) -> str:
             values = values or []
@@ -762,6 +910,8 @@ class HTMLReportGenerator:
                 f"<td>{', '.join(row.get('sources', []) or ['unknown'])}</td>"
                 f"<td>{'yes' if row.get('has_params') else 'no'}</td>"
                 f"<td>{row.get('classification', 'UNKNOWN')}</td>"
+                f"<td>{row.get('confidence_tier', 'unverified_path')}</td>"
+                f"<td>{'yes' if row.get('eligible_for_exploitation') else 'no'}</td>"
                 "</tr>"
             )
 
@@ -797,6 +947,28 @@ class HTMLReportGenerator:
                 "</tr>"
             )
 
+        api_doc_rows = []
+        for row in api_doc_exposure.get("paths", [])[:max_rows]:
+            api_doc_rows.append(
+                "<tr>"
+                f"<td>{_clickable(str(row.get('url', '')))}</td>"
+                f"<td>{', '.join(row.get('sources', []) or ['unknown'])}</td>"
+                f"<td>{row.get('confidence_tier', 'unverified_path')}</td>"
+                f"<td>{'; '.join(row.get('recommended_checks', [])[:2])}</td>"
+                "</tr>"
+            )
+
+        service_track_rows = []
+        for row in service_focus_tracks[:max_rows]:
+            service_track_rows.append(
+                "<tr>"
+                f"<td>{row.get('host', '?')}</td>"
+                f"<td>{row.get('port', '?')}</td>"
+                f"<td>{row.get('priority', 'MEDIUM')}</td>"
+                f"<td>{'; '.join(row.get('checks', [])[:2])}</td>"
+                "</tr>"
+            )
+
         js_rows = []
         for js_file, endpoints in list(js_assets.items())[:max_rows]:
             js_rows.append(
@@ -811,6 +983,7 @@ class HTMLReportGenerator:
             <div class="stat-card"><div class="label">Endpoints</div><div class="value">{discovery_summary.get('endpoints', 0)}</div></div>
             <div class="stat-card"><div class="label">Live Endpoints</div><div class="value">{discovery_summary.get('live_endpoints', 0)}</div></div>
             <div class="stat-card"><div class="label">Parameters</div><div class="value">{discovery_summary.get('params', 0)}</div></div>
+            <div class="stat-card"><div class="label">Testable Params</div><div class="value">{summary_metrics.get('testable_params', 0)}</div></div>
             <div class="stat-card"><div class="label">Command Params</div><div class="value">{discovery_summary.get('command_params', 0)}</div></div>
             <div class="stat-card"><div class="label">SSRF Params</div><div class="value">{discovery_summary.get('ssrf_params', 0)}</div></div>
             <div class="stat-card"><div class="label">Reflections</div><div class="value">{discovery_summary.get('reflections', 0)}</div></div>
@@ -825,12 +998,22 @@ class HTMLReportGenerator:
             <div class="stat-card"><div class="label">Exploitable Candidates</div><div class="value">{summary_metrics.get('exploitable_candidates', 0)}</div></div>
         </div>
         <div class="detail-block">
+            <h3>Endpoint Confidence Tiers</h3>
+            <div class="tools-list">
+                <span class='tool-tag'>verified_live_api: {endpoint_confidence_counts.get('verified_live_api', 0)}</span>
+                <span class='tool-tag'>probable_api: {endpoint_confidence_counts.get('probable_api', 0)}</span>
+                <span class='tool-tag'>verified_page: {endpoint_confidence_counts.get('verified_page', 0)}</span>
+                <span class='tool-tag'>static_asset: {endpoint_confidence_counts.get('static_asset', 0)}</span>
+                <span class='tool-tag'>unverified_path: {endpoint_confidence_counts.get('unverified_path', 0)}</span>
+            </div>
             <h3>API Endpoints Found</h3>
             <div class="tools-list">{_render_tags(discovery_summary.get('api_endpoints_list', []), 'No API endpoints found')}</div>
             <h3 style="margin-top:12px;">All Endpoints / Directories / Pages</h3>
             <div class="tools-list">{_render_tags(discovery_summary.get('endpoints_list', []), 'No endpoints found')}</div>
             <h3 style="margin-top:12px;">Parameters</h3>
             <div class="tools-list">{_render_tags(discovery_summary.get('parameters_list', []), 'No parameters found')}</div>
+            <h3 style="margin-top:12px;">Technical Metadata Params (excluded from exploit param pool)</h3>
+            <div class="tools-list">{_render_tags(discovery_summary.get('technical_parameters_list', []), 'No technical metadata params')}</div>
             <h3 style="margin-top:12px;">Reflections</h3>
             <div class="tools-list">{_render_tags(discovery_summary.get('reflections_list', []), 'No reflections found')}</div>
             <h3 style="margin-top:12px;">Subdomains</h3>
@@ -846,8 +1029,8 @@ class HTMLReportGenerator:
                 <summary><strong>Full Endpoint Inventory ({len(endpoint_inventory)})</strong></summary>
                 <div style="overflow:auto; margin-top:10px;">
                     <table style="width:100%; border-collapse:collapse;">
-                        <thead><tr><th style="text-align:left;">URL</th><th style="text-align:left;">Sources</th><th style="text-align:left;">Has Params</th><th style="text-align:left;">Class</th></tr></thead>
-                        <tbody>{''.join(inv_rows) or '<tr><td colspan="4">No endpoint inventory</td></tr>'}</tbody>
+                        <thead><tr><th style="text-align:left;">URL</th><th style="text-align:left;">Sources</th><th style="text-align:left;">Has Params</th><th style="text-align:left;">Class</th><th style="text-align:left;">Confidence Tier</th><th style="text-align:left;">Exploit Eligible</th></tr></thead>
+                        <tbody>{''.join(inv_rows) or '<tr><td colspan="6">No endpoint inventory</td></tr>'}</tbody>
                     </table>
                 </div>
             </details>
@@ -888,6 +1071,26 @@ class HTMLReportGenerator:
                     <table style="width:100%; border-collapse:collapse;">
                         <thead><tr><th style="text-align:left;">Parameter</th><th style="text-align:left;">Source</th><th style="text-align:left;">Tag</th></tr></thead>
                         <tbody>{''.join(param_rows) or '<tr><td colspan="3">No parameters</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </details>
+
+            <details style="margin-top:16px;">
+                <summary><strong>API Documentation Exposure ({api_doc_exposure.get('count', 0)})</strong></summary>
+                <div style="overflow:auto; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr><th style="text-align:left;">Path</th><th style="text-align:left;">Sources</th><th style="text-align:left;">Confidence Tier</th><th style="text-align:left;">Priority Checks</th></tr></thead>
+                        <tbody>{''.join(api_doc_rows) or '<tr><td colspan="4">No API documentation exposures detected</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </details>
+
+            <details style="margin-top:16px;">
+                <summary><strong>Non-Standard Service Focus Tracks ({len(service_focus_tracks)})</strong></summary>
+                <div style="overflow:auto; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr><th style="text-align:left;">Host</th><th style="text-align:left;">Port</th><th style="text-align:left;">Priority</th><th style="text-align:left;">Checks</th></tr></thead>
+                        <tbody>{''.join(service_track_rows) or '<tr><td colspan="4">No non-standard service tracks detected</td></tr>'}</tbody>
                     </table>
                 </div>
             </details>
@@ -997,6 +1200,8 @@ class HTMLReportGenerator:
             proof = finding.get("proof", {}) if isinstance(finding.get("proof"), dict) else {}
             confidence = int(float(proof.get("confidence", finding.get("confidence", 0)) or 0.0) * 100)
             proof_type = proof.get("method", finding.get("proof_type", "response_diff"))
+            attack_mode = finding.get("attack_mode", "n/a")
+            confidence_basis = (finding.get("confidence_basis") or {}).get("reason", "n/a")
 
             endpoint_link = endpoint
             if isinstance(endpoint, str) and endpoint.startswith("http"):
@@ -1016,7 +1221,9 @@ class HTMLReportGenerator:
                 <div class="finding-meta">
                     <strong>Location:</strong> {endpoint_link} [{param}]<br>
                     <strong>Confidence:</strong> {confidence}%<br>
-                    <strong>Discovery Source(s):</strong> {', '.join(str(s) for s in sources)}
+                    <strong>Discovery Source(s):</strong> {', '.join(str(s) for s in sources)}<br>
+                    <strong>Attack Mode:</strong> {attack_mode}<br>
+                    <strong>Confidence Basis:</strong> {HTMLReportGenerator._safe_text(confidence_basis)}
                 </div>
             </div>
             """

@@ -87,7 +87,7 @@ class ProofBasedReporter:
     - Confidence must be > 0.7 for reporting
     """
     
-    MIN_CONFIDENCE_FOR_REPORTING = 0.85
+    MIN_CONFIDENCE_FOR_REPORTING = 0.50
     FALSE_POSITIVE_KILL_SWITCH_THRESHOLD = 5
     
     def __init__(self):

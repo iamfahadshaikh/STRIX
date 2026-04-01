@@ -59,7 +59,7 @@ class JSBrowserDiscovery:
         if not pw_result:
             raise Exception("JS discovery runtime failed")
         if pw_result.get("signal_strength") == "low":
-            logger.warning("JS_DISCOVERY_LOW_SIGNAL: browser ran but produced limited signals")
+            logger.info("JS_DISCOVERY_LOW_SIGNAL: browser ran but produced limited signals")
         logger.info(
             "JS_DISCOVERY_SUCCESS requests=%d responses=%d api_calls=%d",
             len(pw_result.get("requests", [])),
