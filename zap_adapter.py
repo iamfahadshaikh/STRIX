@@ -146,7 +146,10 @@ class ZAPAdapter:
                 source="zap_api",
             )
         finally:
-            self._stop_managed_api_container()
+            try:
+                self._stop_managed_api_container()
+            except Exception as cleanup_error:  # noqa: BLE001
+                logger.warning("ZAP managed container cleanup failed (non-fatal): %s", cleanup_error)
 
     def _api_get(self, component: str, operation_type: str, operation: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         base = f"{self.api_base_url}/JSON/{component}/{operation_type}/{operation}/"
@@ -229,14 +232,21 @@ class ZAPAdapter:
     def _stop_managed_api_container(self) -> None:
         if not self._managed_container_name:
             return
+        container_name = self._managed_container_name
         try:
             subprocess.run(
-                ["docker", "rm", "-f", self._managed_container_name],
+                ["docker", "rm", "-f", container_name],
                 capture_output=True,
                 text=True,
-                timeout=15,
+                timeout=8,
                 check=False,
             )
+        except subprocess.TimeoutExpired:
+            logger.warning("Timed out while removing managed ZAP container %s; continuing", container_name)
+        except FileNotFoundError:
+            logger.warning("Docker executable not found during managed ZAP cleanup; continuing")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Managed ZAP cleanup error (non-fatal): %s", e)
         finally:
             self._managed_container_name = None
 

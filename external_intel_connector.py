@@ -59,7 +59,7 @@ class CrtShConnector:
             )
             
         except requests.exceptions.Timeout:
-            logger.warning(f"[crt.sh] Timeout for {domain}")
+            logger.info(f"[crt.sh] Timeout for {domain}")
             return ExternalIntelResult(
                 source="crt.sh",
                 data_type="certificate_transparency",
@@ -68,7 +68,7 @@ class CrtShConnector:
                 error="timeout"
             )
         except Exception as e:
-            logger.error(f"[crt.sh] Error: {e}")
+            logger.info(f"[crt.sh] Unavailable: {e}")
             return ExternalIntelResult(
                 source="crt.sh",
                 data_type="certificate_transparency",

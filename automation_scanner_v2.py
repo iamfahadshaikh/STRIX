@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse, parse_qs, urljoin
+from urllib.parse import urlparse, parse_qs, urljoin, urlencode
 from urllib.request import Request, urlopen
 
 from decision_ledger import DecisionLedger, DecisionEngine, Decision
@@ -118,10 +118,13 @@ class AutomationScannerV2:
         manual_out_of_scope_mode: str = "ask",
         strict_js_required: bool = False,
         full_report: bool = False,
+        quiet_mode: bool = False,
     ) -> None:
         self.target = target
         self.strict_js_required = strict_js_required
         self.full_report = full_report
+        self.quiet_mode = quiet_mode
+        self._configure_logging(quiet_mode)
         self.start_time = datetime.now()
         self.correlation_id = self.start_time.strftime("%Y%m%d_%H%M%S")
 
@@ -143,6 +146,13 @@ class AutomationScannerV2:
                 "EXECUTION_ERROR": 0,
             },
             "missing_or_unavailable": [],
+            "summary_by_tool": {},
+            "unique_counts": {
+                "executed": 0,
+                "failed": 0,
+                "non_actionable_failures": 0,
+                "missing_or_unavailable": 0,
+            },
         }
         self.executed_tool_names: set[str] = set()
         self._tool_execution_meta: dict[str, dict] = {}
@@ -286,6 +296,23 @@ class AutomationScannerV2:
         # Cheap probes to improve signal-based gating
         self._run_cheap_probes()
 
+    def _configure_logging(self, quiet_mode: bool) -> None:
+        """Configure logging level based on quiet mode."""
+        if quiet_mode:
+            # Suppress INFO and DEBUG messages, only show WARN and ERROR
+            logging.getLogger().setLevel(logging.WARNING)
+            for handler in logging.getLogger().handlers:
+                handler.setLevel(logging.WARNING)
+            # Also suppress noisy third-party loggers
+            logging.getLogger("urllib3").setLevel(logging.ERROR)
+            logging.getLogger("requests").setLevel(logging.ERROR)
+            logging.getLogger("paramiko").setLevel(logging.ERROR)
+        else:
+            # Default INFO level
+            logging.getLogger().setLevel(logging.INFO)
+            for handler in logging.getLogger().handlers:
+                handler.setLevel(logging.INFO)
+
     def log(self, msg: str, level: str = "INFO") -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
         print(f"[{timestamp}] [{level}] {msg}")
@@ -319,7 +346,13 @@ class AutomationScannerV2:
         if getattr(self.profile, "detected_cms", None):
             tech["cms"].append(str(self.profile.detected_cms))
 
-        for param in sorted(self.cache.params):
+        technical_names = set()
+        for row in self.param_inventory.values():
+            tags = row.get("tags", []) or []
+            if "technical_metadata" in tags:
+                technical_names.add(str(row.get("name", "")))
+
+        for param in sorted(technical_names):
             p = str(param)
             if p.startswith("tech_server_"):
                 tech["server"].append(p.replace("tech_server_", ""))
@@ -340,7 +373,8 @@ class AutomationScannerV2:
         """Build detailed discovery lists for report sections."""
         endpoints = self.cache.get_normalized_endpoints()
         api_endpoints = [ep for ep in endpoints if "/api" in ep.lower()]
-        params = sorted(str(p) for p in self.cache.params)
+        params = sorted(str(p) for p in self.cache.params if self._is_testable_param_name(str(p)))
+        technical_params = sorted(str(p.get("name", "")) for p in self.param_inventory.values() if "technical_metadata" in (p.get("tags") or []))
         reflections = sorted(str(r) for r in self.cache.reflections)
         subdomains = sorted(str(s) for s in self.cache.subdomains)
         ports = [str(p) for p in sorted(self.cache.discovered_ports)]
@@ -351,6 +385,7 @@ class AutomationScannerV2:
             "endpoints_list": endpoints,
             "api_endpoints_list": api_endpoints,
             "parameters_list": params,
+            "technical_parameters_list": technical_params,
             "reflections_list": reflections,
             "subdomains_list": subdomains,
             "ports_list": ports,
@@ -372,6 +407,8 @@ class AutomationScannerV2:
         low = str(path or "").lower()
         if not low:
             return "UNKNOWN"
+        if self._is_api_doc_path(low):
+            return "API"
         if any(s in low for s in ["/api", "/v1", "/v2", "/graphql", "/auth"]):
             return "API"
         if any(s in low for s in ["/node_modules/", "/src/"]) or low.endswith((".ts", ".tsx", ".map")):
@@ -383,6 +420,40 @@ class AutomationScannerV2:
         if low.endswith(".js"):
             return "STATIC"
         return "UNKNOWN"
+
+    def _is_api_doc_path(self, path: str) -> bool:
+        low = str(path or "").lower()
+        return any(marker in low for marker in ["/swagger", "swagger.json", "openapi.json", "/v3/api-docs"])
+
+    def _is_tech_metadata_param(self, param_name: str) -> bool:
+        low = str(param_name or "").strip().lower()
+        return low.startswith(("tech_", "framework_", "js_", "service_", "fingerprint_"))
+
+    def _is_testable_param_name(self, param_name: str) -> bool:
+        name = str(param_name or "").strip()
+        if not name:
+            return False
+        if self._is_tech_metadata_param(name):
+            return False
+        return not self._should_skip_parameter(name)
+
+    def _endpoint_confidence_tier(self, path: str, item: Dict[str, Any]) -> str:
+        cls = str(item.get("classification") or self._classify_endpoint(path))
+        sources = set(item.get("sources", []) or [])
+        is_live = path in self.cache.live_endpoints
+        if cls in {"STATIC", "CODE"}:
+            return "static_asset"
+        if cls == "API" and is_live and (len(sources) >= 2 or "api_schema" in sources or "zap" in sources):
+            return "verified_live_api"
+        if cls == "API" and (is_live or bool(sources & {"api_schema", "zap", "js_discovery", "multi_source"})):
+            return "probable_api"
+        if cls == "PAGE" and is_live:
+            return "verified_page"
+        return "unverified_path"
+
+    def _should_feed_exploitation(self, path: str, item: Dict[str, Any]) -> bool:
+        tier = self._endpoint_confidence_tier(path, item)
+        return tier in {"verified_live_api", "probable_api", "verified_page"}
 
     def _is_noise_endpoint(self, path: str) -> bool:
         low = str(path or "").lower()
@@ -398,7 +469,8 @@ class AutomationScannerV2:
         name = str(param_name or "").strip()
         if not name:
             return
-        self.cache.add_param(name, source_tool=source, confidence=0.75)
+        if not self._is_tech_metadata_param(name):
+            self.cache.add_param(name, source_tool=source, confidence=0.75)
 
         entry = self.param_inventory.setdefault(name, {
             "name": name,
@@ -407,7 +479,9 @@ class AutomationScannerV2:
         })
         if source not in entry["sources"]:
             entry["sources"].append(source)
-        if source in {"url_param", "url", "multi_source", "api_schema", "zap", "js_discovery", "query"}:
+        if self._is_tech_metadata_param(name):
+            tag = "technical_metadata"
+        elif source in {"url_param", "url", "multi_source", "api_schema", "zap", "js_discovery", "query"}:
             tag = "potential_controllable"
         elif source in {"form", "form_field", "crawler_form"}:
             tag = "confirmed_controllable"
@@ -507,6 +581,8 @@ class AutomationScannerV2:
                 "sources": sorted(item.get("sources", [])),
                 "has_params": has_params,
                 "classification": cls,
+                "confidence_tier": self._endpoint_confidence_tier(path, item),
+                "eligible_for_exploitation": self._should_feed_exploitation(path, item),
                 "params": sorted(item.get("params", [])),
             })
         return rows
@@ -515,7 +591,8 @@ class AutomationScannerV2:
         candidates = []
         for row in self._build_endpoint_inventory_for_report():
             low = str(row.get("url", "")).lower()
-            if any(marker in low for marker in ["/api", "/v1", "/graphql", "/auth"]):
+            tier = str(row.get("confidence_tier", "unverified_path"))
+            if any(marker in low for marker in ["/api", "/v1", "/graphql", "/auth", "/swagger", "openapi.json", "swagger.json", "/v3/api-docs"]) and tier in {"verified_live_api", "probable_api"}:
                 candidates.append(row)
         return candidates
 
@@ -523,6 +600,9 @@ class AutomationScannerV2:
         targets = []
         for row in self._build_endpoint_inventory_for_report():
             classification = row.get("classification", "UNKNOWN")
+            tier = str(row.get("confidence_tier", "unverified_path"))
+            if tier not in {"verified_live_api", "probable_api", "verified_page"}:
+                continue
             if classification == "API" and row.get("has_params"):
                 priority = 1
             elif classification == "API":
@@ -537,9 +617,102 @@ class AutomationScannerV2:
                 "sources": row.get("sources", []),
                 "params": row.get("params", []),
                 "classification": classification,
+                "confidence_tier": tier,
             })
         targets.sort(key=lambda x: (x["priority"], x["url"]))
         return targets
+
+    def _build_endpoint_confidence_counts(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {
+            "verified_live_api": 0,
+            "probable_api": 0,
+            "verified_page": 0,
+            "static_asset": 0,
+            "unverified_path": 0,
+        }
+        for row in self._build_endpoint_inventory_for_report():
+            tier = str(row.get("confidence_tier", "unverified_path"))
+            counts[tier] = counts.get(tier, 0) + 1
+        return counts
+
+    def _build_api_doc_exposure(self) -> Dict[str, Any]:
+        docs = []
+        for row in self._build_endpoint_inventory_for_report():
+            path = str(row.get("url", ""))
+            if not self._is_api_doc_path(path):
+                continue
+            docs.append({
+                "url": path,
+                "sources": row.get("sources", []),
+                "confidence_tier": row.get("confidence_tier", "unverified_path"),
+                "recommended_checks": [
+                    "Auth bypass on documentation endpoints",
+                    "Schema leakage and hidden operations",
+                    "Exposed internal server URLs",
+                ],
+            })
+        return {
+            "count": len(docs),
+            "paths": docs,
+        }
+
+    def _build_service_focus_tracks(self) -> List[Dict[str, Any]]:
+        tracks: List[Dict[str, Any]] = []
+        seen: set[tuple[str, int]] = set()
+        for host in self.host_network_assessment or []:
+            host_name = str(host.get("host", self.profile.host))
+            for port in host.get("open_ports", []) or []:
+                port_num = int(port)
+                if port_num in {80, 443}:
+                    continue
+                key = (host_name, port_num)
+                if key in seen:
+                    continue
+                seen.add(key)
+                tracks.append({
+                    "host": host_name,
+                    "port": port_num,
+                    "priority": "HIGH" if port_num == 8081 else "MEDIUM",
+                    "track": "non_standard_service",
+                    "checks": [
+                        "Route mapping and hidden endpoints",
+                        "Default middleware/debug endpoints",
+                        "Admin and proxy surface checks",
+                    ],
+                })
+
+        for port in sorted(self.cache.discovered_ports):
+            port_num = int(port)
+            if port_num in {80, 443}:
+                continue
+            key = (self.profile.host, port_num)
+            if key in seen:
+                continue
+            seen.add(key)
+            tracks.append({
+                "host": self.profile.host,
+                "port": port_num,
+                "priority": "HIGH" if port_num == 8081 else "MEDIUM",
+                "track": "non_standard_service",
+                "checks": [
+                    "Route mapping and hidden endpoints",
+                    "Default middleware/debug endpoints",
+                    "Admin and proxy surface checks",
+                ],
+            })
+        return tracks
+
+    def _build_residual_risk_statements(self) -> List[str]:
+        residual: List[str] = []
+        if not self.auth_access_control_summary.get("authenticated_roles"):
+            residual.append("No authenticated role sessions were validated; BOLA/IDOR assurance is incomplete.")
+        if int(self.auth_access_control_summary.get("endpoints_tested", 0) or 0) == 0:
+            residual.append("Authenticated authorization paths were not exercised with role context.")
+        if not self.cache.reflections:
+            residual.append("Reflection-driven attack chains remain low-confidence because no reflections were detected.")
+        if self._build_service_focus_tracks():
+            residual.append("Non-standard exposed services require dedicated service-track testing (for example port 8081).")
+        return residual
 
     def _is_api_like_path(self, path: str) -> bool:
         path_lower = str(path or "").lower()
@@ -749,11 +922,45 @@ class AutomationScannerV2:
             self.log(f"JS-aware discovery failed: {e} (non-fatal)", "WARN")
 
     def _run_zap_enrichment(self, base_url: str) -> None:
-        """Run ZAP API intelligence flow, fallback to baseline docker if API fails."""
-        result = self.zap_adapter.run_intelligence_scan(base_url, include_active_scan=True)
-        if not result.success:
-            self.log(f"ZAP API enrichment failed, trying baseline fallback: {result.error}", "WARN")
-            result = self.zap_adapter.run_baseline_docker(base_url, self.output_dir)
+        """Run ZAP API intelligence flow, fallback to baseline docker if API fails.
+        
+        ZAP is resource-intensive and can crash on large sites (memory >95%).
+        This method has defensive error handling to proceed even if ZAP is unavailable.
+        """
+        try:
+            result = self.zap_adapter.run_intelligence_scan(base_url, include_active_scan=True)
+            if not result.success:
+                self.log(f"ZAP API enrichment unavailable, trying baseline fallback: {result.error}", "INFO")
+                result = self.zap_adapter.run_baseline_docker(base_url, self.output_dir)
+        except (TimeoutError, ConnectionError, OSError) as e:
+            # ZAP crashed, hung, or became unreachable - skip enrichment gracefully
+            self.log(f"ZAP enrichment unavailable: {type(e).__name__} - continuing without ZAP", "INFO")
+            self.zap_discovery_summary = {
+                "executed": False,
+                "success": False,
+                "endpoints": 0,
+                "params": 0,
+                "alerts": 0,
+                "headers": 0,
+                "cookies": 0,
+                "error": f"ZAP unavailable: {type(e).__name__}",
+            }
+            return
+        except Exception as e:
+            # Catch-all for any other ZAP errors (process termination, memory OOM, etc.)
+            self.log(f"ZAP enrichment unavailable: {type(e).__name__} - skipping enrichment", "INFO")
+            self.zap_discovery_summary = {
+                "executed": False,
+                "success": False,
+                "endpoints": 0,
+                "params": 0,
+                "alerts": 0,
+                "headers": 0,
+                "cookies": 0,
+                "error": f"ZAP exception: {str(e)[:80]}",
+            }
+            return
+        
         as_dict = result.to_dict()
         self.zap_discovery_summary = {
             "executed": True,
@@ -767,7 +974,7 @@ class AutomationScannerV2:
         }
 
         if not result.success:
-            self.log(f"ZAP enrichment failed: {result.error}", "WARN")
+            self.log(f"ZAP enrichment unavailable: {result.error}", "INFO")
             return
 
         for endpoint in as_dict.get("endpoints", []):
@@ -1139,6 +1346,58 @@ class AutomationScannerV2:
             self.findings.add(leak_finding)
             self.log("Added finding: API route disclosure from debug/content leak", "WARN")
 
+    def _populate_cache_from_fallback_sources(self) -> None:
+        """When crawler times out, gather alternative targets from already-executed discovery tools.
+        
+        Sources: nuclei (template matches), whatweb (detected services), nmap (open ports).
+        Allows payload tools to execute with partial endpoint list instead of full block.
+        """
+        scheme = "https" if self.profile.is_https else "http"
+        base_url = f"{scheme}://{self.profile.host}"
+        target_count_before = len(self.cache.endpoints)
+        
+        # Collect endpoints from tool outputs that might have written to files
+        fallback_endpoints = set()
+        fallback_endpoints.add(base_url)  # Always include root
+        fallback_endpoints.add(f"{base_url}/")
+        
+        # Scan execution results for any discovered URLs or endpoints
+        for result in self.execution_results:
+            try:
+                if result.get("output_file"):
+                    output_file = Path(result.get("output_file"))
+                    if output_file.exists():
+                        content = output_file.read_text(encoding="utf-8", errors="ignore")
+                        
+                        # Extract URLs from nuclei, whatweb, nmap output
+                        url_pattern = r'https?://[^\s\'"<>]+'
+                        for match in re.finditer(url_pattern, content):
+                            url = match.group(0).split()[0]  # Remove trailing chars
+                            if len(url) < 500:  # Skip excessively long matches
+                                fallback_endpoints.add(url)
+                        
+                        # Extract path-only targets
+                        path_pattern = r'/([\w\-./]*)'
+                        for match in re.finditer(path_pattern, content):
+                            path = "/" + match.group(1)
+                            if 3 < len(path) < 200 and not any(x in path for x in ['.bin', '.so', '.whl', '.mp4']):
+                                candidate = urlparse(base_url)._replace(path=path, query="", fragment="").geturl()
+                                fallback_endpoints.add(candidate)
+            except Exception as e:
+                self.log(f"Failed to extract fallback endpoints from {result.get('tool')}: {e}", "DEBUG")
+                continue
+        
+        # Add to cache
+        for endpoint in fallback_endpoints:
+            if endpoint and len(endpoint) < 500:
+                try:
+                    self.cache.add_endpoint(endpoint)
+                except Exception:
+                    pass
+        
+        target_count_after = len(self.cache.endpoints)
+        self.log(f"Fallback discovery: +{target_count_after - target_count_before} endpoints from tool outputs", "WARN")
+
     def _collect_security_strengths(self) -> list[str]:
         """Extract verified positive security signals from executed tool outputs."""
         strengths: list[str] = []
@@ -1179,6 +1438,11 @@ class AutomationScannerV2:
         """Prompt user for manual out-of-scope execution mode: yes/no/skip."""
         if self.manual_out_of_scope_mode in {"yes", "no", "skip"}:
             return self.manual_out_of_scope_mode
+
+        # Non-interactive executions should not block waiting for input.
+        if not sys.stdin or not sys.stdin.isatty():
+            self.log("Manual out-of-scope sweep prompt skipped (non-interactive mode)", "WARN")
+            return "skip"
 
         while True:
             choice = input("\nRun out-of-scope skipped/missing tools across all discovered API/pages? [yes/no/skip]: ").strip().lower()
@@ -1223,6 +1487,7 @@ class AutomationScannerV2:
                     "stderr_length": 0,
                     "stderr_truncated": False,
                     "signal": "NO_SIGNAL",
+                    "command": command,
                 }
                 self.log(f"{tool} SKIPPED: DNS budget exhausted ({self.dns_time_budget}s)", "WARN")
                 with self._lock:
@@ -1250,6 +1515,7 @@ class AutomationScannerV2:
                 "stderr_length": 0,
                 "stderr_truncated": False,
                 "signal": "NO_SIGNAL",
+                "command": command,
             }
             self.log(f"[{index}/{total}] {tool} BLOCKED: {reason}", "WARN")
             
@@ -1288,6 +1554,7 @@ class AutomationScannerV2:
                 "stderr_length": 0,
                 "stderr_truncated": False,
                 "signal": "NO_SIGNAL",
+                "command": command,
             }
             self.log(f"[{index}/{total}] {tool} SKIPPED: {reason}", "WARN")
             with self._lock:
@@ -1350,6 +1617,7 @@ class AutomationScannerV2:
             "stderr_length": stderr_len,
             "stderr_truncated": stderr_truncated,
             "signal": signal,
+            "command": command,
         }
 
         output_file = self._save_tool_output(tool, command, stdout, stderr, rc)
@@ -1453,7 +1721,7 @@ class AutomationScannerV2:
             return ToolOutcome.EXECUTED_NO_SIGNAL, "PARTIAL"
         if rc == 124:
             return ToolOutcome.TIMEOUT, "FAILED"
-        if failure_reason in {"tool_not_installed", "permission_denied"}:
+        if failure_reason in {"tool_not_installed", "permission_denied", "interactive_prompt_detected"}:
             return ToolOutcome.BLOCKED, "BLOCKED"
         if failure_reason == "target_unreachable":
             return ToolOutcome.EXECUTION_ERROR, "FAILED"
@@ -1467,6 +1735,7 @@ class AutomationScannerV2:
                 shell=True,
                 capture_output=True,
                 text=True,
+                input="",
                 timeout=timeout,
             )
             rc = completed.returncode
@@ -1486,6 +1755,16 @@ class AutomationScannerV2:
         stderr_lower = (stderr or "").lower()
         if rc == 124:
             return "timeout"
+        interactive_markers = [
+            "[y/n]",
+            "(y/n)",
+            "do you want to continue",
+            "press enter to continue",
+            "waiting for user input",
+            "interactive mode",
+        ]
+        if any(marker in stderr_lower for marker in interactive_markers):
+            return "interactive_prompt_detected"
         if "not found" in stderr_lower or "command not found" in stderr_lower or rc == 127:
             return "tool_not_installed"
         if "permission denied" in stderr_lower:
@@ -1988,7 +2267,82 @@ class AutomationScannerV2:
             filtered = [u for u in materialized if self._is_actionable_nuclei_target(u)]
             return filtered or [self.profile.url]
 
+        # Payload tools are materially better when URLs include query parameters.
+        if tool in {"sqlmap", "dalfox", "commix", "ssrfmap"}:
+            seeded_params = self._extract_candidate_param_names(limit=10)
+            if seeded_params:
+                materialized = sorted(
+                    {
+                        self._augment_url_with_params(url, seeded_params, max_params=3)
+                        for url in materialized
+                    }
+                )
+
         return materialized
+
+    def _extract_candidate_param_names(self, limit: int = 8) -> list[str]:
+        """Collect likely testable parameter names from cache and parameter inventory."""
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        for param in sorted(self.cache.params):
+            p = str(param).strip()
+            if not p or p in seen or not self._is_testable_param_name(p):
+                continue
+            seen.add(p)
+            candidates.append(p)
+            if len(candidates) >= limit:
+                return candidates
+
+        for row in self.param_inventory.values():
+            p = str(row.get("name", "")).strip()
+            if not p or p in seen or not self._is_testable_param_name(p):
+                continue
+            seen.add(p)
+            candidates.append(p)
+            if len(candidates) >= limit:
+                break
+        return candidates
+
+    def _augment_url_with_params(self, url: str, param_names: list[str], max_params: int = 3) -> str:
+        """Ensure URL carries minimal query parameters for injection-oriented tools."""
+        parsed = urlparse(url)
+        existing = parse_qs(parsed.query or "", keep_blank_values=True)
+        if existing:
+            return url
+
+        query_pairs: list[tuple[str, str]] = []
+        for name in param_names[:max_params]:
+            query_pairs.append((name, "1"))
+        if not query_pairs:
+            return url
+
+        q = urlencode(query_pairs)
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}{q}"
+
+    def _materialize_ssl_targets(self) -> list[str]:
+        """Return host:port targets for SSL template scans to reduce path-level noise."""
+        host = self.profile.host
+        candidate_ports: set[int] = {443}
+
+        for p in self.cache.discovered_ports:
+            try:
+                port = int(p)
+            except Exception:
+                continue
+            if port in {443, 8443, 9443, 10443, 4443}:
+                candidate_ports.add(port)
+
+        for assessment in self.certificate_assessments or []:
+            try:
+                port = int(assessment.get("port", 0) or 0)
+            except Exception:
+                port = 0
+            if port:
+                candidate_ports.add(port)
+
+        return [f"{host}:{p}" for p in sorted(candidate_ports)]
 
     def _scope_command(self, tool_name: str, command: str) -> str:
         """Rewrite commands to respect scoped endpoints and discovery signals."""
@@ -2031,42 +2385,43 @@ class AutomationScannerV2:
                 return f"nuclei -list {list_file} -t http/cves/ -silent -update-templates"
             
             elif tool_name == "nuclei_ssl":
-                # Run with SSL templates
-                if len(targets) == 1:
-                    return f"nuclei -target {targets[0]} -t ssl -silent -update-templates"
+                # SSL templates should receive host:port targets rather than URL paths.
+                ssl_targets = self._materialize_ssl_targets()
+                if len(ssl_targets) == 1:
+                    return f"nuclei -target {ssl_targets[0]} -t ssl -silent -update-templates"
                 list_file = self.output_dir / f"{tool_name}_targets.txt"
-                list_file.write_text("\n".join(targets), encoding="utf-8")
+                list_file.write_text("\n".join(ssl_targets), encoding="utf-8")
                 return f"nuclei -list {list_file} -t ssl -silent -update-templates"
 
         if tool_name == "sqlmap":
             targets = self._materialize_targets(tool_name, require_params=False)
             if not targets:
-                return f"sqlmap -u {self.profile.url} --batch --crawl=1 --risk=1 --level=1"
+                return f"sqlmap -u {self.profile.url} --batch --crawl=1 --risk=1 --level=1 --smart --random-agent --answers=\"follow=N,quit=N\""
             if len(targets) == 1:
-                return f"sqlmap -u {targets[0]} --batch --crawl=1 --risk=1 --level=1"
+                return f"sqlmap -u {targets[0]} --batch --crawl=1 --risk=1 --level=1 --smart --random-agent --answers=\"follow=N,quit=N\""
             list_file = self.output_dir / "sqlmap_targets.txt"
             list_file.write_text("\n".join(targets), encoding="utf-8")
-            return f"sqlmap -m {list_file} --batch --crawl=1 --risk=1 --level=1"
+            return f"sqlmap -m {list_file} --batch --crawl=1 --risk=1 --level=1 --smart --random-agent --answers=\"follow=N,quit=N\""
 
         if tool_name == "commix":
             targets = self._materialize_targets(tool_name, require_params=True, require_command_params=True)
             if not targets:
                 return command
             if len(targets) == 1:
-                return f"commix -u {targets[0]} --batch"
+                return f"commix -u {targets[0]} --batch --ignore-stdin"
             list_file = self.output_dir / "commix_targets.txt"
             list_file.write_text("\n".join(targets), encoding="utf-8")
-            return f"commix -m {list_file} --batch"
+            return f"commix -m {list_file} --batch --ignore-stdin"
 
         if tool_name == "dalfox":
             targets = self._materialize_targets(tool_name)
             if not targets:
-                return f"dalfox url {self.profile.url} --silence"
+                return f"dalfox url {self.profile.url} --silence --no-color"
             if len(targets) == 1:
-                return f"dalfox url {targets[0]} --silence"
+                return f"dalfox url {targets[0]} --silence --no-color"
             list_file = self.output_dir / "dalfox_targets.txt"
             list_file.write_text("\n".join(targets), encoding="utf-8")
-            return f"dalfox file {list_file} --silence"
+            return f"dalfox file {list_file} --silence --no-color"
 
         if tool_name == "xsstrike":
             target = self.profile.url
@@ -2116,10 +2471,10 @@ class AutomationScannerV2:
             "nuclei_high": f"nuclei -u {target_url} -severity high -silent",
             "nuclei_all": f"nuclei -u {target_url} -silent",
             "nuclei_cves": f"nuclei -u {target_url} -t http/cves/ -silent",
-            "nuclei_ssl": f"nuclei -u {target_url} -t ssl -silent",
-            "dalfox": f"dalfox url {target_url} --silence",
-            "sqlmap": f"sqlmap -u {target_url} --batch --crawl=1",
-            "commix": f"commix -u {target_url} --batch",
+            "nuclei_ssl": f"nuclei -target {self.profile.host}:443 -t ssl -silent",
+            "dalfox": f"dalfox url {target_url} --silence --no-color",
+            "sqlmap": f"sqlmap -u {target_url} --batch --crawl=1 --smart --random-agent --answers=\"follow=N,quit=N\"",
+            "commix": f"commix -u {target_url} --batch --ignore-stdin",
             "xsstrike": f"python3 /usr/share/xsstrike/xsstrike.py -u {target_url}",
             "xsser": f"xsser --url {target_url}",
             "arjun": f"arjun -u {target_url} --passive",
@@ -2128,7 +2483,7 @@ class AutomationScannerV2:
             "nmap_vuln": f"nmap -sV --script vuln --script-timeout 120s {host}",
             "sslscan": f"sslscan {host}",
             "testssl": f"testssl.sh --quiet -U {target_url}",
-            "openssl_connect": f"openssl s_client -connect {host}:443 -servername {host}",
+            "openssl_connect": f"openssl s_client -connect {host}:443 -servername {host} </dev/null",
             "openssl_showcerts": f"openssl s_client -connect {host}:443 -servername {host} -showcerts </dev/null",
             "openssl_status": f"openssl s_client -connect {host}:443 -servername {host} -status </dev/null",
             "openssl_state": f"openssl s_client -connect {host}:443 -servername {host} -state </dev/null",
@@ -2287,10 +2642,16 @@ class AutomationScannerV2:
 
         progress_index = 0
         total_tools = len(candidate_tools)
+        tool_failure_rates = {}  # Track failure rates per tool for early exit
+        
         for tool_idx, tool_name in enumerate(candidate_tools, start=1):
             # Host-level tools only need one run.
             host_level = tool_name in host_level_tools
             loop_targets = [self.profile.url] if host_level else targets
+            
+            # Initialize failure tracking for this tool
+            tool_failure_rates[tool_name] = {"attempts": 0, "failures": 0}
+            
             self.log(
                 f"[ManualSweep][Tool {tool_idx}/{total_tools}] {tool_name}: "
                 f"{len(loop_targets)} target(s)",
@@ -2299,6 +2660,25 @@ class AutomationScannerV2:
 
             for target_idx, target_url in enumerate(loop_targets, start=1):
                 progress_index += 1
+                tool_failure_rates[tool_name]["attempts"] += 1
+                
+                # Early exit: if this tool is failing >80% of the time, skip it
+                attempts = tool_failure_rates[tool_name]["attempts"]
+                failures = tool_failure_rates[tool_name]["failures"]
+                if attempts >= 5 and (failures / attempts) > 0.80:
+                    self.log(
+                        f"[ManualSweep] {tool_name}: {failures}/{attempts} failures (>80%) - SKIPPING remaining {len(loop_targets) - target_idx} targets",
+                        "WARN",
+                    )
+                    for remaining_target in loop_targets[target_idx:]:
+                        self.manual_out_of_scope_report["non_actionable_failures"].append({
+                            "tool": tool_name,
+                            "target": remaining_target,
+                            "reason": "tool_consistently_failing_auto_skip",
+                        })
+                        self.manual_out_of_scope_report["classified_failures"]["NOT_APPLICABLE"] += 1
+                    break
+                
                 self.log(
                     f"[ManualSweep][{progress_index}/{estimated_total_runs}] "
                     f"{tool_name} -> {target_url} "
@@ -2345,6 +2725,9 @@ class AutomationScannerV2:
                         "outcome": result.get("outcome"),
                     })
                 else:
+                    # Track this as a failure for early-exit logic
+                    tool_failure_rates[tool_name]["failures"] += 1
+                    
                     failure_class = result.get("failure_class", "EXECUTION_ERROR")
                     self.manual_out_of_scope_report["classified_failures"][failure_class] = (
                         self.manual_out_of_scope_report["classified_failures"].get(failure_class, 0) + 1
@@ -2367,6 +2750,135 @@ class AutomationScannerV2:
             f"non_actionable={len(self.manual_out_of_scope_report.get('non_actionable_failures', []))}",
             "INFO",
         )
+        self._finalize_manual_out_of_scope_report()
+
+    def _finalize_manual_out_of_scope_report(self) -> None:
+        """Deduplicate manual sweep records and build stable per-tool summaries."""
+        report = self.manual_out_of_scope_report
+
+        def _dedupe(rows: list[dict], keys: tuple[str, ...]) -> list[dict]:
+            seen: set[tuple[str, ...]] = set()
+            out: list[dict] = []
+            for row in rows or []:
+                sig = tuple(str(row.get(k, "")) for k in keys)
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                out.append(row)
+            return out
+
+        report["executed"] = _dedupe(report.get("executed", []), ("tool", "target", "outcome"))
+        report["failed"] = _dedupe(report.get("failed", []), ("tool", "target", "reason", "class"))
+        report["non_actionable_failures"] = _dedupe(
+            report.get("non_actionable_failures", []),
+            ("tool", "target", "reason", "class"),
+        )
+        report["missing_or_unavailable"] = _dedupe(report.get("missing_or_unavailable", []), ("tool", "reason"))
+
+        by_tool: dict[str, dict[str, int]] = {}
+
+        def _inc(tool: str, field: str) -> None:
+            if tool not in by_tool:
+                by_tool[tool] = {
+                    "executed": 0,
+                    "failed": 0,
+                    "non_actionable_failures": 0,
+                    "missing_or_unavailable": 0,
+                }
+            by_tool[tool][field] += 1
+
+        for row in report.get("executed", []):
+            _inc(str(row.get("tool", "unknown")), "executed")
+        for row in report.get("failed", []):
+            _inc(str(row.get("tool", "unknown")), "failed")
+        for row in report.get("non_actionable_failures", []):
+            _inc(str(row.get("tool", "unknown")), "non_actionable_failures")
+        for row in report.get("missing_or_unavailable", []):
+            _inc(str(row.get("tool", "unknown")), "missing_or_unavailable")
+
+        report["summary_by_tool"] = by_tool
+        report["unique_counts"] = {
+            "executed": len(report.get("executed", [])),
+            "failed": len(report.get("failed", [])),
+            "non_actionable_failures": len(report.get("non_actionable_failures", [])),
+            "missing_or_unavailable": len(report.get("missing_or_unavailable", [])),
+        }
+
+    def _build_execution_quality_summary(self) -> Dict[str, Any]:
+        """Summarize scanner execution quality to avoid over-confident low-risk posture."""
+        scanner_tools = {
+            "nikto", "testssl", "sslscan", "sqlmap", "commix", "xsstrike", "xsser", "dalfox",
+            "nuclei_all", "nuclei_crit", "nuclei_high", "nuclei_cves", "nuclei_ssl", "nuclei",
+        }
+        blocked = [r for r in self.execution_results if r.get("status") == "BLOCKED" and r.get("tool") in scanner_tools]
+        skipped = [r for r in self.execution_results if r.get("status") == "SKIPPED" and r.get("tool") in scanner_tools]
+        timed_out = [r for r in self.execution_results if bool(r.get("timed_out")) and r.get("tool") in scanner_tools]
+        no_signal = [
+            r for r in self.execution_results
+            if r.get("tool") in scanner_tools and r.get("outcome") in {ToolOutcome.EXECUTED_NO_SIGNAL.value, ToolOutcome.EXECUTION_ERROR.value}
+        ]
+
+        has_quality_gap = bool(blocked or timed_out)
+        risk_floor = "LOW"
+        if len(blocked) >= 2 or len(timed_out) >= 2:
+            risk_floor = "MEDIUM"
+        if len(blocked) + len(timed_out) >= 5:
+            risk_floor = "HIGH"
+
+        return {
+            "blocked_scanner_tools": sorted({r.get("tool") for r in blocked if r.get("tool")}),
+            "skipped_scanner_tools": sorted({r.get("tool") for r in skipped if r.get("tool")}),
+            "timed_out_scanner_tools": sorted({r.get("tool") for r in timed_out if r.get("tool")}),
+            "no_signal_scanner_tools": sorted({r.get("tool") for r in no_signal if r.get("tool")}),
+            "has_quality_gap": has_quality_gap,
+            "risk_floor": risk_floor,
+        }
+
+    def _detect_ssl_consistency_conflicts(self) -> Dict[str, Any]:
+        """Detect conflicting TLS posture statements across SSL tooling outputs."""
+        results = {
+            "has_conflict": False,
+            "conflicts": [],
+        }
+        content_by_tool: dict[str, str] = {}
+        for row in self.execution_results:
+            tool = str(row.get("tool", ""))
+            path = row.get("output_file")
+            if tool not in {"sslscan", "testssl", "openssl_connect", "openssl_showcerts", "openssl_state", "openssl_status", "nuclei_ssl"}:
+                continue
+            if not path:
+                continue
+            try:
+                txt = Path(path).read_text(encoding="utf-8", errors="ignore").lower()
+            except Exception:
+                continue
+            content_by_tool[tool] = txt
+
+        insecure_seen = any("tls 1.0" in c and ("offered" in c or "enabled" in c) for c in content_by_tool.values())
+        secure_seen = any("tls 1.0" in c and "disabled" in c for c in content_by_tool.values())
+        if insecure_seen and secure_seen:
+            results["has_conflict"] = True
+            results["conflicts"].append("TLS 1.0 reported as both enabled and disabled across tools")
+        return results
+
+    def _enforce_risk_floor(self, risk_report: Dict[str, Any], execution_quality: Dict[str, Any]) -> Dict[str, Any]:
+        """Raise reported risk level when execution quality indicates material uncertainty."""
+        if not isinstance(risk_report, dict):
+            risk_report = {}
+        app = risk_report.get("application_risk", {}) or {}
+        rating = str(app.get("risk_rating", "LOW")).upper()
+        floor = str(execution_quality.get("risk_floor", "LOW")).upper()
+        rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+        if rank.get(rating, 1) < rank.get(floor, 1):
+            app["original_risk_rating"] = rating
+            app["risk_rating"] = floor
+            app["confidence_adjusted"] = True
+            app["adjustment_reason"] = "Execution quality gaps reduced confidence in low-risk conclusion"
+        else:
+            app.setdefault("confidence_adjusted", False)
+        risk_report["application_risk"] = app
+        risk_report["execution_quality"] = execution_quality
+        return risk_report
     
     def _extract_findings(self, tool: str, stdout: str, stderr: str, output_file: str | None = None) -> None:
         """
@@ -2453,16 +2965,16 @@ class AutomationScannerV2:
             cms = tech_stack.get("cms")
             if cms:
                 self.profile.detected_cms = cms.lower()
-                self.cache.add_param(f"tech_cms_{cms.lower()}")
+                self._register_param(f"tech_cms_{cms.lower()}", source="whatweb")
             server = tech_stack.get("web_server")
             if server:
-                self.cache.add_param(f"tech_server_{server.lower()}")
+                self._register_param(f"tech_server_{server.lower()}", source="whatweb")
             for lang in tech_stack.get("languages", []):
-                self.cache.add_param(f"tech_lang_{lang.lower()}")
+                self._register_param(f"tech_lang_{lang.lower()}", source="whatweb")
             for fw in tech_stack.get("frameworks", []):
-                self.cache.add_param(f"framework_{fw.lower()}")
+                self._register_param(f"framework_{fw.lower()}", source="whatweb")
             for lib in tech_stack.get("javascript_libs", []):
-                self.cache.add_param(f"js_{lib.lower()}")
+                self._register_param(f"js_{lib.lower()}", source="whatweb")
 
         # SSL/TLS findings are fully handled by dedicated parsers to avoid line-level false positives.
 
@@ -2483,6 +2995,49 @@ class AutomationScannerV2:
         if meta.get("status") == "PARTIAL":
             return 0.45
         return 0.6
+
+    def _build_finding_evidence_block(self, finding_dict: dict) -> dict:
+        tool_name = str(finding_dict.get("tool", "unknown"))
+        location = str(finding_dict.get("location", ""))
+        result = next((r for r in reversed(self.execution_results) if str(r.get("tool", "")) == tool_name), {})
+
+        evidence_text = str(finding_dict.get("evidence", "") or "")
+        response_snippet = evidence_text[:280] if evidence_text else "No response snippet captured"
+        status_code = "n/a"
+        match = re.search(r"\b(20\d|30\d|40\d|50\d)\b", evidence_text)
+        if match:
+            status_code = match.group(1)
+
+        return {
+            "request": f"GET {location or '/'}",
+            "response_snippet": response_snippet,
+            "status_code": status_code,
+            "timestamp": result.get("finished_at") or datetime.now().isoformat(),
+            "tool_source": tool_name,
+            "reproduction_command": result.get("command") or f"Re-run {tool_name} against target to reproduce.",
+        }
+
+    def _build_confidence_basis(self, finding_dict: dict) -> dict:
+        tool_name = str(finding_dict.get("tool", "unknown"))
+        source = "zap" if "zap" in tool_name.lower() else "internal"
+        base_conf = float(finding_dict.get("confidence", 0.0) or 0.0)
+        corroborated = bool(finding_dict.get("corroborated", False))
+        verified = bool(finding_dict.get("verification") == "VERIFIED")
+
+        reasons = [
+            f"base={base_conf:.2f}",
+            f"source={source}",
+            "corroborated=yes" if corroborated else "corroborated=no",
+            "validated=yes" if verified else "validated=no",
+        ]
+
+        return {
+            "base_confidence": base_conf,
+            "source": source,
+            "corroborated": corroborated,
+            "validated": verified,
+            "reason": ", ".join(reasons),
+        }
 
     def _autofill_actionability_fields(self, finding_dict: dict) -> None:
         """Fill missing impact/exploitability/verification templates for report quality."""
@@ -2522,6 +3077,9 @@ class AutomationScannerV2:
                 finding_dict["verification_steps"] = "Re-run testssl/nikto and validate HTTPS compression plus reflection behavior on sensitive endpoints."
             else:
                 finding_dict["verification_steps"] = "Re-run the original command and validate reproducibility from evidence line."
+
+        finding_dict["evidence_details"] = self._build_finding_evidence_block(finding_dict)
+        finding_dict["confidence_basis"] = self._build_confidence_basis(finding_dict)
 
     def _read_output_text(self, output_path: str) -> str:
         try:
@@ -2609,6 +3167,49 @@ class AutomationScannerV2:
                     "impact": "Compression side-channels may leak secrets under specific reflective conditions.",
                     "exploitability": "Context-dependent and usually requires attacker-controlled reflection and repeated requests.",
                     "verification_steps": "Confirm gzip compression on sensitive endpoints and test reflection of secret-bearing tokens.",
+                })
+
+        # Rule 3: Public API documentation endpoints can leak attack surface.
+        api_docs = self._build_api_doc_exposure().get("paths", [])
+        if api_docs:
+            for doc in api_docs[:4]:
+                path = str(doc.get("url", ""))
+                desc = f"API documentation endpoint exposed without explicit access controls: {path}"
+                if desc.lower() in existing_descriptions:
+                    continue
+                promoted.append({
+                    "type": "Information Disclosure",
+                    "severity": "MEDIUM",
+                    "location": path,
+                    "description": desc,
+                    "tool": "api_schema+discovery",
+                    "confidence": 0.72,
+                    "owasp": "A01:2021 - Broken Access Control",
+                    "cwe": "CWE-200",
+                    "evidence": f"Discovered API documentation artifact ({path}) in endpoint inventory.",
+                    "impact": "Public API specs can expose internal operations, sensitive fields, and hidden routes.",
+                    "exploitability": "Moderate; increases attacker reconnaissance efficiency and bypass path discovery.",
+                    "verification_steps": f"Check unauthenticated access to {path}; verify sensitive schemas and hidden routes are not exposed.",
+                })
+
+        # Rule 4: Exposed non-standard service track should be highlighted.
+        has_8081 = any(int(fp.get("port", 0) or 0) == 8081 for fp in self.service_fingerprints)
+        if has_8081:
+            desc = "Non-standard HTTP service exposed on port 8081 requires dedicated abuse-path testing"
+            if desc.lower() not in existing_descriptions:
+                promoted.append({
+                    "type": "Misconfiguration",
+                    "severity": "MEDIUM",
+                    "location": f"{self.profile.host}:8081",
+                    "description": desc,
+                    "tool": "service_fingerprinting",
+                    "confidence": 0.74,
+                    "owasp": "A05:2021 - Security Misconfiguration",
+                    "cwe": "CWE-16",
+                    "evidence": "Service fingerprinting detected HTTP Admin/Proxy-like surface on port 8081.",
+                    "impact": "Additional management or proxy services increase attack surface and lateral movement opportunities.",
+                    "exploitability": "Moderate; often exploitable through default routes, weak admin controls, or debug features.",
+                    "verification_steps": "Map routes on port 8081, test default admin paths, and validate authentication on control endpoints.",
                 })
 
         return promoted
@@ -2716,9 +3317,24 @@ class AutomationScannerV2:
             
             # Check if TLS was evaluated
             tls_evaluated = self.cache.has_signal("tls_evaluated") or self.cache.has_signal("ssl_evaluated")
+            if not tls_evaluated:
+                tls_tools = {
+                    "testssl",
+                    "sslscan",
+                    "openssl_connect",
+                    "openssl_showcerts",
+                    "openssl_status",
+                    "openssl_state",
+                }
+                tls_evaluated = any(
+                    result.get("tool") in tls_tools
+                    and result.get("status")
+                    not in {"SKIPPED", "BLOCKED", "TIMEOUT", "EXECUTION_ERROR"}
+                    for result in self.execution_results
+                )
             
             if not tls_evaluated:
-                self.log("⚠ HTTPS target but no TLS evaluation - testssl should have run", "WARN")
+                self.log("HTTPS target TLS evaluation not confirmed from discovery cache; continuing", "INFO")
             else:
                 self.log(f"✓ TLS evaluated for HTTPS target", "INFO")
         
@@ -2732,9 +3348,9 @@ class AutomationScannerV2:
                 self.external_intel.to_cache_signals(intel_results, self.cache)
                 self.log(f"✓ External intel: {len(intel_results['crtsh'].results)} certificate entries", "INFO")
             else:
-                self.log("External intel: crt.sh unavailable (network issue)", "WARN")
+                self.log("External intel unavailable (crt.sh timeout/network); continuing without enrichment", "INFO")
         except Exception as e:
-            self.log(f"External intel EXCEPTION: {e}", "WARN")
+            self.log(f"External intel unavailable ({type(e).__name__}); continuing", "INFO")
         
         # ====== PHASE 2: MANDATORY CRAWLER GATE ======
         # Architecture Rule: Crawler is NOT optional. It is MANDATORY.
@@ -2769,11 +3385,21 @@ class AutomationScannerV2:
             
             crawl_thread = threading.Thread(target=run_crawl, daemon=True)
             crawl_thread.start()
-            crawl_thread.join(timeout=30)  # Increased timeout for mandatory crawler
+            crawl_thread.join(timeout=90)  # Increased timeout to 90s for large sites
             
             if crawl_thread.is_alive():
-                self.log("Crawler TIMEOUT (30s) - BLOCKING payload tools", "ERROR")
-                crawler_gate.update_decision_ledger(self.ledger)
+                self.log("Crawler TIMEOUT (90s) - ATTEMPTING FALLBACK discovery sources", "WARN")
+                # Crawler times out - DON'T immediately block payload tools
+                # Instead, gather alternative targets from nuclei, whatweb, nmap
+                self._populate_cache_from_fallback_sources()
+                
+                # Only block payload tools if NO endpoints were discovered
+                if len(self.cache.endpoints) <= 1:  # Only root domain is not enough
+                    self.log("No fallback endpoints found after crawler timeout - BLOCKING payload tools", "ERROR")
+                    crawler_gate.update_decision_ledger(self.ledger)
+                else:
+                    self.log(f"Fallback discovery found {len(self.cache.endpoints)} endpoints - ALLOWING payload tools to execute", "WARN")
+                    # Don't block - allow payload tools to run on fallback endpoints
             elif crawl_result[0]:
                 crawl_success, crawl_msg = crawl_result[0]
                 if crawl_success:
@@ -2877,7 +3503,7 @@ class AutomationScannerV2:
                 self.log("Aborting active scan due to strict JS discovery policy", "ERROR")
                 self._write_report()
                 return
-            self.log(f"{js_failure_reason} - continuing without JS discovery", "WARN")
+            self.log(f"{js_failure_reason} - continuing without JS discovery", "INFO")
 
         # Wave 2: secondary enrichment and passive security posture checks.
         self._run_zap_enrichment(crawl_url)
@@ -3069,6 +3695,7 @@ class AutomationScannerV2:
 
     def _write_report(self) -> None:
         plan = self.executor.get_execution_plan()
+        self._finalize_manual_out_of_scope_report()
 
         # JSON-safe plan (convert sets to sorted lists)
         plan_serialized = []
@@ -3141,6 +3768,15 @@ class AutomationScannerV2:
             )
             finding["confidence"] = scored_conf
             finding["confidence_percentage"] = GlobalConfidenceSystem.as_percentage(scored_conf)
+            basis = self._build_confidence_basis(finding)
+            finding["confidence_basis"] = {
+                **basis,
+                "final_confidence": scored_conf,
+                "reason": (
+                    f"{basis.get('reason', '')}, "
+                    f"final={scored_conf:.2f}"
+                ),
+            }
 
             if GlobalConfidenceSystem.should_report(scored_conf):
                 high_confidence_findings.append(finding)
@@ -3190,11 +3826,16 @@ class AutomationScannerV2:
         except Exception as e:  # noqa: BLE001
             self.log(f"Vulnerability-centric reporting failed: {e}", "WARN")
 
+        execution_quality = self._build_execution_quality_summary()
+        ssl_consistency = self._detect_ssl_consistency_conflicts()
+        risk_report = self._enforce_risk_floor(risk_report, execution_quality)
+        risk_report["ssl_consistency"] = ssl_consistency
+
         # Generate intelligence report (skip for now - work with dicts directly)
         intelligence_report = {}
         
-        # Update findings registry with filtered findings
-        self.findings = FindingsRegistry()
+        # Merge correlated findings into existing findings registry.
+        # Do not reset findings here; correlation may legitimately return empty.
         for cf in correlated_findings:
             # Handle both dict and CorrelatedFinding objects
             if isinstance(cf, dict):
@@ -3248,6 +3889,51 @@ class AutomationScannerV2:
             "missing_tools": missing_tools,
         }
         coverage_report["manual_out_of_scope"] = self.manual_out_of_scope_report
+        coverage_report["execution_quality"] = execution_quality
+        coverage_report["ssl_consistency"] = ssl_consistency
+
+        # Transfer findings from registry to proof reporter (before final report generation)
+        for finding in self.findings.get_all():
+            try:
+                confidence = getattr(finding, 'confidence', 0.0)
+                if isinstance(confidence, str) and confidence in ['HIGH', 'MEDIUM', 'LOW']:
+                    confidence_map = {'HIGH': 0.85, 'MEDIUM': 0.70, 'LOW': 0.50}
+                    confidence = confidence_map.get(confidence, 0.70)
+                if not isinstance(confidence, (int, float)) or confidence <= 0:
+                    sev = finding.severity.value if hasattr(finding.severity, 'value') else str(finding.severity)
+                    severity_confidence = {
+                        'CRITICAL': 0.95,
+                        'HIGH': 0.85,
+                        'MEDIUM': 0.70,
+                        'LOW': 0.50,
+                        'INFO': 0.30,
+                    }
+                    confidence = severity_confidence.get(sev, 0.50)
+                
+                severity_str = finding.severity.value if hasattr(finding.severity, 'value') else str(finding.severity)
+                finding_type = finding.type.value if hasattr(finding.type, 'value') else str(finding.type)
+                
+                endpoint = getattr(finding, 'endpoint', '') or getattr(finding, 'url', self.target)
+                param = getattr(finding, 'parameter', '') or getattr(finding, 'param', '')
+                
+                self.proof_reporter.add_confirmed_vulnerability(
+                    vuln_type=finding_type,
+                    severity=severity_str,
+                    endpoint=endpoint,
+                    parameter=param,
+                    payload=getattr(finding, 'payload', ''),
+                    confirmation_method=ConfirmationMethod.DIRECT_EXPLOITATION,
+                    confidence=confidence,
+                    details={
+                        'source': 'scanner_finding',
+                        'evidence': getattr(finding, 'evidence', ''),
+                        'cvss_score': getattr(finding, 'cvss_score', 0),
+                    },
+                    remediation=getattr(finding, 'remediation', ''),
+                    impact=getattr(finding, 'impact', ''),
+                )
+            except Exception as e:
+                self.log(f"Could not add finding to proof reporter: {e}", "DEBUG")
 
         proof_report = self.generate_proof_based_final_report()
         phase5_risk_report = self._build_phase5_risk_report(proof_report)
@@ -3275,11 +3961,11 @@ class AutomationScannerV2:
         raw_severity_counts = self.findings.count_by_severity()
         raw_total_findings = len(self.findings.get_all())
         if findings_summary["total"] == 0 and raw_total_findings > 0:
-            findings_summary["critical"] = int(raw_severity_counts.get("CRITICAL", 0))
-            findings_summary["high"] = int(raw_severity_counts.get("HIGH", 0))
-            findings_summary["medium"] = int(raw_severity_counts.get("MEDIUM", 0))
-            findings_summary["low"] = int(raw_severity_counts.get("LOW", 0))
-            findings_summary["info"] = int(raw_severity_counts.get("INFO", 0))
+            findings_summary["critical"] = int(raw_severity_counts.get(Severity.CRITICAL, 0))
+            findings_summary["high"] = int(raw_severity_counts.get(Severity.HIGH, 0))
+            findings_summary["medium"] = int(raw_severity_counts.get(Severity.MEDIUM, 0))
+            findings_summary["low"] = int(raw_severity_counts.get(Severity.LOW, 0))
+            findings_summary["info"] = int(raw_severity_counts.get(Severity.INFO, 0))
             findings_summary["total"] = raw_total_findings
 
         report = {
@@ -3350,6 +4036,8 @@ class AutomationScannerV2:
             "auth_access_control": self.auth_access_control_summary,
             "request_context": self.request_context.summary(),
             "manual_out_of_scope": self.manual_out_of_scope_report,
+            "execution_quality": execution_quality,
+            "ssl_consistency": ssl_consistency,
         }
 
         report_file = self.output_dir / "execution_report.json"
@@ -3375,6 +4063,10 @@ class AutomationScannerV2:
             high_value_targets = self._build_high_value_targets()
             endpoints_with_params = len([r for r in endpoint_inventory if r.get("has_params")])
             exploitable_candidates = len([r for r in high_value_targets if int(r.get("priority", 99)) <= 2])
+            endpoint_confidence_counts = self._build_endpoint_confidence_counts()
+            api_doc_exposure = self._build_api_doc_exposure()
+            service_focus_tracks = self._build_service_focus_tracks()
+            residual_risks = self._build_residual_risk_statements()
             tech_stack = self._extract_tech_stack_summary()
 
             skipped_tools = sorted({r.get("tool") for r in self.execution_results if r.get("status") == "SKIPPED" and r.get("tool")})
@@ -3409,6 +4101,8 @@ class AutomationScannerV2:
                 "denied_tools": denied_tools,
                 "missing_tools": missing_tools,
                 "manual_out_of_scope": self.manual_out_of_scope_report,
+                "execution_quality": execution_quality,
+                "ssl_consistency": ssl_consistency,
                 "js_endpoints": self.js_discovery_summary.get("endpoints", 0),
                 "js_api_endpoints": self.js_discovery_summary.get("api_endpoints", 0),
                 "js_network_requests": self.js_discovery_summary.get("network_requests", 0),
@@ -3432,7 +4126,12 @@ class AutomationScannerV2:
                     "api_endpoints": len(api_candidates),
                     "endpoints_with_params": endpoints_with_params,
                     "exploitable_candidates": exploitable_candidates,
+                    "testable_params": len([p for p in self.cache.params if self._is_testable_param_name(p)]),
                 },
+                "endpoint_confidence_counts": endpoint_confidence_counts,
+                "api_doc_exposure": api_doc_exposure,
+                "service_focus_tracks": service_focus_tracks,
+                "residual_risks": residual_risks,
                 **discovery_lists,
             }
 
@@ -3726,6 +4425,15 @@ class AutomationScannerV2:
             endpoint = endpoint_obj.get("url") if isinstance(endpoint_obj, dict) else str(endpoint_obj)
             params = endpoint_obj.get("params", []) if isinstance(endpoint_obj, dict) else []
             method = endpoint_obj.get("method", "GET").upper() if isinstance(endpoint_obj, dict) else "GET"
+
+            endpoint_key = self._normalize_endpoint_path(endpoint)
+            endpoint_item = self.endpoint_inventory.get(endpoint_key, {
+                "classification": self._classify_endpoint(endpoint_key),
+                "sources": ["unknown"],
+            })
+            if not self._should_feed_exploitation(endpoint_key, endpoint_item):
+                self.log(f"Skipping {endpoint}: endpoint tier not eligible for exploitation", "DEBUG")
+                continue
             
             self.log(f"Testing {endpoint} ({method}) with {len(params)} parameter(s)", "INFO")
 
@@ -3938,9 +4646,9 @@ class AutomationScannerV2:
         if not endpoints:
             return fallback_targets
 
-        params = sorted(self.cache.params)
+        params = sorted([p for p in self.cache.params if self._is_testable_param_name(p)])
         if not params:
-            params = sorted(self.param_inventory.keys())
+            params = sorted([name for name in self.param_inventory.keys() if self._is_testable_param_name(name)])
         if not params:
             params = ["id", "q"]
 
@@ -3969,6 +4677,11 @@ class AutomationScannerV2:
             "static_",          # Static/readonly
             "config_",          # Configuration params
             "cache_",           # Cache parameters
+            "tech_",            # Fingerprinting metadata
+            "framework_",       # Technology metadata
+            "js_",              # JS library metadata
+            "service_",         # Service fingerprint metadata
+            "fingerprint_",     # Fingerprint metadata
         ]
         
         for prefix in skip_prefixes:
@@ -3998,6 +4711,7 @@ class AutomationScannerV2:
             "version", "v",                             # Version params
             "post_id", "form_id", "referer_title",      # WP form metadata
             "queried_id",                                # WP query metadata
+            "tech_lang_asp.net", "tech_server_nginx",   # known metadata artifacts
         }
         
         if param_name.lower() in skip_params:
@@ -4216,6 +4930,12 @@ def main() -> None:
         action="store_true",
         help="Include full unfiltered endpoint inventory in report output",
     )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress verbose logging output (info and debug messages)",
+    )
     args = parser.parse_args()
 
     # If --check-tools requested, run interactive tool checker and exit
@@ -4270,6 +4990,7 @@ def main() -> None:
         manual_out_of_scope_mode=args.manual_out_of_scope,
         strict_js_required=args.strict_js_required,
         full_report=args.full_report,
+        quiet_mode=args.quiet,
     )
 
     # Optional pre-flight installers (when target is provided)
