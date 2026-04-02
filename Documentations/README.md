@@ -61,7 +61,7 @@ This is a **professional pentesting automation framework** with:
    ```bash
    # Automated installation via script
    python3 automation_scanner.py example.com --install-all
-   
+
    # Or manual installation for Debian/Ubuntu/Kali
    sudo apt-get update
    sudo apt-get install -y \
@@ -69,7 +69,7 @@ This is a **professional pentesting automation framework** with:
        nmap traceroute whois iputils-ping \
        openssl testssl.sh sslscan \
        wpscan whatweb xsser sqlmap
-   
+
    # Python packages
    pip3 install \
        sslyze wpscan whatweb corsy \
@@ -88,7 +88,7 @@ python3 automation_scanner_v2.py example.com
 # Explicit HTTPS
 python3 automation_scanner_v2.py https://example.com
 
-# Explicit HTTP  
+# Explicit HTTP
 python3 automation_scanner_v2.py http://example.com
 
 # Custom output directory
@@ -387,15 +387,15 @@ class FindingParser:
     def parse_xsstrike_output(self, stdout) -> List[Finding]:
         # Extract XSS findings from xsstrike JSON
         # Return canonical Finding objects
-        
+
     def parse_sqlmap_output(self, stdout) -> List[Finding]:
         # Extract SQLi findings
-        
+
     # ... parsers for all 32 tools
 
 class Finding:
-    tool: str              # "xsstrike" 
-    type: str              # "xss" 
+    tool: str              # "xsstrike"
+    type: str              # "xss"
     url: str               # "https://site.com/search"
     parameter: str         # "q"
     payload: str           # "The actual payload"
@@ -414,7 +414,7 @@ class Deduplicator:
     def dedupe_findings(self, findings: List[Finding]) -> List[Finding]:
         # xsstrike + dalfox both find XSS on /search?q
         # Return 1 finding with both tools listed
-        
+
         # Result:
         # - /search?q has 1 XSS (confirmed by 2 tools)
         # - Confidence: 0.95
@@ -430,7 +430,7 @@ class RiskCalculator:
     def calculate_risk(self, findings: List[Finding]) -> RiskScore:
         # Weight by: severity, exploitability, exposure
         # Not just CVSS
-        
+
         # Example scoring:
         # - Exposed admin panel (unauthenticated) = HIGH RISK
         # - Requires authenticated user = LOWER RISK
@@ -447,7 +447,7 @@ class GateDecision:
         # If critical + exploitable + unauthenticated = FAIL
         # If high + requires admin access = WARN
         # If low + can patch in 24h = PASS
-        
+
         return risk_score < self.deployment_threshold
 ```
 

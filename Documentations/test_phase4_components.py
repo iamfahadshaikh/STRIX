@@ -11,24 +11,33 @@ Tests:
   6. Engine Resilience
 """
 
-import unittest
 import json
 import os
 import tempfile
+import unittest
 from datetime import datetime
 
-# Import Phase 4 modules
-from traffic_capture import TrafficCapture, HTTPRequest, HTTPResponse, HTTPExchange
-from regression_engine import (
-    RegressionEngine, ScanSnapshot, Finding, DeltaStatus, DeltaReport
-)
-from ci_integration import CIDDIntegration, ExitCode, CIDDGateway
-from risk_aggregation import RiskAggregator, RiskLevel
-from scan_profiles import ScanProfileManager, ProfileType
+from ci_integration import CIDDGateway, CIDDIntegration, ExitCode
 from engine_resilience import (
-    ResilienceEngine, TimeoutHandler, ToolCrashIsolator, PartialFailureHandler,
-    CheckpointManager, TimeoutException
+    CheckpointManager,
+    PartialFailureHandler,
+    ResilienceEngine,
+    TimeoutException,
+    TimeoutHandler,
+    ToolCrashIsolator,
 )
+from regression_engine import (
+    DeltaReport,
+    DeltaStatus,
+    Finding,
+    RegressionEngine,
+    ScanSnapshot,
+)
+from risk_aggregation import RiskAggregator, RiskLevel
+from scan_profiles import ProfileType, ScanProfileManager
+
+# Import Phase 4 modules
+from traffic_capture import HTTPExchange, HTTPRequest, HTTPResponse, TrafficCapture
 
 
 class TestTrafficCapture(unittest.TestCase):
@@ -43,7 +52,7 @@ class TestTrafficCapture(unittest.TestCase):
             url="https://example.com/api/users",
             method="GET",
             headers={"Authorization": "Bearer token123"},
-            tool_name="dalfox"
+            tool_name="dalfox",
         )
         self.assertIsNotNone(request_hash)
         self.assertEqual(len(self.capture.exchanges), 0)  # No response yet
@@ -54,14 +63,14 @@ class TestTrafficCapture(unittest.TestCase):
             url="https://example.com/api/users",
             method="GET",
             headers={"Authorization": "Bearer token123"},
-            tool_name="dalfox"
+            tool_name="dalfox",
         )
 
         self.capture.capture_response(
             status_code=200,
             headers={"Content-Type": "application/json"},
             body='{"users": []}',
-            execution_time_ms=150.5
+            execution_time_ms=150.5,
         )
 
         self.assertEqual(len(self.capture.exchanges), 1)
@@ -73,13 +82,10 @@ class TestTrafficCapture(unittest.TestCase):
         """Test replay mode"""
         # Record exchange
         self.capture.capture_request(
-            url="https://example.com/api/users?id=1",
-            method="GET",
-            tool_name="dalfox"
+            url="https://example.com/api/users?id=1", method="GET", tool_name="dalfox"
         )
         self.capture.capture_response(
-            status_code=200,
-            body='{"user": {"id": 1, "name": "John"}}'
+            status_code=200, body='{"user": {"id": 1, "name": "John"}}'
         )
 
         # Enable replay
@@ -94,16 +100,12 @@ class TestTrafficCapture(unittest.TestCase):
     def test_session_tracking(self):
         """Test endpoint and tool tracking"""
         self.capture.capture_request(
-            url="https://example.com/api/users",
-            method="GET",
-            tool_name="nuclei"
+            url="https://example.com/api/users", method="GET", tool_name="nuclei"
         )
         self.capture.capture_response(status_code=200)
 
         self.capture.capture_request(
-            url="https://example.com/api/posts",
-            method="POST",
-            tool_name="dalfox"
+            url="https://example.com/api/posts", method="POST", tool_name="dalfox"
         )
         self.capture.capture_response(status_code=201)
 
@@ -118,12 +120,12 @@ class TestTrafficCapture(unittest.TestCase):
         self.capture.capture_request(
             url="https://example.com/api/users",
             method="GET",
-            headers={"Accept": "application/json"}
+            headers={"Accept": "application/json"},
         )
         self.capture.capture_response(
             status_code=200,
             headers={"Content-Type": "application/json"},
-            body='{"users": []}'
+            body='{"users": []}',
         )
 
         har = self.capture.export_har()
@@ -147,14 +149,14 @@ class TestRegressionEngine(unittest.TestCase):
                 vulnerability_type="SQL_INJECTION",
                 risk_severity="CRITICAL",
                 tool_count=2,
-                tools=["sqlmap", "nuclei"]
+                tools=["sqlmap", "nuclei"],
             )
         }
 
         baseline = ScanSnapshot(
             scan_id="baseline_001",
             timestamp=datetime.now().isoformat(),
-            findings=findings
+            findings=findings,
         )
 
         self.engine.create_baseline("baseline_001", baseline)
@@ -166,7 +168,7 @@ class TestRegressionEngine(unittest.TestCase):
         baseline = ScanSnapshot(
             scan_id="baseline_001",
             timestamp=datetime.now().isoformat(),
-            findings=baseline_findings
+            findings=baseline_findings,
         )
         self.engine.create_baseline("baseline_001", baseline)
 
@@ -178,14 +180,14 @@ class TestRegressionEngine(unittest.TestCase):
                 vulnerability_type="SQL_INJECTION",
                 risk_severity="CRITICAL",
                 tool_count=1,
-                tools=["sqlmap"]
+                tools=["sqlmap"],
             )
         }
 
         current = ScanSnapshot(
             scan_id="scan_002",
             timestamp=datetime.now().isoformat(),
-            findings=current_findings
+            findings=current_findings,
         )
 
         report = self.engine.compare_to_baseline("baseline_001", current)
@@ -202,22 +204,20 @@ class TestRegressionEngine(unittest.TestCase):
                 vulnerability_type="SQL_INJECTION",
                 risk_severity="CRITICAL",
                 tool_count=1,
-                tools=["sqlmap"]
+                tools=["sqlmap"],
             )
         }
 
         baseline = ScanSnapshot(
             scan_id="baseline_001",
             timestamp=datetime.now().isoformat(),
-            findings=baseline_findings
+            findings=baseline_findings,
         )
         self.engine.create_baseline("baseline_001", baseline)
 
         # Current scan with no findings
         current = ScanSnapshot(
-            scan_id="scan_002",
-            timestamp=datetime.now().isoformat(),
-            findings={}
+            scan_id="scan_002", timestamp=datetime.now().isoformat(), findings={}
         )
 
         report = self.engine.compare_to_baseline("baseline_001", current)
@@ -233,14 +233,14 @@ class TestRegressionEngine(unittest.TestCase):
                 vulnerability_type="SQL_INJECTION",
                 risk_severity="LOW",
                 tool_count=1,
-                tools=["dalfox"]
+                tools=["dalfox"],
             )
         }
 
         baseline = ScanSnapshot(
             scan_id="baseline_001",
             timestamp=datetime.now().isoformat(),
-            findings=baseline_findings
+            findings=baseline_findings,
         )
         self.engine.create_baseline("baseline_001", baseline)
 
@@ -252,14 +252,14 @@ class TestRegressionEngine(unittest.TestCase):
                 vulnerability_type="SQL_INJECTION",
                 risk_severity="CRITICAL",
                 tool_count=2,
-                tools=["sqlmap", "nuclei"]
+                tools=["sqlmap", "nuclei"],
             )
         }
 
         current = ScanSnapshot(
             scan_id="scan_002",
             timestamp=datetime.now().isoformat(),
-            findings=current_findings
+            findings=current_findings,
         )
 
         report = self.engine.compare_to_baseline("baseline_001", current)
@@ -275,7 +275,7 @@ class TestCIDDIntegration(unittest.TestCase):
             app_name="testapp",
             scan_type="security",
             fail_on_critical=True,
-            warn_on_medium=True
+            warn_on_medium=True,
         )
 
     def test_add_critical_issue(self):
@@ -284,7 +284,7 @@ class TestCIDDIntegration(unittest.TestCase):
             ruleId="OWASP_A01_SQL_INJECTION",
             message="SQL injection in /api/users?id",
             level="error",  # Critical
-            location={"endpoint": "/api/users", "parameter": "id"}
+            location={"endpoint": "/api/users", "parameter": "id"},
         )
 
         self.assertEqual(len(self.ci.issues), 1)
@@ -293,9 +293,7 @@ class TestCIDDIntegration(unittest.TestCase):
     def test_exit_code_critical(self):
         """Test exit code for critical findings"""
         self.ci.add_issue(
-            ruleId="OWASP_A01_SQL_INJECTION",
-            message="SQL injection",
-            level="error"
+            ruleId="OWASP_A01_SQL_INJECTION", message="SQL injection", level="error"
         )
 
         exit_code = self.ci.get_exit_code()
@@ -304,9 +302,7 @@ class TestCIDDIntegration(unittest.TestCase):
     def test_exit_code_medium(self):
         """Test exit code for medium findings"""
         self.ci.add_issue(
-            ruleId="WEAK_AUTH",
-            message="Weak authentication",
-            level="warning"
+            ruleId="WEAK_AUTH", message="Weak authentication", level="warning"
         )
 
         exit_code = self.ci.get_exit_code()
@@ -319,16 +315,8 @@ class TestCIDDIntegration(unittest.TestCase):
 
     def test_summary_generation(self):
         """Test summary generation"""
-        self.ci.add_issue(
-            ruleId="CRITICAL_BUG",
-            message="Critical bug",
-            level="error"
-        )
-        self.ci.add_issue(
-            ruleId="MEDIUM_BUG",
-            message="Medium bug",
-            level="warning"
-        )
+        self.ci.add_issue(ruleId="CRITICAL_BUG", message="Critical bug", level="error")
+        self.ci.add_issue(ruleId="MEDIUM_BUG", message="Medium bug", level="warning")
 
         summary = self.ci.get_summary()
         self.assertEqual(summary["critical_count"], 1)
@@ -339,21 +327,13 @@ class TestCIDDIntegration(unittest.TestCase):
         """Test build gate evaluation"""
         gate = CIDDGateway(fail_on_critical=True)
 
-        self.ci.add_issue(
-            ruleId="MEDIUM_BUG",
-            message="Medium bug",
-            level="warning"
-        )
+        self.ci.add_issue(ruleId="MEDIUM_BUG", message="Medium bug", level="warning")
 
         # Should pass (medium only)
         self.assertTrue(gate.evaluate(self.ci))
 
         # Add critical
-        self.ci.add_issue(
-            ruleId="CRITICAL_BUG",
-            message="Critical bug",
-            level="error"
-        )
+        self.ci.add_issue(ruleId="CRITICAL_BUG", message="Critical bug", level="error")
 
         # Should fail
         self.assertFalse(gate.evaluate(self.ci))
@@ -372,7 +352,7 @@ class TestRiskAggregation(unittest.TestCase):
             vulnerability_type="SQL_INJECTION",
             severity="CRITICAL",
             tool_name="sqlmap",
-            confidence=0.95
+            confidence=0.95,
         )
 
         self.assertEqual(len(self.agg.findings), 1)
@@ -384,7 +364,7 @@ class TestRiskAggregation(unittest.TestCase):
             parameter="id",
             vulnerability_type="SQL_INJECTION",
             severity="CRITICAL",
-            tool_name="sqlmap"
+            tool_name="sqlmap",
         )
 
         self.agg.add_finding(
@@ -392,7 +372,7 @@ class TestRiskAggregation(unittest.TestCase):
             parameter="username",
             vulnerability_type="XSS",
             severity="HIGH",
-            tool_name="dalfox"
+            tool_name="dalfox",
         )
 
         endpoint_risks = self.agg.aggregate_by_endpoint()
@@ -409,7 +389,7 @@ class TestRiskAggregation(unittest.TestCase):
             endpoint="/api/users",
             vulnerability_type="SQL_INJECTION",
             severity="CRITICAL",
-            tool_name="sqlmap"
+            tool_name="sqlmap",
         )
 
         app_risk = self.agg.aggregate_by_application()
@@ -457,7 +437,7 @@ class TestScanProfiles(unittest.TestCase):
             name="custom_test",
             base_profile="safe-va",
             enabled_tools=["nuclei"],
-            timeout_minutes=20
+            timeout_minutes=20,
         )
 
         self.assertIsNotNone(custom)
@@ -477,6 +457,7 @@ class TestEngineResilience(unittest.TestCase):
 
         # Wait and check again
         import time
+
         time.sleep(1.1)
 
         with self.assertRaises(TimeoutException):
@@ -491,9 +472,7 @@ class TestEngineResilience(unittest.TestCase):
             return [1, 2, 3]
 
         result = isolator.execute_tool_safe(
-            tool_name="test_tool",
-            tool_function=good_function,
-            timeout_seconds=5
+            tool_name="test_tool", tool_function=good_function, timeout_seconds=5
         )
 
         self.assertEqual(result, [1, 2, 3])
@@ -509,7 +488,7 @@ class TestEngineResilience(unittest.TestCase):
             tool_name="test_tool",
             tool_function=bad_function,
             timeout_seconds=5,
-            fallback_value=[]
+            fallback_value=[],
         )
 
         self.assertEqual(result, [])
@@ -530,18 +509,14 @@ class TestEngineResilience(unittest.TestCase):
     def test_resilience_engine(self):
         """Test complete resilience engine"""
         engine = ResilienceEngine(
-            scan_id="test_scan",
-            timeout_seconds=60,
-            checkpoint_enabled=False
+            scan_id="test_scan", timeout_seconds=60, checkpoint_enabled=False
         )
 
         def test_tool():
             return [{"finding": "test"}]
 
         result = engine.execute_tool_safe(
-            tool_name="test_tool",
-            endpoint="/api/test",
-            tool_function=test_tool
+            tool_name="test_tool", endpoint="/api/test", tool_function=test_tool
         )
 
         self.assertIsNotNone(result)

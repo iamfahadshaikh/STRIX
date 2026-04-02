@@ -11,12 +11,12 @@ Detection Strategy:
   5. Mark as API-discovered
 """
 
-import logging
 import json
+import logging
 import re
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
-from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class APIEndpoint:
     """Discovered API endpoint"""
+
     path: str
     method: str = "GET"
     parameters: List[Dict] = field(default_factory=list)
@@ -38,13 +39,14 @@ class APIEndpoint:
             "parameters": self.parameters,
             "description": self.description,
             "requires_auth": self.requires_auth,
-            "security": self.security
+            "security": self.security,
         }
 
 
 @dataclass
 class APISchema:
     """Parsed API schema"""
+
     name: str
     version: str
     base_path: str = ""
@@ -59,14 +61,14 @@ class APISchema:
             "base_path": self.base_path,
             "endpoints": [ep.to_dict() for ep in self.endpoints],
             "security_definitions": self.security_definitions,
-            "schemes": self.schemes
+            "schemes": self.schemes,
         }
 
 
 class APIDiscovery:
     """
     Discover and parse API schemas
-    
+
     Supports:
     - Swagger 2.0
     - OpenAPI 3.0.x
@@ -111,7 +113,7 @@ class APIDiscovery:
     def discover(self) -> List[APISchema]:
         """
         Discover API schemas at common paths
-        
+
         Returns:
             List of discovered APISchema objects
         """
@@ -121,9 +123,13 @@ class APIDiscovery:
             schema = self._try_fetch_schema(path)
             if schema:
                 self.discovered_schemas.append(schema)
-                logger.info(f"[APIDiscovery] Found: {schema.name} v{schema.version} at {path}")
+                logger.info(
+                    f"[APIDiscovery] Found: {schema.name} v{schema.version} at {path}"
+                )
 
-        logger.info(f"[APIDiscovery] Discovered {len(self.discovered_schemas)} API schemas")
+        logger.info(
+            f"[APIDiscovery] Discovered {len(self.discovered_schemas)} API schemas"
+        )
         return self.discovered_schemas
 
     def _try_fetch_schema(self, path: str) -> Optional[APISchema]:
@@ -133,6 +139,7 @@ class APIDiscovery:
         try:
             # Import here to avoid hard dependency on requests
             import requests
+
             response = requests.get(url, timeout=self.timeout, verify=False)
 
             if response.status_code != 200:
@@ -152,10 +159,13 @@ class APIDiscovery:
             elif "yaml" in content_type or path.endswith((".yaml", ".yml")):
                 try:
                     import yaml
+
                     data = yaml.safe_load(response.text)
                     return self._parse_openapi_or_swagger(data, path)
                 except ImportError:
-                    logger.warning("[APIDiscovery] PyYAML not installed, skipping YAML parsing")
+                    logger.warning(
+                        "[APIDiscovery] PyYAML not installed, skipping YAML parsing"
+                    )
                     return None
                 except Exception:
                     return None
@@ -170,7 +180,9 @@ class APIDiscovery:
             logger.debug(f"[APIDiscovery] Failed to fetch {path}: {e}")
             return None
 
-    def _parse_openapi_or_swagger(self, data: Dict, source_path: str) -> Optional[APISchema]:
+    def _parse_openapi_or_swagger(
+        self, data: Dict, source_path: str
+    ) -> Optional[APISchema]:
         """Parse OpenAPI 3.0 or Swagger 2.0 schema"""
         try:
             # Detect version
@@ -185,7 +197,9 @@ class APIDiscovery:
                 return None
 
         except Exception as e:
-            logger.warning(f"[APIDiscovery] Failed to parse schema from {source_path}: {e}")
+            logger.warning(
+                f"[APIDiscovery] Failed to parse schema from {source_path}: {e}"
+            )
             return None
 
     def _parse_swagger_2(self, data: Dict, source_path: str) -> APISchema:
@@ -195,7 +209,7 @@ class APIDiscovery:
             version=data.get("info", {}).get("version", "unknown"),
             base_path=data.get("basePath", ""),
             schemes=data.get("schemes", ["http", "https"]),
-            security_definitions=data.get("securityDefinitions", {})
+            security_definitions=data.get("securityDefinitions", {}),
         )
 
         # Parse endpoints
@@ -208,12 +222,16 @@ class APIDiscovery:
                 # Extract parameters
                 parameters = []
                 for param in details.get("parameters", []):
-                    parameters.append({
-                        "name": param.get("name"),
-                        "type": param.get("type", "string"),
-                        "in": param.get("in", "query"),  # query, path, header, formData, body
-                        "required": param.get("required", False)
-                    })
+                    parameters.append(
+                        {
+                            "name": param.get("name"),
+                            "type": param.get("type", "string"),
+                            "in": param.get(
+                                "in", "query"
+                            ),  # query, path, header, formData, body
+                            "required": param.get("required", False),
+                        }
+                    )
 
                 # Check if requires auth
                 requires_auth = bool(details.get("security"))
@@ -224,7 +242,7 @@ class APIDiscovery:
                     parameters=parameters,
                     description=details.get("description", ""),
                     requires_auth=requires_auth,
-                    security=list(details.get("security", []))
+                    security=list(details.get("security", [])),
                 )
 
                 schema.endpoints.append(endpoint)
@@ -241,7 +259,7 @@ class APIDiscovery:
             name=info.get("title", "Unknown"),
             version=info.get("version", "unknown"),
             base_path=base_path,
-            security_definitions=data.get("components", {}).get("securitySchemes", {})
+            security_definitions=data.get("components", {}).get("securitySchemes", {}),
         )
 
         # Parse endpoints
@@ -254,27 +272,42 @@ class APIDiscovery:
                 # Extract parameters
                 parameters = []
                 for param in details.get("parameters", []):
-                    parameters.append({
-                        "name": param.get("name"),
-                        "type": param.get("schema", {}).get("type", "string"),
-                        "in": param.get("in", "query"),
-                        "required": param.get("required", False)
-                    })
+                    parameters.append(
+                        {
+                            "name": param.get("name"),
+                            "type": param.get("schema", {}).get("type", "string"),
+                            "in": param.get("in", "query"),
+                            "required": param.get("required", False),
+                        }
+                    )
 
                 # Check request body
                 req_body = details.get("requestBody", {})
                 if req_body:
-                    content_type = list(req_body.get("content", {}).keys())[0] if req_body.get("content") else "application/json"
-                    schema_def = req_body.get("content", {}).get(content_type, {}).get("schema", {})
-                    
+                    content_type = (
+                        list(req_body.get("content", {}).keys())[0]
+                        if req_body.get("content")
+                        else "application/json"
+                    )
+                    schema_def = (
+                        req_body.get("content", {})
+                        .get(content_type, {})
+                        .get("schema", {})
+                    )
+
                     if schema_def.get("type") == "object":
-                        for prop_name, prop_def in schema_def.get("properties", {}).items():
-                            parameters.append({
-                                "name": prop_name,
-                                "type": prop_def.get("type", "string"),
-                                "in": "body",
-                                "required": prop_name in schema_def.get("required", [])
-                            })
+                        for prop_name, prop_def in schema_def.get(
+                            "properties", {}
+                        ).items():
+                            parameters.append(
+                                {
+                                    "name": prop_name,
+                                    "type": prop_def.get("type", "string"),
+                                    "in": "body",
+                                    "required": prop_name
+                                    in schema_def.get("required", []),
+                                }
+                            )
 
                 # Check if requires auth
                 requires_auth = bool(details.get("security"))
@@ -285,21 +318,19 @@ class APIDiscovery:
                     parameters=parameters,
                     description=details.get("description", ""),
                     requires_auth=requires_auth,
-                    security=list(details.get("security", []))
+                    security=list(details.get("security", [])),
                 )
 
                 schema.endpoints.append(endpoint)
 
         return schema
 
-    def _parse_graphql_schema(self, schema_text: str, source_path: str) -> Optional[APISchema]:
+    def _parse_graphql_schema(
+        self, schema_text: str, source_path: str
+    ) -> Optional[APISchema]:
         """Parse GraphQL schema (basic)"""
         try:
-            schema = APISchema(
-                name="GraphQL",
-                version="1.0",
-                base_path="/graphql"
-            )
+            schema = APISchema(name="GraphQL", version="1.0", base_path="/graphql")
 
             # Add GraphQL as single endpoint
             endpoint = APIEndpoint(
@@ -307,9 +338,14 @@ class APIDiscovery:
                 method="POST",
                 parameters=[
                     {"name": "query", "type": "string", "in": "body", "required": True},
-                    {"name": "variables", "type": "object", "in": "body", "required": False}
+                    {
+                        "name": "variables",
+                        "type": "object",
+                        "in": "body",
+                        "required": False,
+                    },
                 ],
-                description="GraphQL API endpoint"
+                description="GraphQL API endpoint",
             )
             schema.endpoints.append(endpoint)
 
@@ -336,16 +372,16 @@ class APIDiscovery:
             "total_endpoints": total_endpoints,
             "total_parameters": total_params,
             "endpoints_requiring_auth": auth_required,
-            "schemas": [s.name for s in self.discovered_schemas]
+            "schemas": [s.name for s in self.discovered_schemas],
         }
 
     def feed_to_graph(self, graph) -> int:
         """
         Feed discovered API endpoints into EndpointGraph
-        
+
         Args:
             graph: EndpointGraph instance
-            
+
         Returns:
             Number of endpoints added
         """
@@ -369,7 +405,7 @@ class APIDiscovery:
                     method=endpoint.method,
                     params=params if params else None,
                     is_api=True,
-                    is_form=False
+                    is_form=False,
                 )
 
                 count += 1
@@ -381,7 +417,7 @@ class APIDiscovery:
         """Serialize discovered schemas"""
         return {
             "summary": self.get_summary(),
-            "schemas": [s.to_dict() for s in self.discovered_schemas]
+            "schemas": [s.to_dict() for s in self.discovered_schemas],
         }
 
 

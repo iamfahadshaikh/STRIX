@@ -256,7 +256,7 @@ def extract_endpoints(crawl_results):
         url = req.get('url', '')
         method = req.get('method', 'GET')
         body = req.get('body', '')
-        
+
         endpoints[url] = {
             'method': method,
             'parameters': extract_params_from_body(body),
@@ -285,9 +285,9 @@ def _run_crawl_phase(self):
     """New phase: crawling"""
     if self.profile.type.name == "ROOT_DOMAIN":
         return None  # Skip for root domains (too slow)
-    
+
     url = f"{'https' if self.profile.is_https else 'http'}://{self.profile.host}"
-    
+
     try:
         endpoints = run_katana(url, timeout=10)
         if endpoints:
@@ -295,7 +295,7 @@ def _run_crawl_phase(self):
             return endpoints
     except Exception as e:
         self.log(f"Crawl failed: {e}", "WARNING")
-    
+
     return None
 ```
 
@@ -306,11 +306,11 @@ def _run_crawl_phase(self):
 
 if gating_orchestrator and tool_name in ["dalfox", "sqlmap"]:
     crawl_endpoints = self.cache.get_crawl_endpoints()
-    
+
     if tool_name == "dalfox" and not crawl_endpoints.get("reflected"):
         self.log(f"[dalfox] Gated (no reflection endpoints)", "INFO")
         continue
-    
+
     if tool_name == "sqlmap" and not crawl_endpoints.get("params"):
         self.log(f"[sqlmap] Gated (no parameters)", "INFO")
         continue
@@ -342,7 +342,7 @@ def run_katana_safe(url, timeout=10):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
-    
+
     try:
         stdout, _ = process.communicate(timeout=timeout)
         return parse_katana_output(stdout)
@@ -378,4 +378,3 @@ If you want to explore ZAP or Playwright first:
 2. I'll prep detailed plan for that
 
 But my recommendation stands: **Katana**.
-

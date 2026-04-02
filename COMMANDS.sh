@@ -12,7 +12,7 @@ cat << 'EOF'
 1️⃣  CHECK TOOLS (before scanning)
     ──────────────────────────────────
     $ python3 automation_scanner_v2.py --check-tools
-    
+
     ✓ Lists all 29 security tools
     ✓ Shows which are installed
     ✓ Prompts to install missing ones
@@ -23,7 +23,7 @@ cat << 'EOF'
     $ python3 automation_scanner_v2.py treadbinary.com
     $ python3 automation_scanner_v2.py https://example.com
     $ python3 automation_scanner_v2.py 192.168.1.1
-    
+
     ✓ Automatic target type detection
     ✓ Comprehensive multi-phase scanning
     ✓ Saves results to scan_results_*/

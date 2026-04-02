@@ -4,12 +4,13 @@ Tool Detection and Installation Manager
 Handles checking for tool existence and automated installation
 """
 
+import json
+import os
+import platform
 import subprocess
 import sys
-import platform
-import os
 from pathlib import Path
-import json
+
 
 class ToolManager:
     def __init__(self):
@@ -22,287 +23,293 @@ class ToolManager:
         # Map orchestrator/ledger tool names to canonical binaries/packages
         self.tool_aliases = {
             # Ledger pseudo-tools → real binaries
-            'nmap_quick': 'nmap',
-            'nmap_vuln': 'nmap',
-            'nmap_full': 'nmap',
-            'nuclei_crit': 'nuclei',
-            'nuclei_high': 'nuclei',
-            'nuclei_ssl': 'nuclei',
-            'nuclei_cves': 'nuclei',
-            'nuclei_all': 'nuclei',
+            "nmap_quick": "nmap",
+            "nmap_vuln": "nmap",
+            "nmap_full": "nmap",
+            "nuclei_crit": "nuclei",
+            "nuclei_high": "nuclei",
+            "nuclei_ssl": "nuclei",
+            "nuclei_cves": "nuclei",
+            "nuclei_all": "nuclei",
             # OpenSSL subcommands (all use openssl binary)
-            'openssl_connect': 'openssl',
-            'openssl_showcerts': 'openssl',
-            'openssl_state': 'openssl',
-            'openssl_status': 'openssl',
+            "openssl_connect": "openssl",
+            "openssl_showcerts": "openssl",
+            "openssl_state": "openssl",
+            "openssl_status": "openssl",
             # testssl binary name
-            'testssl': 'testssl.sh',
+            "testssl": "testssl.sh",
             # whatweb HTTP fallback reuses whatweb binary
-            'whatweb_http_fallback': 'whatweb',
+            "whatweb_http_fallback": "whatweb",
             # dirsearch is often used interchangeably with dirb/gobuster
-            'dirsearch': 'gobuster',  # fallback to gobuster if dirsearch not available
+            "dirsearch": "gobuster",  # fallback to gobuster if dirsearch not available
         }
-    
+
     def _detect_distro(self):
         """Detect Linux distribution"""
         if self.os_type == "Linux":
             try:
-                result = subprocess.run(['lsb_release', '-si'], capture_output=True, text=True)
+                result = subprocess.run(
+                    ["lsb_release", "-si"], capture_output=True, text=True
+                )
                 return result.stdout.strip().lower()
             except:
                 return "linux"
         return self.os_type.lower()
-    
+
     def _load_tool_database(self):
         """Load tool database with installation information"""
         return {
             # DNS Tools
-            'assetfinder': {
-                'apt': 'assetfinder',  # Now available via apt on Kali
-                'pip': None,
-                'brew': 'tomnomnom/tap/assetfinder',
-                'go': 'github.com/tomnomnom/assetfinder@latest',
-                'custom': None,  # Prefer apt installation
-                'category': 'DNS',
-                'description': 'Subdomain discovery tool'
+            "assetfinder": {
+                "apt": "assetfinder",  # Now available via apt on Kali
+                "pip": None,
+                "brew": "tomnomnom/tap/assetfinder",
+                "go": "github.com/tomnomnom/assetfinder@latest",
+                "custom": None,  # Prefer apt installation
+                "category": "DNS",
+                "description": "Subdomain discovery tool",
             },
-            'dnsrecon': {
-                'apt': 'dnsrecon',
-                'pip': 'dnsrecon',
-                'brew': 'dnsrecon',
-                'category': 'DNS',
-                'description': 'DNS enumeration tool'
+            "dnsrecon": {
+                "apt": "dnsrecon",
+                "pip": "dnsrecon",
+                "brew": "dnsrecon",
+                "category": "DNS",
+                "description": "DNS enumeration tool",
             },
-            
             # Network Tools
-            'nmap': {
-                'apt': 'nmap',
-                'pip': None,
-                'brew': 'nmap',
-                'category': 'Network',
-                'description': 'Network mapper and port scanner'
+            "nmap": {
+                "apt": "nmap",
+                "pip": None,
+                "brew": "nmap",
+                "category": "Network",
+                "description": "Network mapper and port scanner",
             },
-            'ping': {
-                'apt': 'iputils-ping',
-                'pip': None,
-                'brew': None,
-                'category': 'Network',
-                'description': 'Network ping utility'
+            "ping": {
+                "apt": "iputils-ping",
+                "pip": None,
+                "brew": None,
+                "category": "Network",
+                "description": "Network ping utility",
             },
-            
             # SSL/TLS Tools
-            'testssl': {
-                'apt': 'testssl.sh',
-                'pip': None,
-                'brew': 'testssl',
-                'custom': 'cd ~ && wget -q https://testssl.sh/testssl.sh-3.2.2.tar.gz && tar zxf testssl.sh-3.2.2.tar.gz && rm testssl.sh-3.2.2.tar.gz 2>/dev/null || apt-get install -y testssl.sh',
-                'category': 'SSL/TLS',
-                'description': 'SSL/TLS vulnerability scanner',
-                'verify_paths': [os.path.expanduser('~/testssl.sh-3.2.2/testssl.sh'), '/usr/bin/testssl.sh', '/usr/local/bin/testssl.sh']
+            "testssl": {
+                "apt": "testssl.sh",
+                "pip": None,
+                "brew": "testssl",
+                "custom": "cd ~ && wget -q https://testssl.sh/testssl.sh-3.2.2.tar.gz && tar zxf testssl.sh-3.2.2.tar.gz && rm testssl.sh-3.2.2.tar.gz 2>/dev/null || apt-get install -y testssl.sh",
+                "category": "SSL/TLS",
+                "description": "SSL/TLS vulnerability scanner",
+                "verify_paths": [
+                    os.path.expanduser("~/testssl.sh-3.2.2/testssl.sh"),
+                    "/usr/bin/testssl.sh",
+                    "/usr/local/bin/testssl.sh",
+                ],
             },
-            'sslscan': {
-                'apt': 'sslscan',
-                'pip': 'sslscan',
-                'brew': 'sslscan',
-                'category': 'SSL/TLS',
-                'description': 'SSL configuration scanner'
+            "sslscan": {
+                "apt": "sslscan",
+                "pip": "sslscan",
+                "brew": "sslscan",
+                "category": "SSL/TLS",
+                "description": "SSL configuration scanner",
             },
-            'openssl': {
-                'apt': 'openssl',
-                'pip': None,
-                'brew': 'openssl',
-                'category': 'SSL/TLS',
-                'description': 'SSL/TLS toolkit'
+            "openssl": {
+                "apt": "openssl",
+                "pip": None,
+                "brew": "openssl",
+                "category": "SSL/TLS",
+                "description": "SSL/TLS toolkit",
             },
-            'sslyze': {
-                'apt': 'sslyze',  # Now available via apt on Kali
-                'pip': 'sslyze',
-                'brew': None,
-                'custom': None,  # Prefer apt installation
-                'category': 'SSL/TLS',
-                'description': 'SSL/TLS analyzer'
+            "sslyze": {
+                "apt": "sslyze",  # Now available via apt on Kali
+                "pip": "sslyze",
+                "brew": None,
+                "custom": None,  # Prefer apt installation
+                "category": "SSL/TLS",
+                "description": "SSL/TLS analyzer",
             },
-            
             # Web Scanning Tools
-            'wpscan': {
-                'apt': 'wpscan',  # Available via apt on Kali
-                'pip': 'wpscan',
-                'brew': 'wpscan',
-                'category': 'Web',
-                'description': 'WordPress vulnerability scanner'
+            "wpscan": {
+                "apt": "wpscan",  # Available via apt on Kali
+                "pip": "wpscan",
+                "brew": "wpscan",
+                "category": "Web",
+                "description": "WordPress vulnerability scanner",
             },
-            'whatweb': {
-                'apt': 'whatweb',
-                'pip': 'whatweb',
-                'brew': 'whatweb',
-                'category': 'Web',
-                'description': 'Web technology identifier'
+            "whatweb": {
+                "apt": "whatweb",
+                "pip": "whatweb",
+                "brew": "whatweb",
+                "category": "Web",
+                "description": "Web technology identifier",
             },
-            'gobuster': {
-                'apt': 'gobuster',
-                'pip': None,
-                'brew': 'gobuster',
-                'category': 'Web',
-                'description': 'Directory and DNS brute forcing tool'
+            "gobuster": {
+                "apt": "gobuster",
+                "pip": None,
+                "brew": "gobuster",
+                "category": "Web",
+                "description": "Directory and DNS brute forcing tool",
             },
-            'dirb': {
-                'apt': 'dirb',
-                'pip': None,
-                'brew': 'dirb',
-                'category': 'Web',
-                'description': 'Web directory brute force scanner'
+            "dirb": {
+                "apt": "dirb",
+                "pip": None,
+                "brew": "dirb",
+                "category": "Web",
+                "description": "Web directory brute force scanner",
             },
-            'nikto': {
-                'apt': 'nikto',
-                'pip': None,
-                'brew': 'nikto',
-                'category': 'Web',
-                'description': 'Web server scanner'
+            "nikto": {
+                "apt": "nikto",
+                "pip": None,
+                "brew": "nikto",
+                "category": "Web",
+                "description": "Web server scanner",
             },
             # Support Packages (non-binary packages installed via apt)
-            'wordlists': {
-                'apt': 'wordlists',
-                'pip': None,
-                'brew': None,
-                'category': 'Support',
-                'description': 'Common wordlists package',
-                'verify_paths': ['/usr/share/wordlists']
+            "wordlists": {
+                "apt": "wordlists",
+                "pip": None,
+                "brew": None,
+                "category": "Support",
+                "description": "Common wordlists package",
+                "verify_paths": ["/usr/share/wordlists"],
             },
-            'seclists': {
-                'apt': 'seclists',
-                'pip': None,
-                'brew': None,
-                'category': 'Support',
-                'description': 'SecLists: security testing wordlists',
-                'verify_paths': ['/usr/share/seclists']
+            "seclists": {
+                "apt": "seclists",
+                "pip": None,
+                "brew": None,
+                "category": "Support",
+                "description": "SecLists: security testing wordlists",
+                "verify_paths": ["/usr/share/seclists"],
             },
-            'dirbuster': {
-                'apt': 'dirbuster',
-                'pip': None,
-                'brew': None,
-                'category': 'Web',
-                'description': 'DirBuster (provides wordlists and GUI tool)'
+            "dirbuster": {
+                "apt": "dirbuster",
+                "pip": None,
+                "brew": None,
+                "category": "Web",
+                "description": "DirBuster (provides wordlists and GUI tool)",
             },
             # Vulnerability Scanners
-            'xsstrike': {
-                'apt': None,
-                'pip': 'xsstrike',
-                'brew': None,
-                'category': 'Vulnerabilities',
-                'description': 'XSS detection tool'
+            "xsstrike": {
+                "apt": None,
+                "pip": "xsstrike",
+                "brew": None,
+                "category": "Vulnerabilities",
+                "description": "XSS detection tool",
             },
-            'dalfox': {
-                'apt': None,
-                'pip': None,
-                'go': 'github.com/hahwul/dalfox/v2@latest',
-                'brew': None,
-                'custom': None,  # Will use Go install if golang is available
-                'verify_paths': [
-                    os.path.expanduser('~/go/bin/dalfox'),
-                    '/root/go/bin/dalfox',
-                    os.path.expanduser('~/.local/bin/dalfox')
+            "dalfox": {
+                "apt": None,
+                "pip": None,
+                "go": "github.com/hahwul/dalfox/v2@latest",
+                "brew": None,
+                "custom": None,  # Will use Go install if golang is available
+                "verify_paths": [
+                    os.path.expanduser("~/go/bin/dalfox"),
+                    "/root/go/bin/dalfox",
+                    os.path.expanduser("~/.local/bin/dalfox"),
                 ],
-                'category': 'Vulnerabilities',
-                'description': 'XSS vulnerability scanner'
+                "category": "Vulnerabilities",
+                "description": "XSS vulnerability scanner",
             },
-            'xsser': {
-                'apt': 'xsser',
-                'pip': 'xsser',
-                'brew': None,
-                'category': 'Vulnerabilities',
-                'description': 'XSS vulnerability scanner'
+            "xsser": {
+                "apt": "xsser",
+                "pip": "xsser",
+                "brew": None,
+                "category": "Vulnerabilities",
+                "description": "XSS vulnerability scanner",
             },
-            'commix': {
-                'apt': None,
-                'pip': 'commix',
-                'brew': None,
-                'category': 'Vulnerabilities',
-                'description': 'Command injection tester'
+            "commix": {
+                "apt": None,
+                "pip": "commix",
+                "brew": None,
+                "category": "Vulnerabilities",
+                "description": "Command injection tester",
             },
-            'sqlmap': {
-                'apt': 'sqlmap',
-                'pip': 'sqlmap',
-                'brew': 'sqlmap',
-                'category': 'Vulnerabilities',
-                'description': 'SQL injection tester'
+            "sqlmap": {
+                "apt": "sqlmap",
+                "pip": "sqlmap",
+                "brew": "sqlmap",
+                "category": "Vulnerabilities",
+                "description": "SQL injection tester",
             },
-            'arjun': {
-                'apt': None,
-                'pip': 'arjun',
-                'brew': None,
-                'category': 'Vulnerabilities',
-                'description': 'HTTP parameter discovery'
+            "arjun": {
+                "apt": None,
+                "pip": "arjun",
+                "brew": None,
+                "category": "Vulnerabilities",
+                "description": "HTTP parameter discovery",
             },
-            
             # Subdomain Tools
-            'theharvester': {
-                'apt': 'theharvester',
-                'pip': 'theharvester',
-                'brew': 'theharvester',
-                'category': 'Subdomains',
-                'description': 'Email and metadata harvester'
+            "theharvester": {
+                "apt": "theharvester",
+                "pip": "theharvester",
+                "brew": "theharvester",
+                "category": "Subdomains",
+                "description": "Email and metadata harvester",
             },
-            'nuclei': {
-                'apt': 'nuclei',
-                'pip': None,
-                'brew': 'nuclei',
-                'category': 'Vulnerabilities',
-                'description': 'Fast vulnerability scanner with templates'
+            "nuclei": {
+                "apt": "nuclei",
+                "pip": None,
+                "brew": "nuclei",
+                "category": "Vulnerabilities",
+                "description": "Fast vulnerability scanner with templates",
             },
         }
-    
+
     def check_tool_installed(self, tool_name):
         """Check if a tool is installed - checks standard PATH, Go bins, and pipx paths"""
         try:
             # Support package verification via filesystem paths
-            info = self.tool_database.get(self.tool_aliases.get(tool_name, tool_name)) or self.tool_database.get(tool_name)
-            if info and info.get('verify_paths'):
-                for p in info['verify_paths']:
+            info = self.tool_database.get(
+                self.tool_aliases.get(tool_name, tool_name)
+            ) or self.tool_database.get(tool_name)
+            if info and info.get("verify_paths"):
+                for p in info["verify_paths"]:
                     if os.path.exists(p):
                         return True
             binary = self.tool_aliases.get(tool_name, tool_name)
             # Special case: testssl may be installed as testssl.sh
-            if tool_name == 'testssl':
+            if tool_name == "testssl":
                 # Try both testssl and testssl.sh
-                for cmd in ['testssl', 'testssl.sh']:
+                for cmd in ["testssl", "testssl.sh"]:
                     result = subprocess.run(
-                        ['which', cmd] if self.os_type == "Linux" else ['where', cmd],
-                        capture_output=True, text=True
+                        ["which", cmd] if self.os_type == "Linux" else ["where", cmd],
+                        capture_output=True,
+                        text=True,
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         return True
                 # Don't return False here - continue with other checks below
-            
+
             # First try standard which/where
             result = subprocess.run(
-                ['which', binary] if self.os_type == "Linux" else ['where', binary],
-                capture_output=True, text=True
+                ["which", binary] if self.os_type == "Linux" else ["where", binary],
+                capture_output=True,
+                text=True,
             )
             if result.returncode == 0 and result.stdout.strip():
                 return True
-            
+
             # Check Go bin directory for Go-installed tools (assetfinder, dalfox)
             if self.os_type == "Linux":
                 go_bin_paths = [
-                    os.path.expanduser('~/go/bin'),
-                    os.path.expanduser('/root/go/bin'),
-                    '/usr/local/go/bin'
+                    os.path.expanduser("~/go/bin"),
+                    os.path.expanduser("/root/go/bin"),
+                    "/usr/local/go/bin",
                 ]
                 for go_bin in go_bin_paths:
                     tool_path = os.path.join(go_bin, binary)
                     if os.path.isfile(tool_path) and os.access(tool_path, os.X_OK):
                         return True
-                
+
                 # Check pipx installed tools path (sslyze, etc)
                 pipx_paths = [
-                    os.path.expanduser('~/.local/bin'),
-                    os.path.expanduser('/root/.local/bin'),
+                    os.path.expanduser("~/.local/bin"),
+                    os.path.expanduser("/root/.local/bin"),
                 ]
                 for pipx_bin in pipx_paths:
                     tool_path = os.path.join(pipx_bin, binary)
                     if os.path.isfile(tool_path) and os.access(tool_path, os.X_OK):
                         return True
-            
+
             return False
         except:
             # Alternative check for Python packages
@@ -312,13 +319,13 @@ class ToolManager:
                 return True
             except ImportError:
                 return False
-    
+
     def scan_all_tools(self):
         """Scan for all tools in the database"""
         print("\n[*] Scanning for installed tools...")
         installed_count = 0
         missing_count = 0
-        
+
         for tool, info in self.tool_database.items():
             if self.check_tool_installed(tool):
                 self.installed_tools[tool] = info
@@ -330,14 +337,16 @@ class ToolManager:
                 if tool not in self._warned:
                     print(f"✗ {tool:<20} ({info['category']:<15}) - MISSING")
                     self._warned.add(tool)
-        
+
         print(f"\n[*] Summary: {installed_count} installed, {missing_count} missing")
         return installed_count, missing_count
-    
+
     def get_install_command(self, tool_name):
         """Get installation command for a tool"""
         canonical = self.tool_aliases.get(tool_name, tool_name)
-        tool_info = self.tool_database.get(canonical) or self.tool_database.get(tool_name)
+        tool_info = self.tool_database.get(canonical) or self.tool_database.get(
+            tool_name
+        )
         # If still not found, try reverse alias lookup (e.g., testssl.sh -> testssl)
         if not tool_info:
             for k, v in self.tool_aliases.items():
@@ -347,58 +356,58 @@ class ToolManager:
                         break
         if not tool_info:
             return None
-        
+
         # Debian/Ubuntu/Kali/generic Linux systems
-        if self.distro in ['ubuntu', 'debian', 'kali', 'linux']:
+        if self.distro in ["ubuntu", "debian", "kali", "linux"]:
             # Check for custom installation command first (handles complex cases)
-            if tool_info.get('custom'):
-                return tool_info['custom']
-            if tool_info.get('apt'):
+            if tool_info.get("custom"):
+                return tool_info["custom"]
+            if tool_info.get("apt"):
                 return f"sudo apt-get install -y {tool_info['apt']}"
-            elif tool_info.get('pip'):
+            elif tool_info.get("pip"):
                 # Try pip3 with --break-system-packages first (PEP 668), then fallback
                 return (
                     f"pip3 install {tool_info['pip']} --break-system-packages 2>/dev/null || "
                     f"pip3 install {tool_info['pip']} 2>/dev/null || "
                     f"pip install {tool_info['pip']}"
                 )
-            elif tool_info.get('go'):
+            elif tool_info.get("go"):
                 # Check if Go is installed first, install if needed
                 return (
                     f"which go >/dev/null 2>&1 || sudo apt-get install -y golang-go; "
                     f"go install {tool_info['go']}"
                 )
-        
+
         # macOS
-        elif self.distro == 'macos':
-            if tool_info.get('brew'):
+        elif self.distro == "macos":
+            if tool_info.get("brew"):
                 return f"brew install {tool_info['brew']}"
-            elif tool_info.get('pip'):
+            elif tool_info.get("pip"):
                 return f"pip3 install {tool_info['pip']}"
-        
+
         # Fallback for any other Linux-like systems: try apt, pip, then go
         else:
-            if tool_info.get('custom'):
-                return tool_info['custom']
-            if tool_info.get('apt'):
+            if tool_info.get("custom"):
+                return tool_info["custom"]
+            if tool_info.get("apt"):
                 return f"sudo apt-get install -y {tool_info['apt']}"
-            elif tool_info.get('pip'):
+            elif tool_info.get("pip"):
                 return (
                     f"pip3 install {tool_info['pip']} --break-system-packages 2>/dev/null || "
                     f"pip3 install {tool_info['pip']}"
                 )
-            elif tool_info.get('go'):
+            elif tool_info.get("go"):
                 return f"go install {tool_info['go']}"
-        
+
         return None
-    
+
     def install_tool(self, tool_name):
         """Install a single tool"""
         command = self.get_install_command(tool_name)
         if not command:
             print(f"[!] No installation method available for {tool_name}")
             return False
-        
+
         print(f"[*] Installing {tool_name}...")
         try:
             result = subprocess.run(command, shell=True, capture_output=True, text=True)
@@ -417,7 +426,9 @@ class ToolManager:
             print(f"[-] Error installing {tool_name}: {str(e)}")
             return False
 
-    def install_missing_tools_non_interactive(self, preferred_tools: list[str] | None = None) -> tuple[int, int]:
+    def install_missing_tools_non_interactive(
+        self, preferred_tools: list[str] | None = None
+    ) -> tuple[int, int]:
         """Install all missing tools without prompts.
 
         If preferred_tools is provided, limit installation to that set (after aliasing).
@@ -450,30 +461,32 @@ class ToolManager:
                     print(f"[+] {tool} installed")
                     success += 1
                 else:
-                    print(f"[-] Failed to install {tool}: {res.stderr.strip() or res.stdout.strip()}")
+                    print(
+                        f"[-] Failed to install {tool}: {res.stderr.strip() or res.stdout.strip()}"
+                    )
                     failed += 1
             except Exception as e:
                 print(f"[-] Error installing {tool}: {e}")
                 failed += 1
         return success, failed
-    
+
     def install_missing_tools_interactive(self):
         """Prompt user to install missing tools"""
         if not self.missing_tools:
             print("\n[+] All tools are installed!")
             return
-        
+
         print(f"\n[!] {len(self.missing_tools)} tools are missing:")
         for i, (tool, info) in enumerate(self.missing_tools.items(), 1):
             print(f"{i}. {tool:<20} - {info['description']}")
-        
+
         print("\nOptions:")
         print("1. Install all missing tools")
         print("2. Install specific tools")
         print("3. Skip installation")
-        
+
         choice = input("\nSelect option (1-3): ").strip()
-        
+
         if choice == "1":
             print("\n[*] Installing all missing tools...")
             success = 0
@@ -485,13 +498,13 @@ class ToolManager:
                 else:
                     failed += 1
             print(f"\n[*] Installation complete: {success} successful, {failed} failed")
-        
+
         elif choice == "2":
             tool_list = list(self.missing_tools.keys())
             print("\nSelect tools to install:")
             for i, tool in enumerate(tool_list, 1):
                 print(f"{i}. {tool}")
-            
+
             selection = input("\nEnter numbers (comma-separated): ").strip()
             try:
                 indices = [int(x.strip()) - 1 for x in selection.split(",")]
@@ -500,54 +513,58 @@ class ToolManager:
                         self.install_tool(tool_list[idx])
             except ValueError:
                 print("[-] Invalid input")
-        
+
         elif choice == "3":
             print("[*] Skipping installation")
-    
+
     def get_installed_tools_by_category(self):
         """Group installed tools by category"""
         categories = {}
         for tool, info in self.installed_tools.items():
-            category = info['category']
+            category = info["category"]
             if category not in categories:
                 categories[category] = []
             categories[category].append(tool)
         return categories
 
-    def register_custom_tool(self, tool_name: str, command: str, category: str = "custom", 
-                           install_cmd: str = None, description: str = None) -> bool:
+    def register_custom_tool(
+        self,
+        tool_name: str,
+        command: str,
+        category: str = "custom",
+        install_cmd: str = None,
+        description: str = None,
+    ) -> bool:
         """Register a new custom tool in the database for future use.
-        
+
         Args:
             tool_name: Unique identifier for the tool
             command: Command to execute the tool
             category: Category for organization (default: custom)
             install_cmd: Optional installation command
             description: Optional description of what the tool does
-            
+
         Returns:
             True if successfully registered, False otherwise
         """
         try:
             if not tool_name or not command:
                 return False
-            
+
             tool_entry = {
                 "command": command,
                 "category": category,
                 "description": description or f"Custom tool: {tool_name}",
                 "version": "custom",
             }
-            
+
             if install_cmd:
-                tool_entry["install"] = {
-                    self.distro: install_cmd
-                }
-            
+                tool_entry["install"] = {self.distro: install_cmd}
+
             # Update tool database
             if "custom_tools" not in self.tool_database:
                 self.tool_database["custom_tools"] = {}
-            
+
             self.tool_database["custom_tools"][tool_name] = tool_entry
             return True
         except Exception:

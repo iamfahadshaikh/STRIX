@@ -364,27 +364,27 @@ Run all 32 tools, 325+ commands across 8 categories:
 1. DNS & Subdomain (77 commands)
    - assetfinder (2), dnsrecon (9), dig (14), host (12), etc.
    - Smart logic: Only run subdomain tools on base domain
-   
+
 2. Network (30 commands)
    - nmap (19 variants - all scan types)
    - ping (4), traceroute (4), whois (2)
-   
+
 3. SSL/TLS (41 commands)
    - testssl.sh (15), sslyze (12), sslscan (5), openssl (7)
-   
+
 4. Web Scanning (44 commands)
    - wpscan (10), wapiti (10), whatweb (6), ffuf (6), golismero (6)
    - Run on both HTTPS and HTTP
-   
+
 5. Directory Enumeration (16 commands)
    - gobuster (8 variants), dirsearch (8 variants)
-   
+
 6. Technology Detection (7 commands)
    - Wappalyzer (2), retire (5)
-   
+
 7. Nuclei Templates (15 commands)
    - CVE, vulnerabilities, misconfig, takeovers, etc.
-   
+
 8. Vulnerability & Injection (95 commands)
    - xsstrike (10), dalfox (10), xsser (9), sqlmap (10), commix (9), etc.
 
@@ -542,7 +542,7 @@ CATEGORY 8: VULNERABILITY & INJECTION TESTING
 ### Phase 1 Architecture Constraints
 
 #### 1. **No Parsing of Tool Outputs**
-**Problem**: 
+**Problem**:
 - Tool outputs are saved as raw text
 - No extraction of actual vulnerabilities
 - System treats all outputs as equal
@@ -684,7 +684,7 @@ class Finding:
     exploitability: str      # "easily exploitable"
     evidence: List[str]      # Proof from tool
     tools_found_by: List[str]# ["xsstrike", "dalfox"]
-    
+
 class RiskScore:
     overall: float           # 0-100
     components: Dict         # CVE risk, exploit risk, etc.
@@ -734,6 +734,6 @@ else:
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: January 5, 2026  
+**Document Version**: 1.0
+**Last Updated**: January 5, 2026
 **Status**: Phase 1 Complete, Phase 2 Design In Progress

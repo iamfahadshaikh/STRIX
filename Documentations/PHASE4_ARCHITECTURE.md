@@ -28,7 +28,7 @@ Request:
   - URL, method, headers, cookies, body
   - Tool that generated it (sqlmap, dalfox, etc.)
   - Timestamp, response_time_ms
-  
+
 Response:
   - Status code, headers, body (first 10KB)
   - Content-Type, Set-Cookie headers

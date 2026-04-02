@@ -59,9 +59,9 @@ contract = get_tool_contract("dig_a")
 if is_signal_producer("nmap_quick"):
     # Tool produces critical signals
 ```
-**What it does**: Classifies 16 discovery tools with explicit contracts  
-**Registers**: Tool type, signals produced, confidence weight, acceptable missing  
-**Use case**: Validate which tools have run and what signals they produce  
+**What it does**: Classifies 16 discovery tools with explicit contracts
+**Registers**: Tool type, signals produced, confidence weight, acceptable missing
+**Use case**: Validate which tools have run and what signals they produce
 
 ---
 
@@ -75,9 +75,9 @@ report = evaluator.evaluate()  # → CompletenessReport
 if not report.complete:
     print(f"Missing: {report.missing_signals}")
 ```
-**What it does**: Evaluates if discovery phase gathered all critical signals  
-**Checks**: CRITICAL (dns_resolved, reachable, web_target) + IMPORTANT (https, ports, tech_stack)  
-**Returns**: Completeness bool, missing signals, recommendations  
+**What it does**: Evaluates if discovery phase gathered all critical signals
+**Checks**: CRITICAL (dns_resolved, reachable, web_target) + IMPORTANT (https, ports, tech_stack)
+**Returns**: Completeness bool, missing signals, recommendations
 
 ---
 
@@ -98,9 +98,9 @@ strategy.track_attempt(
 summary = strategy.get_attempts_summary()
 # → {total_attempts: 1, successful_attempts: 1}
 ```
-**What it does**: Generates XSS/SQLi/CMD payloads + tracks all attempts  
-**Generates**: 3 XSS, 4 SQLi, 4 CMD baseline payloads + variants  
-**Tracks**: Every attempt with success/failure and evidence  
+**What it does**: Generates XSS/SQLi/CMD payloads + tracks all attempts
+**Generates**: 3 XSS, 4 SQLi, 4 CMD baseline payloads + variants
+**Tracks**: Every attempt with success/failure and evidence
 
 ---
 
@@ -111,9 +111,9 @@ from owasp_mapping import map_to_owasp, get_owasp_description
 category = map_to_owasp("xss")  # → OWASPCategory.A03_INJECTION
 desc = get_owasp_description(category)  # → "Injection - A03:2021..."
 ```
-**What it does**: Maps 40+ vulnerability types to OWASP Top 10 2021  
-**Maps**: XSS→A03, SQLi→A03, SSRF→A10, Path Traversal→A01, SSL→A02, etc.  
-**Provides**: Category, description, standard severity  
+**What it does**: Maps 40+ vulnerability types to OWASP Top 10 2021
+**Maps**: XSS→A03, SQLi→A03, SSRF→A10, Path Traversal→A01, SSL→A02, etc.
+**Provides**: Category, description, standard severity
 
 ---
 
@@ -133,9 +133,9 @@ factors = engine.calculate_confidence(
 
 label = engine.get_confidence_label(74)  # → "High"
 ```
-**What it does**: Multi-factor confidence scoring (0-100)  
-**Factors**: Tool confidence (40) + Payload confidence (40) + Corroboration (30) + Penalties (20)  
-**Labels**: High (80-100), Medium (60-79), Low (40-59), Very Low (<40)  
+**What it does**: Multi-factor confidence scoring (0-100)
+**Factors**: Tool confidence (40) + Payload confidence (40) + Corroboration (30) + Penalties (20)
+**Labels**: High (80-100), Medium (60-79), Low (40-59), Very Low (<40)
 
 ---
 
@@ -155,10 +155,10 @@ deduplicated = dedup.deduplicate(findings)
 report = dedup.get_deduplication_report()
 # → {duplicate_groups: 1, total_duplicates_removed: 1}
 ```
-**What it does**: Deduplicates findings by endpoint + vulnerability type  
-**Groups**: Same vuln + same endpoint = merge  
-**Merges**: Keeps highest severity, combines evidence, adds corroboration  
-**Boost**: +10% confidence per corroborating tool (max 30%)  
+**What it does**: Deduplicates findings by endpoint + vulnerability type
+**Groups**: Same vuln + same endpoint = merge
+**Merges**: Keeps highest severity, combines evidence, adds corroboration
+**Boost**: +10% confidence per corroborating tool (max 30%)
 
 ---
 
@@ -372,19 +372,19 @@ Before production deployment:
 
 ### Common Questions
 
-**Q: Will this affect existing scans?**  
+**Q: Will this affect existing scans?**
 A: No. All changes are additive. Existing functionality is fully preserved.
 
-**Q: Do I need to install new dependencies?**  
+**Q: Do I need to install new dependencies?**
 A: No. All modules use only Python stdlib + existing dependencies.
 
-**Q: How do I verify the integration worked?**  
+**Q: How do I verify the integration worked?**
 A: Run `python test_phase1_4_integration.py` - should show 7/7 PASS.
 
-**Q: Can I roll back if needed?**  
+**Q: Can I roll back if needed?**
 A: Yes. Just remove the 6 new .py files and revert automation_scanner_v2.py (only ~20 lines changed).
 
-**Q: What if a test fails?**  
+**Q: What if a test fails?**
 A: Review the error message, check the documentation, or contact the development team.
 
 ---
@@ -439,5 +439,5 @@ All requirements met:
 
 ---
 
-*Navigation Index - Last Updated: January 2026*  
+*Navigation Index - Last Updated: January 2026*
 *For questions or issues, refer to the appropriate documentation file above.*

@@ -208,4 +208,3 @@ Gating automatically:
 ✅ Timeout protection (15s max wait)
 ✅ Backwards compatible (continues without gating)
 ✅ Saves execution time when targets lack vulnerability vectors
-

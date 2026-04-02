@@ -364,4 +364,3 @@ That's it.
 6. **Payload gating?** (Reflect endpoints → dalfox, param endpoints → sqlmap)
 
 Once you answer those, Phase 2 is straightforward implementation.
-

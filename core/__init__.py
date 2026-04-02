@@ -2,8 +2,8 @@
 Core authentication and request infrastructure
 """
 
-from core.request_engine import RequestEngine, RequestMethod, HTTPRequest, HTTPResponse
-from core.session_manager import SessionManager, SessionData, AuthType, TokenInfo
+from core.request_engine import HTTPRequest, HTTPResponse, RequestEngine, RequestMethod
+from core.session_manager import AuthType, SessionData, SessionManager, TokenInfo
 
 __all__ = [
     "RequestEngine",

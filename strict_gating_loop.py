@@ -1,7 +1,7 @@
 """
 Strict Gating Loop with Graph-Based Targeting - Phase 2
 Purpose: Enforce strict payload tool gating based on endpoint graph
-  
+
 Gating Rules (Strict):
   - Dalfox: ONLY if reflectable parameters found AND endpoints crawled
   - Xsstrike: ONLY if reflectable parameters in forms
@@ -14,24 +14,26 @@ not just signal counts.
 """
 
 import logging
-from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class TargetingStrategy(Enum):
     """Tool-specific targeting strategies"""
-    XSS = "xss"           # Reflection-focused endpoints
-    SQL = "sql"           # Parameter-carrying endpoints
-    COMMIX = "commix"     # Command-like parameters
-    TEMPLATE = "template" # All endpoints (nuclei)
+
+    XSS = "xss"  # Reflection-focused endpoints
+    SQL = "sql"  # Parameter-carrying endpoints
+    COMMIX = "commix"  # Command-like parameters
+    TEMPLATE = "template"  # All endpoints (nuclei)
 
 
 @dataclass
 class ToolTargets:
     """Per-tool targeting information (graph-based)"""
+
     tool_name: str
     can_run: bool
     # Graph-based targeting
@@ -45,9 +47,11 @@ class ToolTargets:
     evidence: str = ""  # Why this tool gates on/off
 
     def __repr__(self) -> str:
-        return (f"{self.tool_name}: {'✓' if self.can_run else '✗'} "
-                f"({len(self.target_endpoints)} endpoints, "
-                f"{len(self.target_parameters)} params)")
+        return (
+            f"{self.tool_name}: {'✓' if self.can_run else '✗'} "
+            f"({len(self.target_endpoints)} endpoints, "
+            f"{len(self.target_parameters)} params)"
+        )
 
     def to_dict(self) -> Dict:
         return {
@@ -59,14 +63,14 @@ class ToolTargets:
             "strategy": self.strategy.value,
             "priority": self.priority,
             "reason": self.reason,
-            "evidence": self.evidence
+            "evidence": self.evidence,
         }
 
 
 class StrictGatingLoop:
     """
     Strict gating using endpoint graph.
-    
+
     Replaces old crawl-signals-only approach with actual graph queries.
     """
 
@@ -83,7 +87,7 @@ class StrictGatingLoop:
     def gate_tool(self, tool_name: str) -> ToolTargets:
         """
         Gate a specific tool based on graph
-        
+
         Returns:
             ToolTargets with can_run flag and targeting info
         """
@@ -96,7 +100,7 @@ class StrictGatingLoop:
                 tool_name=tool_name,
                 can_run=False,
                 reason=self.ledger.get_reason(tool_name),
-                evidence="Blocked by decision ledger"
+                evidence="Blocked by decision ledger",
             )
             self._targets_cache[tool_name] = targets
             return targets
@@ -117,7 +121,7 @@ class StrictGatingLoop:
                 tool_name=tool_name,
                 can_run=True,
                 reason="Unknown tool, allowing by default",
-                evidence="Default allow"
+                evidence="Default allow",
             )
 
         self._targets_cache[tool_name] = targets
@@ -133,8 +137,12 @@ class StrictGatingLoop:
             tool_name=tool_name,
             can_run=len(reflectable_endpoints) > 0,
             strategy=TargetingStrategy.XSS,
-            reason="Reflection detected in crawl" if reflectable_endpoints else "No reflectable parameters",
-            evidence=f"{len(reflectable_endpoints)} reflection endpoints"
+            reason=(
+                "Reflection detected in crawl"
+                if reflectable_endpoints
+                else "No reflectable parameters"
+            ),
+            evidence=f"{len(reflectable_endpoints)} reflection endpoints",
         )
 
         if targets.can_run:
@@ -166,8 +174,12 @@ class StrictGatingLoop:
             tool_name=tool_name,
             can_run=len(sql_endpoints) > 0,
             strategy=TargetingStrategy.SQL,
-            reason="Parameters detected in dynamic endpoints" if sql_endpoints else "No injectable parameters",
-            evidence=f"{len(sql_endpoints)} SQL-targetable endpoints"
+            reason=(
+                "Parameters detected in dynamic endpoints"
+                if sql_endpoints
+                else "No injectable parameters"
+            ),
+            evidence=f"{len(sql_endpoints)} SQL-targetable endpoints",
         )
 
         if targets.can_run:
@@ -196,8 +208,12 @@ class StrictGatingLoop:
             tool_name=tool_name,
             can_run=len(cmd_endpoints) > 0,
             strategy=TargetingStrategy.COMMIX,
-            reason="Command-injectable parameters detected" if cmd_endpoints else "No command parameters",
-            evidence=f"{len(cmd_endpoints)} command-targetable endpoints"
+            reason=(
+                "Command-injectable parameters detected"
+                if cmd_endpoints
+                else "No command parameters"
+            ),
+            evidence=f"{len(cmd_endpoints)} command-targetable endpoints",
         )
 
         if targets.can_run:
@@ -230,7 +246,7 @@ class StrictGatingLoop:
             can_run=True,
             strategy=TargetingStrategy.TEMPLATE,
             reason="Template-based scanning, always enabled",
-            evidence=f"Will scan all {len(all_endpoints)} discovered endpoints"
+            evidence=f"Will scan all {len(all_endpoints)} discovered endpoints",
         )
 
         targets.target_endpoints = all_endpoints
@@ -260,7 +276,7 @@ class StrictGatingLoop:
                 tool_name: targets.to_dict()
                 for tool_name, targets in all_targets.items()
             },
-            "graph_summary": self.graph.get_summary()
+            "graph_summary": self.graph.get_summary(),
         }
 
 

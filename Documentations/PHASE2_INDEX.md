@@ -5,7 +5,7 @@
 ### For Executive Overview
 → **Start here**: [PHASE2_DEPLOYMENT_READY.md](PHASE2_DEPLOYMENT_READY.md)
 - What was built
-- How it works  
+- How it works
 - Deployment checklist
 - 5-minute read
 
@@ -26,7 +26,7 @@
 - `phase2_integration.py` - Scanner integration
 
 ### For Validation
-→ **Run tests**: 
+→ **Run tests**:
 ```bash
 python test_phase2.py
 ```
@@ -118,28 +118,28 @@ Expected: All tests pass ✅
 ## 🎯 What's New in Phase 2
 
 ### Capability: Endpoint Discovery
-**Before**: Recon tools only  
-**After**: Recon + JS-aware crawling  
+**Before**: Recon tools only
+**After**: Recon + JS-aware crawling
 **Impact**: 20+ additional endpoints discovered
 
-### Capability: Parameter Mapping  
-**Before**: No knowledge of parameters  
-**After**: Complete parameter graph with sources  
+### Capability: Parameter Mapping
+**Before**: No knowledge of parameters
+**After**: Complete parameter graph with sources
 **Impact**: Precise tool targeting
 
 ### Capability: Strict Tool Gating
-**Before**: Blind tool execution  
-**After**: Graph-based gating decisions  
+**Before**: Blind tool execution
+**After**: Graph-based gating decisions
 **Impact**: 50% fewer false positives
 
 ### Capability: Confidence Scoring
-**Before**: All findings equal  
-**After**: LOW/MEDIUM/HIGH based on signals  
+**Before**: All findings equal
+**After**: LOW/MEDIUM/HIGH based on signals
 **Impact**: Better prioritization
 
 ### Capability: OWASP Classification
-**Before**: Raw findings  
-**After**: OWASP Top-10 + CWE mapping  
+**Before**: Raw findings
+**After**: OWASP Top-10 + CWE mapping
 **Impact**: Industry standard reporting
 
 ---
@@ -365,19 +365,19 @@ conf, owasp = self.phase2_helper.score_finding(
 
 ## 🔍 Quick Troubleshooting
 
-**Q: Tests failing?**  
+**Q: Tests failing?**
 A: Check Python version (3.9+), run from VAPT-Automated-Engine directory
 
-**Q: Crawl timing out?**  
+**Q: Crawl timing out?**
 A: Expected on slow targets, handled gracefully (scanner continues)
 
-**Q: Integration errors?**  
+**Q: Integration errors?**
 A: Check decision_ledger exists before Phase2IntegrationHelper initialization
 
-**Q: Gating too strict?**  
+**Q: Gating too strict?**
 A: Review strict_gating_loop.py gating rules, adjust if needed
 
-**Q: No confidence scores?**  
+**Q: No confidence scores?**
 A: Call phase2_helper.score_finding() when processing findings
 
 ---
@@ -396,11 +396,11 @@ A: Call phase2_helper.score_finding() when processing findings
 
 **Phase 2 is COMPLETE, TESTED, and READY FOR DEPLOYMENT**
 
-✅ 6 core modules (2100 lines)  
-✅ 1 validation test suite (all tests passing)  
-✅ 1 comprehensive integration guide  
-✅ Non-breaking, backwards-compatible  
-✅ Deployment time: < 2 hours  
+✅ 6 core modules (2100 lines)
+✅ 1 validation test suite (all tests passing)
+✅ 1 comprehensive integration guide
+✅ Non-breaking, backwards-compatible
+✅ Deployment time: < 2 hours
 
 **Next**: Integration and testing on real targets.
 

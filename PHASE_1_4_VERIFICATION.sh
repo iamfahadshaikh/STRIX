@@ -162,7 +162,7 @@ import sys
 
 modules = [
     'discovery_classification',
-    'discovery_completeness', 
+    'discovery_completeness',
     'payload_strategy',
     'owasp_mapping',
     'enhanced_confidence',

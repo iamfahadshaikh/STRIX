@@ -5,7 +5,8 @@ QUICK START GUIDE - VAPT Automated Security Scanner
 This guide helps you run the security scanner with all necessary tools properly installed.
 """
 
-print("""
+print(
+    """
 ╔════════════════════════════════════════════════════════════════════════════════╗
 ║                  VAPT AUTOMATED SECURITY SCANNER - QUICK START                 ║
 ╚════════════════════════════════════════════════════════════════════════════════╝
@@ -124,7 +125,7 @@ print("""
    ──────────────
 
    29 Security Tools Integrated:
-   
+
    DNS (6):
      assetfinder, dnsrecon, dig, dnsenum, host, nslookup
 
@@ -175,4 +176,5 @@ print("""
    • HONEST_ROADMAP.md - Development roadmap
 
 ═══════════════════════════════════════════════════════════════════════════════════
-""")
+"""
+)

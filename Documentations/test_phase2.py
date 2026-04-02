@@ -11,14 +11,15 @@ Test Cases:
   5. Full Phase 2 pipeline
 """
 
-import sys
 import json
+import sys
 from typing import List
+
+from confidence_engine import Confidence, ConfidenceEngine
+from decision_ledger import Decision, DecisionLedger
 from endpoint_graph import EndpointGraph, ParameterSource
-from confidence_engine import ConfidenceEngine, Confidence
-from owasp_mapper import OWASPMapper, FindingClassification
+from owasp_mapper import FindingClassification, OWASPMapper
 from strict_gating_loop import StrictGatingLoop
-from decision_ledger import DecisionLedger, Decision
 
 
 class Phase2Validator:
@@ -30,9 +31,9 @@ class Phase2Validator:
 
     def test_1_endpoint_graph(self) -> bool:
         """Test 1: Build and query endpoint graph"""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TEST 1: Endpoint Graph Building & Queries")
-        print("="*60)
+        print("=" * 60)
 
         try:
             graph = EndpointGraph(target="https://example.com")
@@ -43,14 +44,14 @@ class Phase2Validator:
                 method="GET",
                 params={"id": ["123", "456"], "filter": ["admin"]},
                 is_api=True,
-                status_code=200
+                status_code=200,
             )
 
             graph.add_crawl_result(
                 url="/search",
                 method="GET",
                 params={"q": ["test"], "sort": ["asc"]},
-                status_code=200
+                status_code=200,
             )
 
             graph.add_crawl_result(
@@ -58,7 +59,7 @@ class Phase2Validator:
                 method="POST",
                 params={"username": ["admin"], "password": ["pass"]},
                 is_form=True,
-                status_code=200
+                status_code=200,
             )
 
             # Add form-discovered endpoint
@@ -67,8 +68,8 @@ class Phase2Validator:
                 form_action="/admin/login",
                 fields=[
                     {"name": "admin_user", "type": "text"},
-                    {"name": "admin_pass", "type": "password"}
-                ]
+                    {"name": "admin_pass", "type": "password"},
+                ],
             )
 
             # Mark parameters
@@ -111,9 +112,9 @@ class Phase2Validator:
 
     def test_2_confidence_scoring(self) -> bool:
         """Test 2: Confidence scoring engine"""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TEST 2: Confidence Scoring Engine")
-        print("="*60)
+        print("=" * 60)
 
         try:
             engine = ConfidenceEngine()
@@ -125,7 +126,7 @@ class Phase2Validator:
                     "tools": ["nuclei"],
                     "success": "potential_vulnerability",
                     "source": "pattern_match",
-                    "expected": Confidence.LOW
+                    "expected": Confidence.LOW,
                 },
                 {
                     "name": "Single tool, confirmed reflection (dalfox)",
@@ -133,7 +134,7 @@ class Phase2Validator:
                     "tools": ["dalfox"],
                     "success": "confirmed_reflected",
                     "source": "crawled",
-                    "expected": Confidence.HIGH
+                    "expected": Confidence.HIGH,
                 },
                 {
                     "name": "Two tools, confirmed execution (dalfox + xsstrike)",
@@ -141,7 +142,7 @@ class Phase2Validator:
                     "tools": ["dalfox", "xsstrike"],
                     "success": "confirmed_executed",
                     "source": "form_input",
-                    "expected": Confidence.HIGH
+                    "expected": Confidence.HIGH,
                 },
                 {
                     "name": "SQL tool, successful injection (sqlmap)",
@@ -149,16 +150,13 @@ class Phase2Validator:
                     "tools": ["sqlmap"],
                     "success": "successful_injection",
                     "source": "url_query",
-                    "expected": Confidence.MEDIUM
+                    "expected": Confidence.MEDIUM,
                 },
             ]
 
             for tc in test_cases:
                 conf = engine.score_finding(
-                    tc["finding_id"],
-                    tc["tools"],
-                    tc["success"],
-                    tc["source"]
+                    tc["finding_id"], tc["tools"], tc["success"], tc["source"]
                 )
                 match = "✓" if conf == tc["expected"] else "✗"
                 print(f"{match} {tc['name']}: {conf.value}")
@@ -175,9 +173,9 @@ class Phase2Validator:
 
     def test_3_owasp_mapping(self) -> bool:
         """Test 3: OWASP mapping"""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TEST 3: OWASP Mapping")
-        print("="*60)
+        print("=" * 60)
 
         try:
             mapper = OWASPMapper()
@@ -187,15 +185,23 @@ class Phase2Validator:
                 {"vuln": "sqli", "expected_cwe": "CWE-89", "name": "SQLi → A03"},
                 {"vuln": "idor", "expected_cwe": "CWE-639", "name": "IDOR → A01"},
                 {"vuln": "ssrf", "expected_cwe": "CWE-918", "name": "SSRF → A10"},
-                {"vuln": "default_credentials", "expected_cwe": "CWE-798", "name": "Default Creds → A05"},
-                {"vuln": "outdated_tls", "expected_cwe": "CWE-327", "name": "Outdated TLS → A02"},
+                {
+                    "vuln": "default_credentials",
+                    "expected_cwe": "CWE-798",
+                    "name": "Default Creds → A05",
+                },
+                {
+                    "vuln": "outdated_tls",
+                    "expected_cwe": "CWE-327",
+                    "name": "Outdated TLS → A02",
+                },
             ]
 
             for tc in test_cases:
                 mapping = mapper.map_finding(
                     vuln_type=tc["vuln"],
                     classification=FindingClassification.DISCOVERY,
-                    confidence="MEDIUM"
+                    confidence="MEDIUM",
                 )
                 match = "✓" if mapping.cwe == tc["expected_cwe"] else "✗"
                 print(f"{match} {tc['name']}: {mapping.category.value} ({mapping.cwe})")
@@ -210,9 +216,9 @@ class Phase2Validator:
 
     def test_4_strict_gating(self) -> bool:
         """Test 4: Strict gating loop"""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TEST 4: Strict Gating Loop")
-        print("="*60)
+        print("=" * 60)
 
         try:
             # Build graph
@@ -245,7 +251,9 @@ class Phase2Validator:
             print(f"  Targets: {sqlmap_targets.target_endpoints}")
 
             commix_targets = gating.gate_tool("commix")
-            print(f"Commix: {'✗' if not commix_targets.can_run else '✓'} (should NOT run)")
+            print(
+                f"Commix: {'✗' if not commix_targets.can_run else '✓'} (should NOT run)"
+            )
             print(f"  Reason: {commix_targets.reason}")
 
             nuclei_targets = gating.gate_tool("nuclei")
@@ -266,9 +274,9 @@ class Phase2Validator:
 
     def test_5_full_pipeline(self) -> bool:
         """Test 5: Full Phase 2 pipeline"""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TEST 5: Full Phase 2 Pipeline Integration")
-        print("="*60)
+        print("=" * 60)
 
         try:
             from phase2_pipeline import Phase2Pipeline
@@ -288,6 +296,7 @@ class Phase2Validator:
             print("  - phase2_integration.Phase2IntegrationHelper")
 
             from phase2_integration import Phase2IntegrationHelper
+
             print("✓ Phase 2 Integration Helper imports successfully")
 
             self.tests_passed += 1
@@ -300,9 +309,9 @@ class Phase2Validator:
 
     def run_all(self) -> bool:
         """Run all tests"""
-        print("\n" + "#"*60)
+        print("\n" + "#" * 60)
         print("# PHASE 2 VALIDATION TEST SUITE")
-        print("#"*60)
+        print("#" * 60)
 
         self.test_1_endpoint_graph()
         self.test_2_confidence_scoring()
@@ -310,9 +319,9 @@ class Phase2Validator:
         self.test_4_strict_gating()
         self.test_5_full_pipeline()
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TEST RESULTS")
-        print("="*60)
+        print("=" * 60)
         print(f"✓ Passed: {self.tests_passed}")
         print(f"✗ Failed: {self.tests_failed}")
         print(f"Total: {self.tests_passed + self.tests_failed}")

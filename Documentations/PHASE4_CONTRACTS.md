@@ -1,6 +1,6 @@
 # Phase 4: Platform Contracts & Guarantees
 
-**Status**: Production-Ready | **Version**: 4.0.0  
+**Status**: Production-Ready | **Version**: 4.0.0
 **Created**: 2026-01-12 | **Last Updated**: 2026-01-12
 
 ---
@@ -151,7 +151,7 @@ Rate limit          → Backoff and retry
 - ❌ Attempt privilege escalation exploits
 - ❌ Run destructive payloads
 
-**What We Do**: 
+**What We Do**:
 - ✅ Test for presence of vulnerabilities (detection)
 - ✅ Collect information that proves presence
 - ✅ Assess authentication bypass (read-only)
@@ -537,15 +537,15 @@ Rate limit          → Backoff and retry
 
 ## Signature
 
-**Approved By**: Platform Engineering  
-**Date**: 2026-01-12  
-**Version**: 4.0.0  
-**Status**: Production Ready  
+**Approved By**: Platform Engineering
+**Date**: 2026-01-12
+**Version**: 4.0.0
+**Status**: Production Ready
 
 ### Single Promise Reminder
 
 > Your scan results are **deterministic, explainable, and auditable**.
-> 
+>
 > - Run the same scan twice → Get the same results
 > - Every finding → Traceable to source
 > - Scans → Always finish or resume cleanly

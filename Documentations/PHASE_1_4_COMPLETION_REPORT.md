@@ -158,7 +158,7 @@ if self.endpoint_graph:
     dalfox_commands = cmd_builder.build_dalfox_commands(target_url)
     sqlmap_commands = cmd_builder.build_sqlmap_commands(target_url)
     commix_commands = cmd_builder.build_commix_commands(target_url)
-    
+
     # Execute commands with attempt tracking
     for cmd_info in dalfox_commands:
         self._run_command(cmd_info["command"])
@@ -191,37 +191,37 @@ def _calculate_risk_aggregation(self, vuln_report: Dict) -> Dict:
     """Calculate per-endpoint and per-application risk scores"""
     if not vuln_report or "vulnerabilities" not in vuln_report:
         return {"total_risk": 0, "per_endpoint": {}, "risk_level": "LOW"}
-    
+
     severity_weights = {"CRITICAL": 10, "HIGH": 7, "MEDIUM": 4, "LOW": 2, "INFO": 1}
     endpoint_risks = {}
     total_risk = 0
-    
+
     for vuln in vuln_report["vulnerabilities"]:
         endpoint = vuln.get("endpoint", "unknown")
         severity = vuln.get("severity", "MEDIUM")
         confidence = vuln.get("confidence", 50) / 100
         corroborated = vuln.get("corroborated", False)
-        
+
         base_score = severity_weights.get(severity, 1)
         confidence_multiplier = 0.5 + (confidence * 0.5)
         corroboration_bonus = 1.2 if corroborated else 1.0
         risk_score = base_score * confidence_multiplier * corroboration_bonus
-        
+
         if endpoint not in endpoint_risks:
             endpoint_risks[endpoint] = {"risk_score": 0, "vulnerabilities": []}
         endpoint_risks[endpoint]["risk_score"] += risk_score
         endpoint_risks[endpoint]["vulnerabilities"].append(vuln["type"])
         total_risk += risk_score
-    
+
     # Determine risk level
     if total_risk > 50: risk_level = "CRITICAL"
     elif total_risk > 30: risk_level = "HIGH"
     elif total_risk > 15: risk_level = "MEDIUM"
     elif total_risk > 5: risk_level = "LOW"
     else: risk_level = "INFO"
-    
+
     sorted_endpoints = sorted(endpoint_risks.items(), key=lambda x: x[1]["risk_score"], reverse=True)[:10]
-    
+
     return {
         "total_risk_score": round(total_risk, 2),
         "risk_level": risk_level,
@@ -244,7 +244,7 @@ def _calculate_risk_aggregation(self, vuln_report: Dict) -> Dict:
    - Phase 7b: Tool classification enforcement (lines 324-353)
    - Phase 1d: TLS evaluation (lines 1096-1126)
    - Phase 2: Crawler mandatory tracking (lines 1147-1150)
-   
+
 2. `discovery_classification.py`
    - Added `get_tool_contract()` function (lines 183-199)
 
@@ -277,11 +277,11 @@ def _calculate_risk_aggregation(self, vuln_report: Dict) -> Dict:
 1. **Wire Payload Command Builder** (5 minutes)
    - Import in `execution_paths.py` or tool wrappers
    - Replace hardcoded dalfox/sqlmap commands with builder output
-   
+
 2. **Integrate Vuln-Centric Reporter** (10 minutes)
    - Add 10 lines after intelligence report generation
    - Include in final report output
-   
+
 3. **Add Risk Aggregation Method** (5 minutes)
    - Copy method to automation_scanner_v2.py
    - Call in report generation

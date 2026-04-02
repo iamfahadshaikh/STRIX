@@ -58,7 +58,9 @@ class ZAPAdapter:
         self.api_base_url = "http://localhost:8090"
         self._managed_container_name: Optional[str] = None
 
-    def run_intelligence_scan(self, target_url: str, include_active_scan: bool = True) -> ZAPDiscoveryResult:
+    def run_intelligence_scan(
+        self, target_url: str, include_active_scan: bool = True
+    ) -> ZAPDiscoveryResult:
         """Run API-driven ZAP intelligence workflow.
 
         ZAP is used as a secondary intelligence source and optional corroborator.
@@ -67,25 +69,45 @@ class ZAPAdapter:
             self._ensure_api_ready()
 
             # 1. Spider
-            spider = self._api_get("spider", "action", "scan", {"url": target_url, "maxChildren": 500, "recurse": True})
+            spider = self._api_get(
+                "spider",
+                "action",
+                "scan",
+                {"url": target_url, "maxChildren": 500, "recurse": True},
+            )
             spider_id = str(spider.get("scan") or "")
             if spider_id:
                 self._wait_scan_status("spider", spider_id)
 
             # 2. AJAX Spider
             try:
-                self._api_get("ajaxSpider", "action", "setOptionMaxDuration", {"Integer": 2})
-                self._api_get("ajaxSpider", "action", "setOptionMaxCrawlDepth", {"Integer": 6})
-                self._api_get("ajaxSpider", "action", "setOptionNumberOfBrowsers", {"Integer": 2})
+                self._api_get(
+                    "ajaxSpider", "action", "setOptionMaxDuration", {"Integer": 2}
+                )
+                self._api_get(
+                    "ajaxSpider", "action", "setOptionMaxCrawlDepth", {"Integer": 6}
+                )
+                self._api_get(
+                    "ajaxSpider", "action", "setOptionNumberOfBrowsers", {"Integer": 2}
+                )
             except Exception:
                 logger.debug("ZAP ajaxSpider option tuning unavailable; using defaults")
-            self._api_get("ajaxSpider", "action", "scan", {"url": target_url, "inScope": False})
+            self._api_get(
+                "ajaxSpider", "action", "scan", {"url": target_url, "inScope": False}
+            )
             if not self._wait_ajax_spider():
-                logger.warning("ZAP ajaxSpider timed out; continuing with spider/passive data")
+                logger.warning(
+                    "ZAP ajaxSpider timed out; continuing with spider/passive data"
+                )
 
             # 3. Optional active scan
             if include_active_scan:
-                ascan = self._api_get("ascan", "action", "scan", {"url": target_url, "recurse": True, "inScopeOnly": False})
+                ascan = self._api_get(
+                    "ascan",
+                    "action",
+                    "scan",
+                    {"url": target_url, "recurse": True, "inScopeOnly": False},
+                )
                 ascan_id = str(ascan.get("scan") or "")
                 if ascan_id:
                     self._wait_scan_status("ascan", ascan_id)
@@ -97,8 +119,17 @@ class ZAPAdapter:
             urls_resp = self._api_get("core", "view", "urls", {"baseurl": target_url})
             urls = [str(u) for u in urls_resp.get("urls", []) if str(u).strip()]
 
-            alerts_resp = self._api_get("core", "view", "alerts", {"baseurl": target_url, "start": 0, "count": 9999})
-            alerts = alerts_resp.get("alerts", []) if isinstance(alerts_resp.get("alerts"), list) else []
+            alerts_resp = self._api_get(
+                "core",
+                "view",
+                "alerts",
+                {"baseurl": target_url, "start": 0, "count": 9999},
+            )
+            alerts = (
+                alerts_resp.get("alerts", [])
+                if isinstance(alerts_resp.get("alerts"), list)
+                else []
+            )
 
             endpoints: List[str] = []
             params: List[str] = []
@@ -149,9 +180,18 @@ class ZAPAdapter:
             try:
                 self._stop_managed_api_container()
             except Exception as cleanup_error:  # noqa: BLE001
-                logger.warning("ZAP managed container cleanup failed (non-fatal): %s", cleanup_error)
+                logger.warning(
+                    "ZAP managed container cleanup failed (non-fatal): %s",
+                    cleanup_error,
+                )
 
-    def _api_get(self, component: str, operation_type: str, operation: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _api_get(
+        self,
+        component: str,
+        operation_type: str,
+        operation: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         base = f"{self.api_base_url}/JSON/{component}/{operation_type}/{operation}/"
         resp = requests.get(base, params=params or {}, timeout=20)
         resp.raise_for_status()
@@ -160,7 +200,9 @@ class ZAPAdapter:
 
     def _is_api_reachable(self) -> bool:
         try:
-            resp = requests.get(f"{self.api_base_url}/JSON/core/view/version/", timeout=3)
+            resp = requests.get(
+                f"{self.api_base_url}/JSON/core/view/version/", timeout=3
+            )
             return resp.status_code == 200
         except Exception:  # noqa: BLE001
             return False
@@ -177,7 +219,9 @@ class ZAPAdapter:
             if self._is_api_reachable():
                 return
             time.sleep(1.5)
-        raise TimeoutError(f"ZAP API not reachable on localhost:8090 after startup attempt ({int(max_wait)}s)")
+        raise TimeoutError(
+            f"ZAP API not reachable on localhost:8090 after startup attempt ({int(max_wait)}s)"
+        )
 
     def _start_managed_api_container(self) -> None:
         if self._managed_container_name:
@@ -223,11 +267,17 @@ class ZAPAdapter:
                 check=False,
             )
             if completed.returncode != 0:
-                err = (completed.stderr or completed.stdout or "unknown docker error").strip()
-                raise RuntimeError(f"Unable to start managed ZAP API container: {self._docker_error_hint(err)}")
+                err = (
+                    completed.stderr or completed.stdout or "unknown docker error"
+                ).strip()
+                raise RuntimeError(
+                    f"Unable to start managed ZAP API container: {self._docker_error_hint(err)}"
+                )
             self._managed_container_name = container_name
         except FileNotFoundError as e:
-            raise RuntimeError(f"Docker not available for managed ZAP API startup: {self._docker_error_hint(str(e))}") from e
+            raise RuntimeError(
+                f"Docker not available for managed ZAP API startup: {self._docker_error_hint(str(e))}"
+            ) from e
 
     def _stop_managed_api_container(self) -> None:
         if not self._managed_container_name:
@@ -242,9 +292,14 @@ class ZAPAdapter:
                 check=False,
             )
         except subprocess.TimeoutExpired:
-            logger.warning("Timed out while removing managed ZAP container %s; continuing", container_name)
+            logger.warning(
+                "Timed out while removing managed ZAP container %s; continuing",
+                container_name,
+            )
         except FileNotFoundError:
-            logger.warning("Docker executable not found during managed ZAP cleanup; continuing")
+            logger.warning(
+                "Docker executable not found during managed ZAP cleanup; continuing"
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("Managed ZAP cleanup error (non-fatal): %s", e)
         finally:
@@ -289,7 +344,9 @@ class ZAPAdapter:
             time.sleep(1.0)
         raise TimeoutError("ZAP passive scan queue did not drain")
 
-    def run_baseline_docker(self, target_url: str, output_dir: Path) -> ZAPDiscoveryResult:
+    def run_baseline_docker(
+        self, target_url: str, output_dir: Path
+    ) -> ZAPDiscoveryResult:
         """Run ZAP baseline scan in Docker and parse JSON output."""
         zap_json_path = output_dir / "zap.json"
         image_candidates = ["zaproxy/zap-stable", "owasp/zap2docker-stable"]
@@ -324,8 +381,13 @@ class ZAPAdapter:
                 if completed.returncode == 0:
                     break
 
-                last_error = (completed.stderr or completed.stdout or "Unknown ZAP error").strip()
-                if "pull access denied" in last_error.lower() or "repository does not exist" in last_error.lower():
+                last_error = (
+                    completed.stderr or completed.stdout or "Unknown ZAP error"
+                ).strip()
+                if (
+                    "pull access denied" in last_error.lower()
+                    or "repository does not exist" in last_error.lower()
+                ):
                     continue
                 return ZAPDiscoveryResult(
                     executed=True,
@@ -352,16 +414,27 @@ class ZAPAdapter:
             return parsed
 
         except FileNotFoundError as e:
-            return ZAPDiscoveryResult(executed=True, success=False, error=f"Docker not available: {self._docker_error_hint(str(e))}")
+            return ZAPDiscoveryResult(
+                executed=True,
+                success=False,
+                error=f"Docker not available: {self._docker_error_hint(str(e))}",
+            )
         except subprocess.TimeoutExpired:
-            return ZAPDiscoveryResult(executed=True, success=False, error="ZAP baseline timed out")
+            return ZAPDiscoveryResult(
+                executed=True, success=False, error="ZAP baseline timed out"
+            )
         except Exception as e:  # noqa: BLE001
-            return ZAPDiscoveryResult(executed=True, success=False, error=f"ZAP execution error: {e}")
+            return ZAPDiscoveryResult(
+                executed=True, success=False, error=f"ZAP execution error: {e}"
+            )
 
     def _docker_error_hint(self, raw_error: str) -> str:
         text = str(raw_error or "").strip()
         lower = text.lower()
-        if "docker-desktop wsl2 distribution" in lower or "enable the docker desktop wsl2 integration" in lower:
+        if (
+            "docker-desktop wsl2 distribution" in lower
+            or "enable the docker desktop wsl2 integration" in lower
+        ):
             return (
                 f"{text}. Fix: enable Docker Desktop WSL integration for this distro, "
                 "or run scanner from PowerShell/Command Prompt where Docker daemon is reachable."
@@ -372,9 +445,13 @@ class ZAPAdapter:
 
     def _parse_zap_json(self, zap_json_path: Path) -> ZAPDiscoveryResult:
         try:
-            data = json.loads(zap_json_path.read_text(encoding="utf-8", errors="ignore"))
+            data = json.loads(
+                zap_json_path.read_text(encoding="utf-8", errors="ignore")
+            )
         except Exception as e:  # noqa: BLE001
-            return ZAPDiscoveryResult(executed=True, success=False, error=f"Invalid ZAP JSON: {e}")
+            return ZAPDiscoveryResult(
+                executed=True, success=False, error=f"Invalid ZAP JSON: {e}"
+            )
 
         endpoints: List[str] = []
         params: List[str] = []
@@ -389,7 +466,9 @@ class ZAPAdapter:
                     if isinstance(alert, dict):
                         alerts.append(alert)
                         instances = alert.get("instances", [])
-                        for instance in instances if isinstance(instances, list) else []:
+                        for instance in (
+                            instances if isinstance(instances, list) else []
+                        ):
                             if not isinstance(instance, dict):
                                 continue
                             uri = str(instance.get("uri") or "").strip()

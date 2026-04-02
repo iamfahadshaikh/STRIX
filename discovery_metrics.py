@@ -47,7 +47,12 @@ def assess_discovery_status(metrics: Dict[str, int]) -> str:
         return "STRONG"
     if endpoints_total >= 30 or params_total >= 10:
         return "ACCEPTABLE"
-    if endpoints_total >= 5 or params_total >= 3 or api_endpoints > 0 or source_urls > 0:
+    if (
+        endpoints_total >= 5
+        or params_total >= 3
+        or api_endpoints > 0
+        or source_urls > 0
+    ):
         return "ACCEPTABLE"
     if endpoints_total >= 1 or params_total >= 1:
         return "WEAK"

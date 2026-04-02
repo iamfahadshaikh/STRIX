@@ -280,8 +280,8 @@ from typing import Dict, Optional
 
 class CustomVulnerabilityEngine:
     """Template for custom exploitation engines"""
-    
-    def exploit(self, endpoint: str, parameter: str, 
+
+    def exploit(self, endpoint: str, parameter: str,
                 base_url: str, session=None) -> Optional[Dict]:
         """
         Returns: {
@@ -290,7 +290,7 @@ class CustomVulnerabilityEngine:
             "parameter": parameter,
             "payload": "...",
             "confidence": 0.85,
-            "proof": {"method": "...", "evidence": "..."} 
+            "proof": {"method": "...", "evidence": "..."}
         }
         """
         pass
@@ -330,19 +330,19 @@ class ConfirmationMethod(Enum):
 
 ## FAQ
 
-**Q: Why is a finding marked as "Low Confidence"?**  
+**Q: Why is a finding marked as "Low Confidence"?**
 A: Confidence < 0.70 (70%). Check `execution_report.json` → `proof_reporter.rejected_low_confidence` for your finding.
 
-**Q: Why no OOB callbacks detected?**  
+**Q: Why no OOB callbacks detected?**
 A: 1) Firewall blocks port 8888, 2) Payload syntax wrong, 3) Target doesn't execute payload, 4) Wait time too short.
 
-**Q: Can I skip exploitation and run detection only?**  
+**Q: Can I skip exploitation and run detection only?**
 A: Yes, comment out `initialize_exploitation_engines()` and `run_active_exploitation()` calls in `run_full_scan()`.
 
-**Q: How do I report false positives?**  
+**Q: How do I report false positives?**
 A: Check `response_diffing_engine.py` → `_analyze_ssrf_response()` or similar. Adjust confidence thresholds.
 
-**Q: How do I add custom payloads?**  
+**Q: How do I add custom payloads?**
 A: Extend payload lists in SSRF/XSS/SQLi engine classes. Regenerate mutation sequence via `AdaptiveFuzzingEngine.generate_mutations()`.
 
 ---
@@ -367,13 +367,13 @@ python -c "from ssrf_exploitation_engine import SSRFExploitationEngine; print('�
 
 ## Support & Documentation
 
-**Framework Documentation:**  
+**Framework Documentation:**
 → `Documentations/PHASE_5_EXPLOITATION_FRAMEWORK.md`
 
-**Source Code Comments:**  
+**Source Code Comments:**
 All new modules include inline documentation via docstrings.
 
-**Logging:**  
+**Logging:**
 Enable `logging.DEBUG` for detailed execution trace:
 ```python
 import logging
@@ -382,6 +382,6 @@ logging.basicConfig(level=logging.DEBUG)
 
 ---
 
-**Version:** Phase 5 - Active Exploitation  
-**Status:** Ready for integration testing  
+**Version:** Phase 5 - Active Exploitation
+**Status:** Ready for integration testing
 **Last Updated:** March 23, 2026

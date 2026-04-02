@@ -34,7 +34,7 @@ self.log("Running crawling phase for payload tool gating...", "INFO")
 try:
     crawl_adapter = CrawlAdapter(self.target, output_dir=str(self.output_dir))
     crawl_success, crawl_msg = crawl_adapter.run()
-    
+
     if crawl_success:
         gating_signals = crawl_adapter.gating_signals
         gating_orchestrator = GatingLoopOrchestrator(self.ledger, crawl_adapter)
@@ -183,4 +183,3 @@ Or if no parameters found:
 - ✅ `crawler_integration.py`
 - ✅ `light_crawler.py`
 - ✅ `katana_crawler.py`
-

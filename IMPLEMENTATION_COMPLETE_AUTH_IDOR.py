@@ -497,7 +497,7 @@ Typical scan: 50-100MB for 100 endpoints
 
 2. INITIALIZE
    from auth_idor_orchestrator import AuthenticationAndIDOROrchestrator
-   
+
    orchestrator = AuthenticationAndIDOROrchestrator(
        target_url="https://api.example.com"
    )
@@ -539,7 +539,7 @@ AFTER IMPLEMENTING:
 3. Merge findings:
    idor_registry = await auth_idor.idor_engine.convert_findings_to_registry()
    ac_registry = await auth_idor.access_control_engine.convert_findings_to_registry()
-   
+
    for finding in idor_registry._findings:
        self.findings.add(finding)
    for finding in ac_registry._findings:

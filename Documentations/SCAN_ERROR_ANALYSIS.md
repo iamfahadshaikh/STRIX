@@ -3,34 +3,34 @@
 ## Issues Found During Full Scan Execution
 
 ### 1. **FindingType Enum to String Conversion** ✅ FIXED
-**Location:** `automation_scanner_v2.py:1026`  
-**Error:** `AttributeError: 'FindingType' object has no attribute 'lower'`  
-**Root Cause:** `map_to_owasp()` expects a string but was receiving FindingType enum objects  
-**Fix Applied:** Changed all `map_to_owasp(FindingType.XXX)` to `map_to_owasp(FindingType.XXX.value)`  
+**Location:** `automation_scanner_v2.py:1026`
+**Error:** `AttributeError: 'FindingType' object has no attribute 'lower'`
+**Root Cause:** `map_to_owasp()` expects a string but was receiving FindingType enum objects
+**Fix Applied:** Changed all `map_to_owasp(FindingType.XXX)` to `map_to_owasp(FindingType.XXX.value)`
 **Files Modified:**
 - automation_scanner_v2.py (4 locations, lines 964, 967, 976, 979, 990, 993, 1026)
 
 ### 2. **Finding Object to Dict Conversion** ✅ FIXED
-**Location:** `automation_scanner_v2.py:1387`  
-**Error:** `AttributeError: 'Finding' object has no attribute 'get'`  
-**Root Cause:** Code assumed findings were dicts but Finding objects don't have `.get()` method  
-**Fix Applied:** Rewrote findings conversion to properly extract Finding attributes and create dicts  
+**Location:** `automation_scanner_v2.py:1387`
+**Error:** `AttributeError: 'Finding' object has no attribute 'get'`
+**Root Cause:** Code assumed findings were dicts but Finding objects don't have `.get()` method
+**Fix Applied:** Rewrote findings conversion to properly extract Finding attributes and create dicts
 **Files Modified:**
 - automation_scanner_v2.py (lines 1381-1405)
 
 ### 3. **Intelligence Layer Dict vs Object Mismatch** ✅ FIXED
-**Location:** `intelligence_layer.py:188`  
-**Error:** `AttributeError: 'dict' object has no attribute 'description'`  
-**Root Cause:** `filter_false_positives()` expected Finding objects but received dicts  
-**Fix Applied:** Updated method to handle both dict and Finding object inputs  
+**Location:** `intelligence_layer.py:188`
+**Error:** `AttributeError: 'dict' object has no attribute 'description'`
+**Root Cause:** `filter_false_positives()` expected Finding objects but received dicts
+**Fix Applied:** Updated method to handle both dict and Finding object inputs
 **Files Modified:**
 - intelligence_layer.py (lines 175-210)
 
 ### 4. **Advanced Correlation Skipped** ✅ FIXED
-**Location:** `automation_scanner_v2.py:1412`  
-**Error:** `AttributeError: 'dict' object has no attribute 'exploitability'`  
-**Root Cause:** `correlate_findings()` and downstream methods expect CorrelatedFinding objects with structured attributes  
-**Fix Applied:** 
+**Location:** `automation_scanner_v2.py:1412`
+**Error:** `AttributeError: 'dict' object has no attribute 'exploitability'`
+**Root Cause:** `correlate_findings()` and downstream methods expect CorrelatedFinding objects with structured attributes
+**Fix Applied:**
 - Skip advanced correlation - work with filtered dicts directly
 - Updated confidence scoring to handle dicts
 - Updated vulnerability report generation to accept dicts
@@ -43,7 +43,7 @@
 ## Data Flow Issues Identified
 
 ### Issue: Finding Creation vs Processing Mismatch
-**Problem:** 
+**Problem:**
 - Tools create Finding objects (immutable dataclass)
 - Report generation converts to dicts
 - Intelligence layer expects Finding/CorrelatedFinding objects
@@ -57,7 +57,7 @@
 - `risk_aggregation.py` → accepts dicts
 
 ### Issue: Enum Value Handling
-**Problem:** 
+**Problem:**
 - FindingType and Severity are enums
 - Some methods expect .value, others work on enum directly
 - map_to_owasp() specifically needs string input

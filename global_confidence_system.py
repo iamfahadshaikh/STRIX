@@ -7,7 +7,12 @@ class GlobalConfidenceSystem:
     REPORT_THRESHOLD = 0.80
 
     @staticmethod
-    def score(base_confidence: float, corroborated: bool = False, validated: bool = False, source: str = "internal") -> float:
+    def score(
+        base_confidence: float,
+        corroborated: bool = False,
+        validated: bool = False,
+        source: str = "internal",
+    ) -> float:
         score = float(base_confidence or 0.0)
         if corroborated:
             score += 0.10

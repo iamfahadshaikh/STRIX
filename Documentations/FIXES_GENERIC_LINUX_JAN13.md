@@ -3,7 +3,7 @@
 ## Issues Fixed
 
 ### 1. Generic Linux Distro Detection
-**Problem:** 
+**Problem:**
 - On fresh Linux containers/systems, distribution detection returns "linux" instead of specific distro names (ubuntu, debian, kali)
 - `get_install_command()` only checked for known distros, so it returned `None` for generic "linux"
 - All tools showed "NO INSTALLATION METHOD AVAILABLE"

@@ -16,13 +16,12 @@ from crawler_mandatory_gate import CrawlerMandatoryGate
 
 ADD:
 """
+from deduplication_engine import DeduplicationEngine
 from discovery_classification import get_tool_contract, is_signal_producer
 from discovery_completeness import DiscoveryCompletenessEvaluator
-from payload_strategy import PayloadStrategy, PayloadReadinessGate
-from owasp_mapping import map_to_owasp, OWASPCategory
 from enhanced_confidence import EnhancedConfidenceEngine
-from deduplication_engine import DeduplicationEngine
-
+from owasp_mapping import OWASPCategory, map_to_owasp
+from payload_strategy import PayloadReadinessGate, PayloadStrategy
 
 # ============================================================================
 # STEP 2: Initialize new engines in __init__ (after line 89)
@@ -73,24 +72,24 @@ REPLACE the intelligence filtering section with:
                 finding.owasp = owasp_cat.value
             elif isinstance(finding, dict):
                 finding["owasp"] = owasp_cat.value
-        
+
         # Phase 4: Deduplicate findings
         findings_dicts = [f.to_dict() if hasattr(f, 'to_dict') else f for f in all_findings]
         deduplicated_findings = self.dedup_engine.deduplicate(findings_dicts)
-        
+
         # Phase 4: Enhanced confidence scoring
         if self.enhanced_confidence:
             for finding in deduplicated_findings:
                 confidence = self.enhanced_confidence.calculate_finding_confidence(finding)
                 finding["confidence"] = confidence
                 finding["confidence_label"] = self.enhanced_confidence.get_confidence_label(confidence)
-        
+
         # Filter false positives
         filtered_findings = self.intelligence.filter_false_positives(deduplicated_findings)
-        
+
         # Correlate related findings
         correlated_findings = self.intelligence.correlate_findings(filtered_findings)
-        
+
         # Generate intelligence report
         intelligence_report = self.intelligence.generate_intelligence_report(correlated_findings)
 
@@ -103,10 +102,10 @@ In _write_report(), in the report = {...} dict, ADD these keys:
 """
             # Phase 1: Discovery completeness
             "discovery_completeness": completeness_report.to_dict() if self.discovery_evaluator else {},
-            
+
             # Phase 4: Deduplication report
             "deduplication": self.dedup_engine.get_deduplication_report(),
-            
+
             # Phase 3: Payload attempts
             "payload_attempts": self.payload_strategy.get_attempts_summary(),
 

@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CredentialSet:
     """Single credential set"""
+
     credential_id: str  # e.g., "admin_user", "service_account"
     username: Optional[str] = None
     password: Optional[str] = None
@@ -46,7 +47,9 @@ class CredentialSet:
             headers["X-API-Key"] = self.api_key
         elif self.username and self.password:
             # Basic auth
-            credentials = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
+            credentials = base64.b64encode(
+                f"{self.username}:{self.password}".encode()
+            ).decode()
             headers["Authorization"] = f"Basic {credentials}"
 
         headers.update(self.custom_headers)
@@ -66,13 +69,14 @@ class CredentialSet:
             "has_token": bool(self.bearer_token),
             "has_api_key": bool(self.api_key),
             "cookies_count": len(self.cookies),
-            "description": self.description
+            "description": self.description,
         }
 
 
 @dataclass
 class AuthenticatedFinding:
     """Finding identified with specific credentials"""
+
     endpoint: str
     parameter: str
     vulnerability_type: str
@@ -85,7 +89,7 @@ class AuthenticatedFinding:
 class AuthAdapter:
     """
     Multi-credential authenticated scanning
-    
+
     Tracks which credentials can access which endpoints
     Marks findings as AUTHENTICATED with privilege level
     """
@@ -98,17 +102,21 @@ class AuthAdapter:
         self.base_url = base_url
         self.credentials: Dict[str, CredentialSet] = {}
         self.authenticated_findings: List[AuthenticatedFinding] = []
-        self.credential_validation: Dict[str, Tuple[bool, datetime]] = {}  # id -> (valid, timestamp)
+        self.credential_validation: Dict[
+            str, Tuple[bool, datetime]
+        ] = {}  # id -> (valid, timestamp)
 
     def add_credential(self, credential: CredentialSet) -> None:
         """Register credential set"""
         self.credentials[credential.credential_id] = credential
-        logger.info(f"[AuthAdapter] Added credential: {credential.credential_id} ({credential.privilege_level})")
+        logger.info(
+            f"[AuthAdapter] Added credential: {credential.credential_id} ({credential.privilege_level})"
+        )
 
     def add_credentials_from_dict(self, creds_dict: Dict) -> None:
         """
         Add credentials from dictionary
-        
+
         Format:
         {
             "admin": {
@@ -133,31 +141,34 @@ class AuthAdapter:
                 custom_headers=cred_data.get("custom_headers", {}),
                 cookies=cred_data.get("cookies", {}),
                 privilege_level=cred_data.get("privilege_level", "USER"),
-                description=cred_data.get("description", "")
+                description=cred_data.get("description", ""),
             )
             self.add_credential(credential)
 
-    def add_cookies_from_zap(self, zap_cookies: Dict[str, str], credential_id: str = "zap_session") -> None:
+    def add_cookies_from_zap(
+        self, zap_cookies: Dict[str, str], credential_id: str = "zap_session"
+    ) -> None:
         """
         Import cookies from OWASP ZAP session
-        
+
         Args:
             zap_cookies: Cookie dict from ZAP (e.g., {"JSESSIONID": "ABC123", "token": "XYZ"})
             credential_id: Credential ID to store under
         """
         if credential_id not in self.credentials:
             self.credentials[credential_id] = CredentialSet(
-                credential_id=credential_id,
-                privilege_level="UNAUTHENTICATED"
+                credential_id=credential_id, privilege_level="UNAUTHENTICATED"
             )
 
         self.credentials[credential_id].cookies.update(zap_cookies)
-        logger.info(f"[AuthAdapter] Imported {len(zap_cookies)} cookies into {credential_id}")
+        logger.info(
+            f"[AuthAdapter] Imported {len(zap_cookies)} cookies into {credential_id}"
+        )
 
     def add_zap_session(self, session_data: Dict) -> None:
         """
         Import full ZAP session
-        
+
         Args:
             session_data: ZAP session dict (from context export)
         """
@@ -172,7 +183,7 @@ class AuthAdapter:
             credential = CredentialSet(
                 credential_id="zap_session",
                 custom_headers=auth_info.get("headers", {}),
-                privilege_level=auth_info.get("privilege_level", "AUTHENTICATED")
+                privilege_level=auth_info.get("privilege_level", "AUTHENTICATED"),
             )
             self.credentials["zap_session"] = credential
 
@@ -183,11 +194,11 @@ class AuthAdapter:
     def validate_credential(self, credential_id: str, test_url: str) -> bool:
         """
         Validate credential against test URL
-        
+
         Args:
             credential_id: Credential to validate
             test_url: URL to test against (e.g., authenticated user profile)
-            
+
         Returns:
             True if credential is valid
         """
@@ -202,6 +213,7 @@ class AuthAdapter:
 
         try:
             import requests
+
             credential = self.credentials[credential_id]
 
             headers = credential.get_auth_headers()
@@ -225,15 +237,15 @@ class AuthAdapter:
     def get_headers_for_request(
         self,
         credential_id: Optional[str] = None,
-        additional_headers: Optional[Dict[str, str]] = None
+        additional_headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
         """
         Get complete headers for authenticated request
-        
+
         Args:
             credential_id: Which credential to use
             additional_headers: Extra headers to merge
-            
+
         Returns:
             Complete headers dict
         """
@@ -259,7 +271,7 @@ class AuthAdapter:
         parameter: str,
         vulnerability_type: str,
         credential_id: str,
-        evidence: str = ""
+        evidence: str = "",
     ) -> AuthenticatedFinding:
         """Mark finding as discovered with specific authentication"""
         credential = self.credentials.get(credential_id)
@@ -275,7 +287,7 @@ class AuthAdapter:
             vulnerability_type=vulnerability_type,
             credential_id=credential_id,
             privilege_level=privilege_level,
-            evidence=evidence
+            evidence=evidence,
         )
 
         self.authenticated_findings.append(finding)
@@ -287,18 +299,21 @@ class AuthAdapter:
         return finding
 
     def get_authenticated_findings(
-        self,
-        credential_id: Optional[str] = None
+        self, credential_id: Optional[str] = None
     ) -> List[AuthenticatedFinding]:
         """Get all findings, optionally filtered by credential"""
         if credential_id:
-            return [f for f in self.authenticated_findings if f.credential_id == credential_id]
+            return [
+                f
+                for f in self.authenticated_findings
+                if f.credential_id == credential_id
+            ]
         return self.authenticated_findings
 
     def get_privilege_escalation_paths(self) -> Dict[str, List[str]]:
         """
         Identify privilege escalation paths
-        
+
         Returns:
             Dict mapping endpoint -> [privilege levels that can access]
         """
@@ -329,7 +344,7 @@ class AuthAdapter:
             "total_authenticated_findings": len(self.authenticated_findings),
             "findings_by_privilege": by_privilege,
             "privilege_escalation_paths": len(escalation_paths),
-            "credentials": {cid: c.to_dict() for cid, c in self.credentials.items()}
+            "credentials": {cid: c.to_dict() for cid, c in self.credentials.items()},
         }
 
     def to_dict(self) -> Dict:
@@ -343,10 +358,10 @@ class AuthAdapter:
                     "vulnerability_type": f.vulnerability_type,
                     "credential_id": f.credential_id,
                     "privilege_level": f.privilege_level,
-                    "evidence": f.evidence
+                    "evidence": f.evidence,
                 }
                 for f in self.authenticated_findings
-            ]
+            ],
         }
 
 

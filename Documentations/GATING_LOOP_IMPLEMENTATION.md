@@ -61,13 +61,13 @@ Implemented **crawl → graph → per-tool gating decisions** without modifying 
 - **New Methods**:
   - `should_run_payload_tool_with_crawl(tool_name, adapter)` → bool
   - `get_crawl_gating_summary(adapter)` → dict
-  
+
 - **Logic**:
   ```python
   # XSS tools: need reflectable params
   if reflection_count > 0: RUN xsstrike/dalfox
   else: SKIP xsstrike/dalfox
-  
+
   # SQL/Command tools: need any parameters
   if parameter_count > 0: RUN sqlmap/commix
   else: SKIP sqlmap/commix

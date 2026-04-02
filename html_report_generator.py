@@ -6,12 +6,12 @@ and compliance mapping.
 """
 
 import json
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 from datetime import datetime
-from intelligence_layer import CorrelatedFinding, IntelligenceEngine
-from findings_model import Severity
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+from findings_model import Severity
+from intelligence_layer import CorrelatedFinding, IntelligenceEngine
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -222,7 +222,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 class HTMLReportGenerator:
     """Generates interactive HTML security reports."""
-    
+
     @staticmethod
     def generate(
         target: str,
@@ -245,67 +245,111 @@ class HTMLReportGenerator:
         auth_access_control_summary: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Generate HTML report from intelligence data."""
-        
+
         # Extract stats (robust to missing keys)
-        total_findings = intelligence_report.get('total_findings', len(correlated_findings))
+        total_findings = intelligence_report.get(
+            "total_findings", len(correlated_findings)
+        )
         if findings_summary:
             total_findings = int(findings_summary.get("total", total_findings) or 0)
         severity_counts = {}
         for cf in correlated_findings:
             # Support both object-based and dict-based findings
             if isinstance(cf, dict):
-                sev_raw = cf.get('severity', 'INFO')
-                sev = sev_raw.value if hasattr(sev_raw, 'value') else str(sev_raw)
+                sev_raw = cf.get("severity", "INFO")
+                sev = sev_raw.value if hasattr(sev_raw, "value") else str(sev_raw)
             else:
                 sev = cf.primary_finding.severity.value
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
-        
-        critical_count = severity_counts.get('CRITICAL', 0)
-        high_count = severity_counts.get('HIGH', 0)
-        medium_count = severity_counts.get('MEDIUM', 0)
-        avg_conf_raw = float(intelligence_report.get('confidence_stats', {}).get('average', 0.0))
+
+        critical_count = severity_counts.get("CRITICAL", 0)
+        high_count = severity_counts.get("HIGH", 0)
+        medium_count = severity_counts.get("MEDIUM", 0)
+        avg_conf_raw = float(
+            intelligence_report.get("confidence_stats", {}).get("average", 0.0)
+        )
         if avg_conf_raw <= 0 and vulnerability_report:
-            avg_conf_raw = float(vulnerability_report.get("summary", {}).get("average_confidence", 0.0))
-        avg_confidence = int(avg_conf_raw * 100) if 0 < avg_conf_raw <= 1 else int(avg_conf_raw)
-        multi_tool_count = int(intelligence_report.get('multi_tool_confirmed', 0))
+            avg_conf_raw = float(
+                vulnerability_report.get("summary", {}).get("average_confidence", 0.0)
+            )
+        avg_confidence = (
+            int(avg_conf_raw * 100) if 0 < avg_conf_raw <= 1 else int(avg_conf_raw)
+        )
+        multi_tool_count = int(intelligence_report.get("multi_tool_confirmed", 0))
         if multi_tool_count == 0 and vulnerability_report:
-            multi_tool_count = int(vulnerability_report.get("summary", {}).get("corroborated", 0))
-        
+            multi_tool_count = int(
+                vulnerability_report.get("summary", {}).get("corroborated", 0)
+            )
+
         # Top 10 findings
         top_findings_html = HTMLReportGenerator._render_top_findings(
-            intelligence_report.get('top_10_critical', [])
+            intelligence_report.get("top_10_critical", [])
         )
-        
+
         # Severity chart
-        severity_chart_html = HTMLReportGenerator._render_severity_chart(severity_counts)
-        
+        severity_chart_html = HTMLReportGenerator._render_severity_chart(
+            severity_counts
+        )
+
         # Compliance mapping
         compliance_html = HTMLReportGenerator._render_compliance(correlated_findings)
-        
+
         # Remediation queue
         remediation_queue_html = HTMLReportGenerator._render_remediation_queue(
             correlated_findings[:10]
         )
 
-        discovery_section_html = HTMLReportGenerator._render_discovery_summary(discovery_summary)
-        findings_summary_section_html = HTMLReportGenerator._render_findings_summary(findings_summary)
+        discovery_section_html = HTMLReportGenerator._render_discovery_summary(
+            discovery_summary
+        )
+        findings_summary_section_html = HTMLReportGenerator._render_findings_summary(
+            findings_summary
+        )
 
-        vuln_section_html = HTMLReportGenerator._render_vulnerabilities(vulnerability_report)
+        vuln_section_html = HTMLReportGenerator._render_vulnerabilities(
+            vulnerability_report
+        )
         risk_section_html = HTMLReportGenerator._render_risk(risk_report)
         coverage_section_html = HTMLReportGenerator._render_coverage(coverage_report)
-        management_plan_html = HTMLReportGenerator._render_management_action_plan(discovery_summary, risk_report, auth_access_control_summary)
-        residual_risk_html = HTMLReportGenerator._render_residual_risk(discovery_summary, auth_access_control_summary)
-        target_intel_html = HTMLReportGenerator._render_target_intel(target, discovery_summary)
-        strengths_section_html = HTMLReportGenerator._render_strengths(security_strengths or [])
-        auth_access_control_html = HTMLReportGenerator._render_auth_access_control(auth_access_control_summary)
-        
+        management_plan_html = HTMLReportGenerator._render_management_action_plan(
+            discovery_summary, risk_report, auth_access_control_summary
+        )
+        residual_risk_html = HTMLReportGenerator._render_residual_risk(
+            discovery_summary, auth_access_control_summary
+        )
+        target_intel_html = HTMLReportGenerator._render_target_intel(
+            target, discovery_summary
+        )
+        strengths_section_html = HTMLReportGenerator._render_strengths(
+            security_strengths or []
+        )
+        auth_access_control_html = HTMLReportGenerator._render_auth_access_control(
+            auth_access_control_summary
+        )
+
         # PHASE 5: Confirmed exploitation findings (new)
-        confirmed_exploitation_html = HTMLReportGenerator._render_confirmed_exploitation(confirmed_exploitation)
-        service_fingerprints_html = HTMLReportGenerator._render_service_fingerprints(service_fingerprints or [])
-        certificate_assessments_html = HTMLReportGenerator._render_certificate_assessments(certificate_assessments or [])
-        host_network_assessment_html = HTMLReportGenerator._render_host_network_assessment(host_network_assessment or [])
-        prioritized_subdomains_html = HTMLReportGenerator._render_prioritized_subdomains(prioritized_subdomains or [])
-        
+        confirmed_exploitation_html = (
+            HTMLReportGenerator._render_confirmed_exploitation(confirmed_exploitation)
+        )
+        service_fingerprints_html = HTMLReportGenerator._render_service_fingerprints(
+            service_fingerprints or []
+        )
+        certificate_assessments_html = (
+            HTMLReportGenerator._render_certificate_assessments(
+                certificate_assessments or []
+            )
+        )
+        host_network_assessment_html = (
+            HTMLReportGenerator._render_host_network_assessment(
+                host_network_assessment or []
+            )
+        )
+        prioritized_subdomains_html = (
+            HTMLReportGenerator._render_prioritized_subdomains(
+                prioritized_subdomains or []
+            )
+        )
+
         # Fill template
         html = HTML_TEMPLATE.format(
             target=target,
@@ -335,24 +379,25 @@ class HTMLReportGenerator:
             service_fingerprints_html=service_fingerprints_html,
             certificate_assessments_html=certificate_assessments_html,
             host_network_assessment_html=host_network_assessment_html,
-            prioritized_subdomains_html=prioritized_subdomains_html
+            prioritized_subdomains_html=prioritized_subdomains_html,
         )
-        
+
         # Write to file
-        output_path.write_text(html, encoding='utf-8')
-    
+        output_path.write_text(html, encoding="utf-8")
+
     @staticmethod
     def _render_top_findings(top_findings: List[Dict]) -> str:
         """Render top 10 findings as HTML cards."""
         if not top_findings:
             return "<p>No critical findings detected.</p>"
-        
+
         html = []
         for idx, finding in enumerate(top_findings, 1):
-            severity_class = finding['severity'].lower()
-            confidence_pct = int(finding['confidence'] * 100)
-            
-            html.append(f"""
+            severity_class = finding["severity"].lower()
+            confidence_pct = int(finding["confidence"] * 100)
+
+            html.append(
+                f"""
             <div class="finding-card {severity_class}">
                 <div class="finding-header">
                     <div class="finding-title">#{idx}. {finding['type']}</div>
@@ -370,43 +415,46 @@ class HTMLReportGenerator:
                 </div>
                 <div class="finding-description">{finding['description']}</div>
             </div>
-            """)
-        
-        return '\n'.join(html)
-    
+            """
+            )
+
+        return "\n".join(html)
+
     @staticmethod
     def _render_severity_chart(severity_counts: Dict[str, int]) -> str:
         """Render severity distribution bar chart."""
-        severities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+        severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
         max_count = max(severity_counts.values()) if severity_counts else 1
-        
+
         html = []
         for sev in severities:
             count = severity_counts.get(sev, 0)
             height_pct = (count / max_count * 100) if max_count > 0 else 0
-            html.append(f"""
+            html.append(
+                f"""
             <div style="flex: 1;">
                 <div class="bar" style="height: {height_pct}%">
                     <div class="bar-value">{count}</div>
                 </div>
                 <div class="bar-label">{sev}</div>
             </div>
-            """)
-        
-        return '\n'.join(html)
-    
+            """
+            )
+
+        return "\n".join(html)
+
     @staticmethod
     def _render_compliance(correlated_findings: List[CorrelatedFinding]) -> str:
         """Render compliance mapping for OWASP, PCI-DSS, CWE Top 25."""
         # OWASP Top 10 2021
         owasp_counts = {}
         cwe_counts = {}
-        
+
         for cf in correlated_findings:
             if isinstance(cf, dict):
-                owasp = cf.get('owasp') or "Unmapped"
+                owasp = cf.get("owasp") or "Unmapped"
                 owasp_counts[owasp] = owasp_counts.get(owasp, 0) + 1
-                cwe_val = cf.get('cwe')
+                cwe_val = cf.get("cwe")
                 if cwe_val:
                     cwe_counts[cwe_val] = cwe_counts.get(cwe_val, 0) + 1
             else:
@@ -415,36 +463,43 @@ class HTMLReportGenerator:
                 if cf.primary_finding.cwe:
                     cwe = cf.primary_finding.cwe
                     cwe_counts[cwe] = cwe_counts.get(cwe, 0) + 1
-        
+
         # OWASP card
-        owasp_items = '\n'.join([
-            f'<div class="compliance-item"><span>{owasp}</span><span><strong>{count}</strong></span></div>'
-            for owasp, count in sorted(owasp_counts.items(), key=lambda x: -x[1])[:5]
-        ])
-        
+        owasp_items = "\n".join(
+            [
+                f'<div class="compliance-item"><span>{owasp}</span><span><strong>{count}</strong></span></div>'
+                for owasp, count in sorted(owasp_counts.items(), key=lambda x: -x[1])[
+                    :5
+                ]
+            ]
+        )
+
         # CWE card
-        cwe_items = '\n'.join([
-            f'<div class="compliance-item"><span>{cwe}</span><span><strong>{count}</strong></span></div>'
-            for cwe, count in sorted(cwe_counts.items(), key=lambda x: -x[1])[:5]
-        ])
-        
+        cwe_items = "\n".join(
+            [
+                f'<div class="compliance-item"><span>{cwe}</span><span><strong>{count}</strong></span></div>'
+                for cwe, count in sorted(cwe_counts.items(), key=lambda x: -x[1])[:5]
+            ]
+        )
+
         # PCI-DSS mapping (simplified)
         def _type_str(cf) -> str:
             if isinstance(cf, dict):
-                return str(cf.get('type', '')).lower()
+                return str(cf.get("type", "")).lower()
             return cf.primary_finding.type.value.lower()
+
         pci_items = """
         <div class=\"compliance-item\"><span>Req 6.5.1 (Injection)</span><span><strong>{sqli_count}</strong></span></div>
         <div class=\"compliance-item\"><span>Req 6.5.7 (XSS)</span><span><strong>{xss_count}</strong></span></div>
         <div class=\"compliance-item\"><span>Req 6.5.9 (Access Control)</span><span><strong>{ac_count}</strong></span></div>
         <div class=\"compliance-item\"><span>Req 6.5.10 (Auth)</span><span><strong>{auth_count}</strong></span></div>
         """.format(
-            sqli_count=sum(1 for cf in correlated_findings if 'sqli' in _type_str(cf)),
-            xss_count=sum(1 for cf in correlated_findings if 'xss' in _type_str(cf)),
-            ac_count=sum(1 for cf in correlated_findings if 'idor' in _type_str(cf)),
-            auth_count=sum(1 for cf in correlated_findings if 'auth' in _type_str(cf))
+            sqli_count=sum(1 for cf in correlated_findings if "sqli" in _type_str(cf)),
+            xss_count=sum(1 for cf in correlated_findings if "xss" in _type_str(cf)),
+            ac_count=sum(1 for cf in correlated_findings if "idor" in _type_str(cf)),
+            auth_count=sum(1 for cf in correlated_findings if "auth" in _type_str(cf)),
         )
-        
+
         return f"""
         <div class="compliance-card">
             <h3>OWASP Top 10 2021</h3>
@@ -459,41 +514,85 @@ class HTMLReportGenerator:
             {pci_items}
         </div>
         """
-    
+
     @staticmethod
     def _render_remediation_queue(priority_findings: List[CorrelatedFinding]) -> str:
         """Render remediation priority queue."""
         if not priority_findings:
             return "<p>No findings require immediate remediation.</p>"
-        
+
         html = []
         for idx, cf in enumerate(priority_findings, 1):
             if isinstance(cf, dict):
-                severity_raw = cf.get('severity', 'MEDIUM')
-                severity_class = (severity_raw.value if hasattr(severity_raw, 'value') else str(severity_raw)).lower()
-                f_type = str(cf.get('title') or cf.get('type', 'UNKNOWN'))
-                location = cf.get('location', '')
-                description = cf.get('description', '')
-                conf_val = cf.get('confidence', 0)
-                conf_pct = int(float(conf_val) * 100) if float(conf_val) <= 1 else int(float(conf_val))
-                remediation = cf.get('remediation') or HTMLReportGenerator._get_remediation(str(cf.get('type', 'UNKNOWN')))
+                severity_raw = cf.get("severity", "MEDIUM")
+                severity_class = (
+                    severity_raw.value
+                    if hasattr(severity_raw, "value")
+                    else str(severity_raw)
+                ).lower()
+                f_type = str(cf.get("title") or cf.get("type", "UNKNOWN"))
+                location = cf.get("location", "")
+                description = cf.get("description", "")
+                conf_val = cf.get("confidence", 0)
+                conf_pct = (
+                    int(float(conf_val) * 100)
+                    if float(conf_val) <= 1
+                    else int(float(conf_val))
+                )
+                remediation = cf.get(
+                    "remediation"
+                ) or HTMLReportGenerator._get_remediation(
+                    str(cf.get("type", "UNKNOWN"))
+                )
                 root_cause = HTMLReportGenerator._get_root_cause(f_type)
                 evidence = cf.get("evidence", "")
                 impact = cf.get("impact") or "Not provided"
                 exploitability = cf.get("exploitability") or "Not provided"
-                verification_steps = cf.get("verification_steps") or "Retest manually with the same payload and endpoint."
+                verification_steps = (
+                    cf.get("verification_steps")
+                    or "Retest manually with the same payload and endpoint."
+                )
                 evidence_file = cf.get("evidence_file", "")
                 evidence_line = cf.get("evidence_line", 0)
-                evidence_ref = f"{evidence_file}:{evidence_line}" if evidence_file and evidence_line else (evidence_file or "n/a")
-                confidence_basis = (cf.get("confidence_basis") or {}).get("reason", "No deterministic confidence basis available")
+                evidence_ref = (
+                    f"{evidence_file}:{evidence_line}"
+                    if evidence_file and evidence_line
+                    else (evidence_file or "n/a")
+                )
+                confidence_basis = (cf.get("confidence_basis") or {}).get(
+                    "reason", "No deterministic confidence basis available"
+                )
                 evidence_details = cf.get("evidence_details") or {}
-                request_line = HTMLReportGenerator._safe_text(evidence_details.get("request")) or "n/a"
-                response_snippet = HTMLReportGenerator._safe_text(evidence_details.get("response_snippet")) or "n/a"
-                status_code = HTMLReportGenerator._safe_text(evidence_details.get("status_code")) or "n/a"
-                evidence_timestamp = HTMLReportGenerator._safe_text(evidence_details.get("timestamp")) or "n/a"
-                tool_source = HTMLReportGenerator._safe_text(evidence_details.get("tool_source")) or "n/a"
-                repro_cmd = HTMLReportGenerator._safe_text(evidence_details.get("reproduction_command")) or "n/a"
-                html.append(f"""
+                request_line = (
+                    HTMLReportGenerator._safe_text(evidence_details.get("request"))
+                    or "n/a"
+                )
+                response_snippet = (
+                    HTMLReportGenerator._safe_text(
+                        evidence_details.get("response_snippet")
+                    )
+                    or "n/a"
+                )
+                status_code = (
+                    HTMLReportGenerator._safe_text(evidence_details.get("status_code"))
+                    or "n/a"
+                )
+                evidence_timestamp = (
+                    HTMLReportGenerator._safe_text(evidence_details.get("timestamp"))
+                    or "n/a"
+                )
+                tool_source = (
+                    HTMLReportGenerator._safe_text(evidence_details.get("tool_source"))
+                    or "n/a"
+                )
+                repro_cmd = (
+                    HTMLReportGenerator._safe_text(
+                        evidence_details.get("reproduction_command")
+                    )
+                    or "n/a"
+                )
+                html.append(
+                    f"""
                 <div class=\"finding-card {severity_class}\">
                     <div class=\"finding-header\">
                         <div class=\"finding-title\">Priority #{idx}: {f_type}</div>
@@ -524,13 +623,15 @@ class HTMLReportGenerator:
                         <strong>Verification Steps:</strong> {verification_steps}
                     </div>
                 </div>
-                """)
+                """
+                )
             else:
                 finding = cf.primary_finding
                 severity_class = finding.severity.value.lower()
                 remediation = HTMLReportGenerator._get_remediation(finding.type.value)
                 root_cause = HTMLReportGenerator._get_root_cause(finding.type.value)
-                html.append(f"""
+                html.append(
+                    f"""
                 <div class=\"finding-card {severity_class}\">
                     <div class=\"finding-header\">
                         <div class=\"finding-title\">Priority #{idx}: {finding.type.value}</div>
@@ -551,9 +652,10 @@ class HTMLReportGenerator:
                         <strong>Remediation:</strong> {remediation}
                     </div>
                 </div>
-                """)
-        
-        return '\n'.join(html)
+                """
+                )
+
+        return "\n".join(html)
 
     @staticmethod
     def _safe_text(value: Any) -> str:
@@ -567,31 +669,35 @@ class HTMLReportGenerator:
     @staticmethod
     def _get_root_cause(finding_type: str) -> str:
         root_cause_map = {
-            'SQLi': 'Unsanitized user input is reaching SQL query construction without strict parameterization.',
-            'XSS': 'Untrusted input is reflected or stored without context-aware output encoding.',
-            'Command Injection': 'User-controlled input is likely passed into shell or command execution contexts.',
-            'SSRF': 'Server-side requests accept attacker-influenced URLs or destinations without allow-list validation.',
-            'Authentication Bypass': 'Authentication/authorization checks can be skipped or are inconsistently applied.',
-            'IDOR': 'Object references are exposed without ownership/authorization validation.',
-            'Information Disclosure': 'Service banners, metadata, or debug/config responses expose internal details.',
-            'Misconfiguration': 'Security hardening controls are absent or weakly configured.',
-            'Weak Cryptography': 'Legacy protocols/ciphers or weak key exchange options remain enabled.',
-            'Outdated Software': 'Software versions with known vulnerabilities remain in deployment.',
+            "SQLi": "Unsanitized user input is reaching SQL query construction without strict parameterization.",
+            "XSS": "Untrusted input is reflected or stored without context-aware output encoding.",
+            "Command Injection": "User-controlled input is likely passed into shell or command execution contexts.",
+            "SSRF": "Server-side requests accept attacker-influenced URLs or destinations without allow-list validation.",
+            "Authentication Bypass": "Authentication/authorization checks can be skipped or are inconsistently applied.",
+            "IDOR": "Object references are exposed without ownership/authorization validation.",
+            "Information Disclosure": "Service banners, metadata, or debug/config responses expose internal details.",
+            "Misconfiguration": "Security hardening controls are absent or weakly configured.",
+            "Weak Cryptography": "Legacy protocols/ciphers or weak key exchange options remain enabled.",
+            "Outdated Software": "Software versions with known vulnerabilities remain in deployment.",
         }
-        return root_cause_map.get(finding_type, 'Security controls are incomplete for this finding category.')
+        return root_cause_map.get(
+            finding_type, "Security controls are incomplete for this finding category."
+        )
 
     @staticmethod
-    def _render_target_intel(target: str, discovery_summary: Optional[Dict[str, Any]]) -> str:
+    def _render_target_intel(
+        target: str, discovery_summary: Optional[Dict[str, Any]]
+    ) -> str:
         discovery_summary = discovery_summary or {}
-        target_ips = discovery_summary.get('target_ips', []) or []
-        tech_stack = discovery_summary.get('tech_stack', {}) or {}
-        os_guess = discovery_summary.get('detected_os') or 'unknown'
+        target_ips = discovery_summary.get("target_ips", []) or []
+        tech_stack = discovery_summary.get("tech_stack", {}) or {}
+        os_guess = discovery_summary.get("detected_os") or "unknown"
 
-        server = tech_stack.get('server', []) or []
-        cms = tech_stack.get('cms', []) or []
-        languages = tech_stack.get('languages', []) or []
-        frameworks = tech_stack.get('frameworks', []) or []
-        javascript = tech_stack.get('javascript', []) or []
+        server = tech_stack.get("server", []) or []
+        cms = tech_stack.get("cms", []) or []
+        languages = tech_stack.get("languages", []) or []
+        frameworks = tech_stack.get("frameworks", []) or []
+        javascript = tech_stack.get("javascript", []) or []
 
         return f"""
         <div class=\"stats-grid\">
@@ -608,23 +714,25 @@ class HTMLReportGenerator:
             <div class=\"tools-list\">{''.join([f'<span class="tool-tag">JS: {x}</span>' for x in javascript]) or '<span class="tool-tag">JS: none detected</span>'}</div>
         </div>
         """
-    
+
     @staticmethod
     def _get_remediation(finding_type: str) -> str:
         """Get remediation guidance for finding type."""
         remediation_map = {
-            'SQLi': 'Use parameterized queries or ORM. Validate and sanitize all user inputs.',
-            'XSS': 'Encode output, implement Content-Security-Policy headers, sanitize inputs.',
-            'Command Injection': 'Avoid shell execution, use libraries with built-in escaping, whitelist inputs.',
-            'SSRF': 'Validate and whitelist URLs, disable unnecessary protocols, use network segmentation.',
-            'Authentication Bypass': 'Implement proper authentication, use framework-provided auth mechanisms.',
-            'IDOR': 'Implement proper authorization checks, use indirect references.',
-            'Information Disclosure': 'Remove sensitive data, disable debug mode, configure proper error handling.',
-            'Misconfiguration': 'Review and harden server configuration, follow security best practices.',
-            'Weak Cryptography': 'Upgrade to TLS 1.2+, disable weak ciphers, renew certificates.',
-            'Outdated Software': 'Update to latest stable version, apply security patches.',
+            "SQLi": "Use parameterized queries or ORM. Validate and sanitize all user inputs.",
+            "XSS": "Encode output, implement Content-Security-Policy headers, sanitize inputs.",
+            "Command Injection": "Avoid shell execution, use libraries with built-in escaping, whitelist inputs.",
+            "SSRF": "Validate and whitelist URLs, disable unnecessary protocols, use network segmentation.",
+            "Authentication Bypass": "Implement proper authentication, use framework-provided auth mechanisms.",
+            "IDOR": "Implement proper authorization checks, use indirect references.",
+            "Information Disclosure": "Remove sensitive data, disable debug mode, configure proper error handling.",
+            "Misconfiguration": "Review and harden server configuration, follow security best practices.",
+            "Weak Cryptography": "Upgrade to TLS 1.2+, disable weak ciphers, renew certificates.",
+            "Outdated Software": "Update to latest stable version, apply security patches.",
         }
-        return remediation_map.get(finding_type, 'Review security best practices for this vulnerability type.')
+        return remediation_map.get(
+            finding_type, "Review security best practices for this vulnerability type."
+        )
 
     @staticmethod
     def _render_vulnerabilities(vuln_report: Optional[Dict[str, Any]]) -> str:
@@ -637,17 +745,20 @@ class HTMLReportGenerator:
         sev_cards = []
         for sev, items in by_sev.items():
             sev_cards.append(
-                f"<div class=\"stat-card\"><div class=\"label\">{sev}</div><div class=\"value\">{len(items)}</div></div>"
+                f'<div class="stat-card"><div class="label">{sev}</div><div class="value">{len(items)}</div></div>'
             )
 
         vuln_cards = []
         for v in vulns:
-            ev = (v.get('evidence') or [])
+            ev = v.get("evidence") or []
             first_ev = ev[0] if ev else {}
             ev_ref = "n/a"
             if first_ev.get("evidence_file") and first_ev.get("evidence_line"):
-                ev_ref = f"{first_ev.get('evidence_file')}:{first_ev.get('evidence_line')}"
-            vuln_cards.append(f"""
+                ev_ref = (
+                    f"{first_ev.get('evidence_file')}:{first_ev.get('evidence_line')}"
+                )
+            vuln_cards.append(
+                f"""
             <div class="finding-card {v.get('severity','').lower()}">
                 <div class="finding-header">
                     <div class="finding-title">{v.get('type','UNKNOWN')} @ {v.get('endpoint','')}</div>
@@ -656,7 +767,8 @@ class HTMLReportGenerator:
                 <div class="finding-meta">Param: {v.get('parameter','-')} • Confidence: {v.get('confidence',0)} ({v.get('confidence_tier','LOW')}) • Verification: {v.get('verification','UNVERIFIED')} • OWASP: {v.get('owasp','n/a')}</div>
                 <div class="finding-description"><strong>Evidence Ref:</strong> {ev_ref}<br><strong>Verification Reason:</strong> {v.get('verification_reason', 'n/a')}</div>
             </div>
-            """)
+            """
+            )
 
         return f"""
         <div class="stats-grid">{''.join(sev_cards)}</div>
@@ -667,7 +779,12 @@ class HTMLReportGenerator:
     def _render_strengths(strengths: List[str]) -> str:
         if not strengths:
             return "<p>No explicit strengths recorded.</p>"
-        rows = ''.join([f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(s)}</span><span><strong>Verified</strong></span></div>" for s in strengths[:12]])
+        rows = "".join(
+            [
+                f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(s)}</span><span><strong>Verified</strong></span></div>"
+                for s in strengths[:12]
+            ]
+        )
         return f"<div class='compliance-card'><h3>Security Strengths</h3>{rows}</div>"
 
     @staticmethod
@@ -682,26 +799,35 @@ class HTMLReportGenerator:
 
         owasp_rows = []
         for owasp, data in per_owasp.items():
-            total = int(data.get('critical', 0)) + int(data.get('high', 0)) + int(data.get('medium', 0)) + int(data.get('low', 0))
+            total = (
+                int(data.get("critical", 0))
+                + int(data.get("high", 0))
+                + int(data.get("medium", 0))
+                + int(data.get("low", 0))
+            )
             owasp_rows.append(
                 f"<div class='compliance-item'><span>{owasp}</span><span><strong>{data.get('critical',0)}/{data.get('high',0)}/{data.get('medium',0)}/{data.get('low',0)} (total {total})</strong></span></div>"
             )
 
         execution_rows = ""
         if execution_quality:
-            execution_rows = "".join([
-                f"<div class='compliance-item'><span>Quality Gap</span><span><strong>{execution_quality.get('has_quality_gap', False)}</strong></span></div>",
-                f"<div class='compliance-item'><span>Risk Floor</span><span><strong>{execution_quality.get('risk_floor', 'LOW')}</strong></span></div>",
-                f"<div class='compliance-item'><span>Blocked Scanner Tools</span><span><strong>{len(execution_quality.get('blocked_scanner_tools', []))}</strong></span></div>",
-                f"<div class='compliance-item'><span>Timed-Out Scanner Tools</span><span><strong>{len(execution_quality.get('timed_out_scanner_tools', []))}</strong></span></div>",
-            ])
+            execution_rows = "".join(
+                [
+                    f"<div class='compliance-item'><span>Quality Gap</span><span><strong>{execution_quality.get('has_quality_gap', False)}</strong></span></div>",
+                    f"<div class='compliance-item'><span>Risk Floor</span><span><strong>{execution_quality.get('risk_floor', 'LOW')}</strong></span></div>",
+                    f"<div class='compliance-item'><span>Blocked Scanner Tools</span><span><strong>{len(execution_quality.get('blocked_scanner_tools', []))}</strong></span></div>",
+                    f"<div class='compliance-item'><span>Timed-Out Scanner Tools</span><span><strong>{len(execution_quality.get('timed_out_scanner_tools', []))}</strong></span></div>",
+                ]
+            )
 
         ssl_rows = ""
         if ssl_consistency:
-            ssl_rows = "".join([
-                f"<div class='compliance-item'><span>SSL Signal Conflict</span><span><strong>{ssl_consistency.get('has_conflict', False)}</strong></span></div>",
-                f"<div class='compliance-item'><span>Conflict Notes</span><span><strong>{len(ssl_consistency.get('conflicts', []))}</strong></span></div>",
-            ])
+            ssl_rows = "".join(
+                [
+                    f"<div class='compliance-item'><span>SSL Signal Conflict</span><span><strong>{ssl_consistency.get('has_conflict', False)}</strong></span></div>",
+                    f"<div class='compliance-item'><span>Conflict Notes</span><span><strong>{len(ssl_consistency.get('conflicts', []))}</strong></span></div>",
+                ]
+            )
 
         return f"""
         <div class="stats-grid">
@@ -733,15 +859,19 @@ class HTMLReportGenerator:
         risk_report = risk_report or {}
         auth_summary = auth_summary or {}
 
-        app_risk = (risk_report.get("application_risk") or {})
+        app_risk = risk_report.get("application_risk") or {}
         risk_rating = str(app_risk.get("risk_rating", "LOW"))
         execution_quality = discovery_summary.get("execution_quality", {}) or {}
-        api_doc_count = int((discovery_summary.get("api_doc_exposure") or {}).get("count", 0) or 0)
+        api_doc_count = int(
+            (discovery_summary.get("api_doc_exposure") or {}).get("count", 0) or 0
+        )
         focus_tracks = discovery_summary.get("service_focus_tracks", []) or []
         auth_roles = len(auth_summary.get("authenticated_roles", []) or [])
 
         posture = "low to moderate"
-        if risk_rating in {"HIGH", "CRITICAL"} or bool(execution_quality.get("has_quality_gap", False)):
+        if risk_rating in {"HIGH", "CRITICAL"} or bool(
+            execution_quality.get("has_quality_gap", False)
+        ):
             posture = "elevated"
 
         next_steps = [
@@ -750,7 +880,9 @@ class HTMLReportGenerator:
             "Prioritize API documentation paths for access-control and schema leakage checks.",
         ]
         if focus_tracks:
-            next_steps.append("Execute dedicated service-track testing on non-standard exposed ports.")
+            next_steps.append(
+                "Execute dedicated service-track testing on non-standard exposed ports."
+            )
 
         return f"""
         <div class="compliance-card">
@@ -771,19 +903,31 @@ class HTMLReportGenerator:
         """
 
     @staticmethod
-    def _render_residual_risk(discovery_summary: Optional[Dict[str, Any]], auth_summary: Optional[Dict[str, Any]]) -> str:
+    def _render_residual_risk(
+        discovery_summary: Optional[Dict[str, Any]],
+        auth_summary: Optional[Dict[str, Any]],
+    ) -> str:
         discovery_summary = discovery_summary or {}
         auth_summary = auth_summary or {}
         residual = list(discovery_summary.get("residual_risks", []) or [])
 
         if int(auth_summary.get("endpoints_tested", 0) or 0) == 0:
-            residual.append("No authenticated endpoint test count recorded in this run.")
+            residual.append(
+                "No authenticated endpoint test count recorded in this run."
+            )
         if not (discovery_summary.get("technical_parameters_list") or []):
             pass
         else:
-            residual.append("Technical metadata parameters were excluded from exploit payload candidates and need manual review only.")
+            residual.append(
+                "Technical metadata parameters were excluded from exploit payload candidates and need manual review only."
+            )
 
-        rows = ''.join([f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(item)}</span></div>" for item in residual[:12]])
+        rows = "".join(
+            [
+                f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(item)}</span></div>"
+                for item in residual[:12]
+            ]
+        )
         return f"""
         <div class="compliance-card">
             <h3>Assessment Boundaries</h3>
@@ -808,7 +952,9 @@ class HTMLReportGenerator:
         blocked_reasons = blocked.get("reasons", {})
         skipped_tools = coverage_report.get("skipped", {}).get("tools", [])
         denied_tools = coverage_report.get("denied", {}).get("tools", [])
-        missing_tools = (coverage_report.get("missing", {}) or {}).get("missing_tools", [])
+        missing_tools = (coverage_report.get("missing", {}) or {}).get(
+            "missing_tools", []
+        )
         manual = coverage_report.get("manual_out_of_scope", {}) or {}
         execution_quality = coverage_report.get("execution_quality", {}) or {}
         ssl_consistency = coverage_report.get("ssl_consistency", {}) or {}
@@ -818,9 +964,18 @@ class HTMLReportGenerator:
                 f"<div class='compliance-item'><span>{tool}</span><span><strong>{blocked_reasons.get(tool, 'unknown')}</strong></span></div>"
             )
 
-        skipped_rows = ''.join([f"<span class='tool-tag mono'>{t}</span>" for t in skipped_tools]) or "<span class='tool-tag'>None</span>"
-        denied_rows = ''.join([f"<span class='tool-tag mono'>{t}</span>" for t in denied_tools]) or "<span class='tool-tag'>None</span>"
-        missing_rows = ''.join([f"<span class='tool-tag mono'>{t}</span>" for t in missing_tools]) or "<span class='tool-tag'>None</span>"
+        skipped_rows = (
+            "".join([f"<span class='tool-tag mono'>{t}</span>" for t in skipped_tools])
+            or "<span class='tool-tag'>None</span>"
+        )
+        denied_rows = (
+            "".join([f"<span class='tool-tag mono'>{t}</span>" for t in denied_tools])
+            or "<span class='tool-tag'>None</span>"
+        )
+        missing_rows = (
+            "".join([f"<span class='tool-tag mono'>{t}</span>" for t in missing_tools])
+            or "<span class='tool-tag'>None</span>"
+        )
 
         unique_counts = manual.get("unique_counts", {}) or {}
         manual_summary = f"""
@@ -882,7 +1037,9 @@ class HTMLReportGenerator:
         js_assets = discovery_summary.get("js_asset_inventory", {}) or {}
         parameter_inventory = discovery_summary.get("parameter_inventory", []) or []
         summary_metrics = discovery_summary.get("summary_metrics", {}) or {}
-        endpoint_confidence_counts = discovery_summary.get("endpoint_confidence_counts", {}) or {}
+        endpoint_confidence_counts = (
+            discovery_summary.get("endpoint_confidence_counts", {}) or {}
+        )
         api_doc_exposure = discovery_summary.get("api_doc_exposure", {}) or {}
         service_focus_tracks = discovery_summary.get("service_focus_tracks", []) or []
 
@@ -890,14 +1047,18 @@ class HTMLReportGenerator:
             values = values or []
             if not values:
                 return f"<span class='tool-tag'>{empty_label}</span>"
-            return ''.join([f"<span class='tool-tag mono'>{v}</span>" for v in values[:100]])
+            return "".join(
+                [f"<span class='tool-tag mono'>{v}</span>" for v in values[:100]]
+            )
 
         def _clickable(url: str) -> str:
             raw = str(url or "")
             if raw.startswith("http"):
                 return f"<a class='mono' href='{raw}' target='_blank'>{raw}</a>"
             if target_host:
-                absolute = f"https://{target_host}{raw if raw.startswith('/') else '/' + raw}"
+                absolute = (
+                    f"https://{target_host}{raw if raw.startswith('/') else '/' + raw}"
+                )
                 return f"<a class='mono' href='{absolute}' target='_blank'>{raw}</a>"
             return f"<span class='mono'>{raw}</span>"
 
@@ -1105,7 +1266,9 @@ class HTMLReportGenerator:
         owasp = findings_summary.get("owasp", {}) or {}
         confirmed_by_type = findings_summary.get("confirmed_by_type", {}) or {}
         owasp_rows = []
-        for category, count in sorted(owasp.items(), key=lambda item: (-item[1], item[0]))[:10]:
+        for category, count in sorted(
+            owasp.items(), key=lambda item: (-item[1], item[0])
+        )[:10]:
             owasp_rows.append(
                 f"<div class='compliance-item'><span>{category}</span><span><strong>{count}</strong></span></div>"
             )
@@ -1135,14 +1298,18 @@ class HTMLReportGenerator:
         authenticated_roles = summary.get("authenticated_roles", []) or []
         errors = summary.get("errors", []) or []
 
-        role_tags = ''.join([f"<span class='tool-tag mono'>{r}</span>" for r in authenticated_roles])
+        role_tags = "".join(
+            [f"<span class='tool-tag mono'>{r}</span>" for r in authenticated_roles]
+        )
         if not role_tags:
             role_tags = "<span class='tool-tag'>No authenticated roles</span>"
 
-        error_rows = ''.join([
-            f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(err)}</span></div>"
-            for err in errors[:10]
-        ])
+        error_rows = "".join(
+            [
+                f"<div class='compliance-item'><span>{HTMLReportGenerator._safe_text(err)}</span></div>"
+                for err in errors[:10]
+            ]
+        )
 
         return f"""
         <div class="stats-grid">
@@ -1160,13 +1327,15 @@ class HTMLReportGenerator:
             {error_rows or '<p>No errors recorded.</p>'}
         </div>
         """
-    
+
     @staticmethod
-    def _render_confirmed_exploitation(confirmed_exploitation: Optional[Dict[str, Any]]) -> str:
+    def _render_confirmed_exploitation(
+        confirmed_exploitation: Optional[Dict[str, Any]],
+    ) -> str:
         """Render Phase 5 confirmed active exploitation findings."""
         if not confirmed_exploitation:
             return "<p>No confirmed exploitations detected.</p>"
-        
+
         summary = confirmed_exploitation.get("summary", {})
         total = summary.get("total_confirmed", 0)
         tested = summary.get("tested_vectors", 0)
@@ -1175,7 +1344,7 @@ class HTMLReportGenerator:
         discarded_patterns = summary.get("discarded_false_positive_patterns", 0)
         severity_breakdown = summary.get("by_severity", {})
         by_type = summary.get("by_type", {})
-        
+
         # Build summary cards
         summary_html = f"""
         <div class="stats-grid">
@@ -1187,7 +1356,7 @@ class HTMLReportGenerator:
             <div class="stat-card"><div class="label">Confirmed SQLi/SSRF/XSS</div><div class="value">{by_type.get('SQLi', 0)}/{by_type.get('SSRF', 0)}/{by_type.get('XSS', 0)}</div></div>
         </div>
         """
-        
+
         # Build findings cards
         findings_html = ""
         findings_list = confirmed_exploitation.get("findings", [])
@@ -1197,18 +1366,29 @@ class HTMLReportGenerator:
             endpoint = finding.get("endpoint", "?")
             param = finding.get("parameter", "?")
             sources = finding.get("discovery_sources", []) or ["unknown"]
-            proof = finding.get("proof", {}) if isinstance(finding.get("proof"), dict) else {}
-            confidence = int(float(proof.get("confidence", finding.get("confidence", 0)) or 0.0) * 100)
+            proof = (
+                finding.get("proof", {})
+                if isinstance(finding.get("proof"), dict)
+                else {}
+            )
+            confidence = int(
+                float(proof.get("confidence", finding.get("confidence", 0)) or 0.0)
+                * 100
+            )
             proof_type = proof.get("method", finding.get("proof_type", "response_diff"))
             attack_mode = finding.get("attack_mode", "n/a")
-            confidence_basis = (finding.get("confidence_basis") or {}).get("reason", "n/a")
+            confidence_basis = (finding.get("confidence_basis") or {}).get(
+                "reason", "n/a"
+            )
 
             endpoint_link = endpoint
             if isinstance(endpoint, str) and endpoint.startswith("http"):
-                endpoint_link = f"<a class='mono' href='{endpoint}' target='_blank'>{endpoint}</a>"
+                endpoint_link = (
+                    f"<a class='mono' href='{endpoint}' target='_blank'>{endpoint}</a>"
+                )
             elif isinstance(endpoint, str) and endpoint.startswith("/"):
                 endpoint_link = f"<span class='mono'>{endpoint}</span>"
-            
+
             findings_html += f"""
             <div class="finding-card {severity}">
                 <div class="finding-header">
@@ -1227,15 +1407,19 @@ class HTMLReportGenerator:
                 </div>
             </div>
             """
-        
-        return summary_html + findings_html if findings_html else summary_html + "<p>No detailed exploitation findings available.</p>"
-    
+
+        return (
+            summary_html + findings_html
+            if findings_html
+            else summary_html + "<p>No detailed exploitation findings available.</p>"
+        )
+
     @staticmethod
     def _render_service_fingerprints(fingerprints: List[Dict[str, Any]]) -> str:
         """Render service fingerprinting results."""
         if not fingerprints:
             return "<p>No service fingerprints detected.</p>"
-        
+
         rows = []
         for fp in fingerprints:
             host = fp.get("host", "?")
@@ -1245,10 +1429,13 @@ class HTMLReportGenerator:
             version = fp.get("version", "unknown")
             tech_stack = fp.get("technology_stack", []) or []
             confidence = int(fp.get("confidence", 0) * 100)
-            
-            tech_html = "".join(f'<span class="tool-tag">{t}</span>' for t in tech_stack[:3])
-            
-            rows.append(f"""
+
+            tech_html = "".join(
+                f'<span class="tool-tag">{t}</span>' for t in tech_stack[:3]
+            )
+
+            rows.append(
+                f"""
             <tr>
                 <td><strong>{host}:{port}</strong></td>
                 <td>{protocol}/{service}</td>
@@ -1256,8 +1443,9 @@ class HTMLReportGenerator:
                 <td>{tech_html}</td>
                 <td><strong>{confidence}%</strong></td>
             </tr>
-            """)
-        
+            """
+            )
+
         return f"""
         <div class="chart-container">
             <table style="width: 100%; border-collapse: collapse;">
@@ -1294,7 +1482,8 @@ class HTMLReportGenerator:
             days_left = cert.get("days_until_expiry", "n/a")
             issuer = cert.get("issuer", "n/a")
 
-            rows.append(f"""
+            rows.append(
+                f"""
             <tr>
                 <td><strong>{host}:{port}</strong></td>
                 <td>{status}</td>
@@ -1304,7 +1493,8 @@ class HTMLReportGenerator:
                 <td>{expires_at}</td>
                 <td>{issuer}</td>
             </tr>
-            """)
+            """
+            )
 
         return f"""
         <div class="chart-container">
@@ -1337,11 +1527,15 @@ class HTMLReportGenerator:
         for row in host_rows:
             host = row.get("host", "?")
             ports = row.get("open_ports", []) or []
-            port_tags = ''.join([f"<span class='tool-tag mono'>{p}</span>" for p in ports]) or "<span class='tool-tag'>No open common ports</span>"
+            port_tags = (
+                "".join([f"<span class='tool-tag mono'>{p}</span>" for p in ports])
+                or "<span class='tool-tag'>No open common ports</span>"
+            )
             fp_count = len(row.get("fingerprints", []) or [])
             cert_count = len(row.get("certificate_checks", []) or [])
 
-            cards.append(f"""
+            cards.append(
+                f"""
             <div class="compliance-card" style="margin-bottom:12px;">
                 <h3>{host}</h3>
                 <div class="compliance-item"><span>Service Fingerprints</span><span><strong>{fp_count}</strong></span></div>
@@ -1349,23 +1543,25 @@ class HTMLReportGenerator:
                 <div style="margin-top:8px;"><strong>Open Ports:</strong></div>
                 <div class="tools-list" style="margin-top:6px;">{port_tags}</div>
             </div>
-            """)
+            """
+            )
 
-        return ''.join(cards)
-    
+        return "".join(cards)
+
     @staticmethod
     def _render_prioritized_subdomains(subdomains: List[Dict[str, Any]]) -> str:
         """Render subdomain prioritization results."""
         if not subdomains:
             return "<p>No prioritized subdomains detected.</p>"
-        
+
         rows = []
         for idx, subdomain in enumerate(subdomains[:15], 1):  # Show top 15
             name = subdomain.get("subdomain", "?")
             score = float(subdomain.get("score", 0))
             param_count = subdomain.get("parameter_count", 0)
-            
-            rows.append(f"""
+
+            rows.append(
+                f"""
             <div class="finding-card low" style="margin-bottom: 10px;">
                 <div class="finding-header">
                     <div class="finding-title">#{idx}. {name}</div>
@@ -1376,6 +1572,11 @@ class HTMLReportGenerator:
                     <strong>Prioritization Score:</strong> {score:.1f}/100.0 (40% exposure + 25% params + 20% tech + 15% ports)
                 </div>
             </div>
-            """)
-        
-        return "".join(rows) if rows else "<p>No subdomain prioritization data available.</p>"
+            """
+            )
+
+        return (
+            "".join(rows)
+            if rows
+            else "<p>No subdomain prioritization data available.</p>"
+        )

@@ -1,8 +1,8 @@
 # Crawler Integration Guide
 
-**Status**: New capability (Stateful crawling layer)  
-**Added**: January 2026  
-**Purpose**: Discover endpoints, parameters, forms → gate payload tools  
+**Status**: New capability (Stateful crawling layer)
+**Added**: January 2026
+**Purpose**: Discover endpoints, parameters, forms → gate payload tools
 **Constraint**: No modifications to core automation_scanner_v2.py (yet)
 
 ---
@@ -76,7 +76,7 @@ if crawler.is_available():
         params = crawler.get_unique_parameters()
 ```
 
-**Pros**: Full JS rendering, comprehensive crawl  
+**Pros**: Full JS rendering, comprehensive crawl
 **Cons**: Requires Go + Katana install, slower (30+ seconds)
 
 ---
@@ -101,7 +101,7 @@ if crawler.crawl():
     # Returns same format as KatanaCrawler for compatibility
 ```
 
-**Pros**: No external dependencies, fast (~1-2 seconds), works immediately  
+**Pros**: No external dependencies, fast (~1-2 seconds), works immediately
 **Cons**: No JS rendering, regex-based (less accurate but sufficient for gating)
 
 **Test Results** (dev-erp.sisschools.org):
@@ -220,7 +220,7 @@ if success:
     # - crawler_type: "katana" or "light"
     # - parameter_count, reflection_count, form_count
     # - Tool-specific gating decisions
-    
+
     should_xss = crawler_int.get_gating_decision("xsstrike")
     should_sql = crawler_int.get_gating_decision("sqlmap")
 ```
@@ -257,7 +257,7 @@ if self.target_profile.is_web():
         depth=2
     )
     success, gating_signals = crawler_int.run()
-    
+
     # Store gating signals
     self.crawl_gating = gating_signals
 ```
@@ -281,12 +281,12 @@ class DecisionLedger:
         # ... existing code
         self.crawler_integration = None
         self.crawl_gating = None
-    
+
     def gate_on_crawl_results(self, crawler_int):
         """Update allow/block based on crawl signals"""
         success, gating = crawler_int.run()
         self.crawl_gating = gating
-        
+
         # Conditional rules
         if gating['reflection_count'] > 0:
             self.ALLOW['xsstrike'] = True
@@ -294,7 +294,7 @@ class DecisionLedger:
         else:
             self.BLOCK['xsstrike'] = "No reflectable params found"
             self.BLOCK['dalfox'] = "No reflectable params found"
-        
+
         if gating['parameter_count'] > 0:
             self.ALLOW['sqlmap'] = True
             self.ALLOW['commix'] = True
@@ -358,12 +358,12 @@ if crawler.crawl():
 
 ## Current State
 
-✅ Crawler wrapper (katana_crawler.py) - Fully functional  
-✅ Light crawler (light_crawler.py) - Fully functional (NEW)  
-✅ Parser (crawl_parser.py) - Reflection detection, gating signals  
-✅ Integration layer (crawler_integration.py) - Hybrid orchestration with fallback  
-✅ Tested on real target (dev-erp.sisschools.org) - 20 endpoints, 5 params discovered  
-❌ Wired into automation_scanner_v2.py - Pending (no core code mod yet)  
-❌ Decision ledger gating - Documented, not implemented  
+✅ Crawler wrapper (katana_crawler.py) - Fully functional
+✅ Light crawler (light_crawler.py) - Fully functional (NEW)
+✅ Parser (crawl_parser.py) - Reflection detection, gating signals
+✅ Integration layer (crawler_integration.py) - Hybrid orchestration with fallback
+✅ Tested on real target (dev-erp.sisschools.org) - 20 endpoints, 5 params discovered
+❌ Wired into automation_scanner_v2.py - Pending (no core code mod yet)
+❌ Decision ledger gating - Documented, not implemented
 
 **Next**: Decide on integration approach (Option A vs B) or run standalone tests

@@ -36,9 +36,9 @@ QUICK START
 ===========
 
 1. CONFIGURE AUTHENTICATION
-   
+
    Edit auth_config/auth_config.json:
-   
+
    {
      "authentication_engines": [
        {
@@ -65,7 +65,7 @@ QUICK START
    from auth_utils.param_extractor import ParameterExtractor
    from auth_utils.response_analyzer import ResponseAnalyzer
    from modules.idor_engine import IDOREngine
-   
+
    async with RequestEngine() as request_engine:
        auth_engine = AuthEngine(request_engine)
        idor_engine = IDOREngine(
@@ -116,7 +116,7 @@ SESSION MANAGEMENT
 ------------------
 
 Each role maintains isolated session:
-  
+
   SessionData per role contains:
   ├── Cookies (if cookie-based auth)
   ├── Headers (including Authorization)
@@ -216,7 +216,7 @@ async def main():
     orchestrator = AuthenticationAndIDOROrchestrator(
         target_url="https://api.example.com"
     )
-    
+
     await orchestrator.run_full_assessment(
         config_path="auth_config/auth_config.json",
         endpoints=[
@@ -262,25 +262,25 @@ CUSTOMIZATION
 =============
 
 1. ADD CUSTOM MUTATION STRATEGY:
-   
+
    class IDOREngine:
        def _generate_mutations(self, param):
            mutations.append(MutationStrategy.CUSTOM)
-           
+
        def _mutate_value(self, value, strategy):
            if strategy == MutationStrategy.CUSTOM:
                return your_custom_mutation(value)
 
 2. ADD CUSTOM SENSITIVE FIELD:
-   
+
    ResponseAnalyzer.SENSITIVE_FIELD_NAMES["your_field"] = SensitivityLevel.HIGH
 
 3. ADD CUSTOM ENDPOINT:
-   
+
    AccessControlEngine.ADMIN_ENDPOINTS.append("/your/admin/path")
 
 4. ADD CUSTOM AUTH TYPE:
-   
+
    AuthType.OAUTH2 = "oauth2"
    AuthEngine._handle_oauth2(role, config, session)
 

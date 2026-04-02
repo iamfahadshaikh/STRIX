@@ -14,9 +14,9 @@ cat << 'EOF'
 
 1. CHECK & INSTALL TOOLS (No target required)
    ─────────────────────────────────────────────
-   
+
    $ python3 automation_scanner_v2.py --check-tools
-   
+
    • Lists all 29 security tools
    • Shows installation status (✅ or ❌)
    • No scanning - just tool verification
@@ -25,11 +25,11 @@ cat << 'EOF'
 
 2. SCAN TARGET (Requires target)
    ───────────────────────────────
-   
+
    $ python3 automation_scanner_v2.py treadbinary.com
    $ python3 automation_scanner_v2.py https://example.com
    $ python3 automation_scanner_v2.py 192.168.1.1
-   
+
    • Runs full security assessment
    • 4 phases: Discovery → Crawler → Payloads → Report
    • Saves results to scan_results_<target>_<timestamp>/
@@ -37,9 +37,9 @@ cat << 'EOF'
 
 3. SCAN WITH AUTO-INSTALL (Requires target)
    ──────────────────────────────────────────
-   
+
    $ python3 automation_scanner_v2.py treadbinary.com --install-missing
-   
+
    • Auto-installs any missing tools
    • Then scans the target
    • No prompts - fully automated
@@ -47,9 +47,9 @@ cat << 'EOF'
 
 4. SCAN WITH INTERACTIVE INSTALL (Requires target)
    ────────────────────────────────────────────────
-   
+
    $ python3 automation_scanner_v2.py treadbinary.com --install-interactive
-   
+
    • Shows all tools and installation status
    • Prompts: "Install <tool>? [y/n]"
    • Then scans the target
@@ -64,7 +64,7 @@ cat << 'EOF'
   Usage:   python3 automation_scanner_v2.py --check-tools
   Target:  Optional (not used)
   Output:  Tool list with installation status
-  
+
   Output example:
     ✅ nuclei - Fast vulnerability scanner [INSTALLED]
     ❌ arjun - HTTP parameter discovery [MISSING]
@@ -77,7 +77,7 @@ cat << 'EOF'
   Behavior:
     • Without target: Install tools and exit
     • With target: Install tools, then scan target
-  
+
   Examples:
     python3 automation_scanner_v2.py --install-missing
     python3 automation_scanner_v2.py example.com --install-missing
@@ -89,12 +89,12 @@ cat << 'EOF'
   Behavior:
     • Without target: Show tools, prompt for each, exit
     • With target: Show tools, prompt for each, then scan
-  
+
   Prompts: "Install <tool>? [y/n/s]"
     y = yes, install this tool
     n = no, skip this tool
     s = skip all remaining tools
-  
+
   Examples:
     python3 automation_scanner_v2.py --install-interactive
     python3 automation_scanner_v2.py example.com --install-interactive

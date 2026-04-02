@@ -314,7 +314,7 @@ class Phase2IntegrationHelper:
         self.discovery = APIDiscovery(base_url=target)
         self.auth = AuthAdapter(base_url=target)
         self.risk_engine = RiskEngine()
-        
+
     def process_tool_report(self, report: Dict):
         # Called by automation_scanner_v2 after each tool
         self.correlator.add_report(

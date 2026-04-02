@@ -100,7 +100,7 @@ discovery.feed_to_graph(self.graph)
 # Process tool findings
 for tool_report in tool_results:
     correlator.add_report(tool=..., endpoint=..., ...)
-    
+
 # Risk score before final report
 for finding in correlator.get_findings():
     risk = risk_engine.calculate_risk(...)

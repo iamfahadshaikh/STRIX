@@ -12,7 +12,7 @@ This exists to prevent scope confusion and set realistic expectations.
 
 ```
 Input:  domain.com
-Output: 
+Output:
   - DNS records (A, NS, MX, SOA)
   - Subdomains (300-500 discovered)
   - Open ports (TCP/UDP scan)
@@ -187,7 +187,7 @@ Result:
 ```
 Example:
   GET /admin/dashboard → 401 Unauthorized (without session)
-  
+
 With authentication:
   - Lots of new endpoints available
   - New parameters to test
@@ -202,7 +202,7 @@ We: Skip everything behind auth (by design)
 Example: React SPA
   <div id="app"></div>
   <script src="/bundle.js"></script>
-  
+
 Without JS execution:
   - We see: /index.html
   - We DON'T see: /api/data, /api/users, internal routes
@@ -280,13 +280,13 @@ Without Crawling (Today):
   - Endpoints: 10% (only public/obvious)
   - Parameters: 5% (only in URLs/forms we find passively)
   - Vulnerabilities found: 15% of real attack surface
-  
+
 With Crawling (Phase 2):
   - Discovery: 90% (same)
   - Endpoints: 80% (crawling finds 95%+, some hidden)
   - Parameters: 70% (from forms, hidden params, APIs)
   - Vulnerabilities found: 60-70% of real attack surface
-  
+
 After Auth + Advanced (Phase 5):
   - Coverage: 85%+
 ```
@@ -334,4 +334,3 @@ But we're not stopping there.
 
 Crawling is coming.
 Then this tool becomes what you imagined.
-
