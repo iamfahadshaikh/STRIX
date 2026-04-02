@@ -1,0 +1,2289 @@
+check yaml...............................................................Passed
+check json...............................................................Passed
+check toml...........................................(no files to check)Skipped
+fix end of files.........................................................Passed
+trim trailing whitespace.................................................Passed
+detect private key.......................................................Passed
+check for added large files..............................................Passed
+black....................................................................Failed
+- hook id: black
+- exit code: 123
+- files were modified by this hook
+
+error: cannot format Documentations/INTEGRATION_INSTRUCTIONS.py: Cannot parse: 36:0:         self.discovery_evaluator = None  # Initialized after discovery phase
+error: cannot format automation_scanner_v2.py.corrupt: unindent does not match any outer indentation level (<tokenize>, line 177)
+error: cannot format automation_scanner_v2.py.head: Cannot parse: 303:0: EOF in multi-line statement
+reformatted crawler_mandatory_gate.py
+reformatted auth_adapter.py
+reformatted risk_aggregation.py
+reformatted vulnerability_centric_reporter.py
+
+Oh no! 💥 💔 💥
+4 files reformatted, 85 files left unchanged, 3 files failed to reformat.
+
+isort....................................................................Failed
+- hook id: isort
+- files were modified by this hook
+
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/Documentations/test_phase1_4_integration.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/Documentations/test_phase3_components.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/Documentations/test_phase4_components.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/automation_scanner_v2.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/gating_loop.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/modules/auth_engine.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/modules/idor_engine.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/response_diff_engine.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/service_fingerprinter.py
+Fixing /mnt/c/Users/FahadShaikh/Downloads/Desktop Folder/something/VAPT-Automated-Engine/test_auth_idor_engine.py
+
+ruff.....................................................................Failed
+- hook id: ruff
+- exit code: 1
+
+error: Failed to parse automation_scanner_v2.py.head:303:1: unexpected EOF while parsing
+error: Failed to parse automation_scanner_v2.py.corrupt:177:1: unindent does not match any outer indentation level
+error: Failed to parse Documentations/INTEGRATION_INSTRUCTIONS.py:36:1: Unexpected indentation
+Documentations/INTEGRATION_INSTRUCTIONS.py:36:1: E999 SyntaxError: Unexpected indentation
+Documentations/test_integration.py:7:28: F401 [*] `target_profile.TargetProfile` imported but unused
+Documentations/test_integration.py:17:24: F821 Undefined name `TargetType`
+Documentations/test_integration.py:17:48: F821 Undefined name `TargetScope`
+Documentations/test_integration.py:18:29: F821 Undefined name `TargetType`
+Documentations/test_integration.py:18:51: F821 Undefined name `TargetScope`
+Documentations/test_integration.py:19:21: F821 Undefined name `TargetType`
+Documentations/test_integration.py:19:44: F821 Undefined name `TargetScope`
+Documentations/test_integration.py:22:13: F821 Undefined name `TargetType`
+Documentations/test_integration.py:23:13: F821 Undefined name `TargetScope`
+Documentations/test_integration.py:28:22: F821 Undefined name `TargetClassifierBuilder`
+Documentations/test_integration.py:29:19: F821 Undefined name `ScanContext`
+Documentations/test_integration.py:42:15: F541 [*] f-string without any placeholders
+Documentations/test_integration.py:57:18: F821 Undefined name `TargetClassifierBuilder`
+Documentations/test_integration.py:58:15: F821 Undefined name `ScanContext`
+Documentations/test_integration.py:64:12: E712 Avoid equality comparisons to `True`; use `if context.should_run_dns():` for truth checks
+Documentations/test_integration.py:65:12: E712 Avoid equality comparisons to `True`; use `if context.should_run_subdomain_enum():` for truth checks
+Documentations/test_integration.py:70:18: F821 Undefined name `TargetClassifierBuilder`
+Documentations/test_integration.py:71:15: F821 Undefined name `ScanContext`
+Documentations/test_integration.py:77:12: E712 Avoid equality comparisons to `False`; use `if not context.should_run_dns():` for false checks
+Documentations/test_integration.py:78:12: E712 Avoid equality comparisons to `False`; use `if not context.should_run_subdomain_enum():` for false checks
+Documentations/test_integration.py:83:18: F821 Undefined name `TargetClassifierBuilder`
+Documentations/test_integration.py:84:15: F821 Undefined name `ScanContext`
+Documentations/test_integration.py:90:12: E712 Avoid equality comparisons to `False`; use `if not context.should_run_dns():` for false checks
+Documentations/test_integration.py:91:12: E712 Avoid equality comparisons to `False`; use `if not context.should_run_subdomain_enum():` for false checks
+Documentations/test_integration.py:105:18: F821 Undefined name `TargetClassifierBuilder`
+Documentations/test_integration.py:106:15: F821 Undefined name `ScanContext`
+Documentations/test_integration.py:113:12: E712 Avoid equality comparisons to `False`; use `if not context.should_run_wordpress_tools():` for false checks
+Documentations/test_integration.py:122:12: E712 Avoid equality comparisons to `True`; use `if context.should_run_wordpress_tools():` for truth checks
+Documentations/test_integration.py:126:18: F821 Undefined name `TargetClassifierBuilder`
+Documentations/test_integration.py:127:15: F821 Undefined name `ScanContext`
+Documentations/test_integration.py:131:12: E712 Avoid equality comparisons to `False`; use `if not context.should_run_xss_tools():` for false checks
+Documentations/test_integration.py:137:12: E712 Avoid equality comparisons to `True`; use `if context.should_run_xss_tools():` for truth checks
+Documentations/test_integration.py:141:18: F821 Undefined name `TargetClassifierBuilder`
+Documentations/test_integration.py:142:15: F821 Undefined name `ScanContext`
+Documentations/test_integration.py:146:12: E712 Avoid equality comparisons to `False`; use `if not context.should_run_sqlmap():` for false checks
+Documentations/test_integration.py:152:12: E712 Avoid equality comparisons to `True`; use `if context.should_run_sqlmap():` for truth checks
+Documentations/test_phase1_4_integration.py:19:47: F401 `discovery_classification.DISCOVERY_TOOLS` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:20:47: F401 `discovery_classification.get_tool_contract` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:21:47: F401 `discovery_classification.is_signal_producer` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:25:45: F401 `discovery_completeness.CompletenessReport` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:26:45: F401 `discovery_completeness.DiscoveryCompletenessEvaluator` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:30:39: F401 `payload_strategy.PayloadReadinessGate` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:30:61: F401 `payload_strategy.PayloadStrategy` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:31:39: F401 `payload_strategy.PayloadType` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:35:36: F401 `owasp_mapping.OWASPCategory` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:35:51: F401 `owasp_mapping.get_owasp_description` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:36:36: F401 `owasp_mapping.map_to_owasp` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:40:42: F401 `enhanced_confidence.ConfidenceFactors` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:41:42: F401 `enhanced_confidence.EnhancedConfidenceEngine` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:45:42: F401 `deduplication_engine.DeduplicationEngine` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:45:63: F401 `deduplication_engine.DuplicateGroup` imported but unused; consider using `importlib.util.find_spec` to test for availability
+Documentations/test_phase1_4_integration.py:74:9: E712 Avoid equality comparisons to `True`; use `if is_signal_producer("nmap_quick"):` for truth checks
+Documentations/test_phase1_4_integration.py:77:9: E712 Avoid equality comparisons to `False`; use `if not is_signal_producer("gobuster"):` for false checks
+Documentations/test_phase1_4_integration.py:119:11: F541 [*] f-string without any placeholders
+Documentations/test_phase2.py:14:8: F401 [*] `json` imported but unused
+Documentations/test_phase2.py:16:20: F401 [*] `typing.List` imported but unused
+Documentations/test_phase2.py:20:43: F401 [*] `endpoint_graph.ParameterSource` imported but unused
+Documentations/test_phase2.py:101:19: F541 [*] f-string without any placeholders
+Documentations/test_phase2.py:263:19: F541 [*] f-string without any placeholders
+Documentations/test_phase2.py:282:41: F401 [*] `phase2_pipeline.Phase2Pipeline` imported but unused
+Documentations/test_phase2.py:298:44: F401 [*] `phase2_integration.Phase2IntegrationHelper` imported but unused
+Documentations/test_phase2_validation.py:130:12: E712 Avoid equality comparisons to `True`; use `if report["crawler_succeeded"]:` for truth checks
+Documentations/test_phase2_validation.py:161:9: E712 Avoid equality comparisons to `True`; use `if graph.get_parameter("search").reflectable:` for truth checks
+Documentations/test_phase2_validation.py:164:9: E712 Avoid equality comparisons to `True`; use `if graph.get_parameter("cmd").injectable_cmd:` for truth checks
+Documentations/test_phase2_validation.py:167:9: E712 Avoid equality comparisons to `True`; use `if graph.get_parameter("user_id").injectable_sql:` for truth checks
+Documentations/test_phase3_components.py:8:8: F401 [*] `json` imported but unused
+Documentations/test_phase3_components.py:16:41: F401 [*] `api_discovery.APIEndpoint` imported but unused
+Documentations/test_phase3_components.py:16:54: F401 [*] `api_discovery.APISchema` imported but unused
+Documentations/test_phase3_components.py:17:39: F401 [*] `auth_adapter.AuthenticatedFinding` imported but unused
+Documentations/test_phase3_components.py:18:33: F401 [*] `finding_correlator.CorrelatedFinding` imported but unused
+Documentations/test_phase3_components.py:19:52: F401 [*] `finding_correlator.ToolReport` imported but unused
+Documentations/test_phase3_components.py:20:26: F401 [*] `risk_engine.ImpactCategory` imported but unused
+Documentations/test_phase3_components.py:21:26: F401 [*] `risk_engine.RiskSeverity` imported but unused
+Documentations/test_phase3_components.py:594:9: F841 Local variable `low` is assigned to but never used
+Documentations/test_phase4_components.py:14:8: F401 [*] `json` imported but unused
+Documentations/test_phase4_components.py:15:8: F401 [*] `os` imported but unused
+Documentations/test_phase4_components.py:16:8: F401 [*] `tempfile` imported but unused
+Documentations/test_phase4_components.py:21:32: F401 [*] `engine_resilience.CheckpointManager` imported but unused
+Documentations/test_phase4_components.py:24:32: F401 [*] `regression_engine.DeltaReport` imported but unused
+Documentations/test_phase4_components.py:26:46: F401 [*] `risk_aggregation.RiskLevel` imported but unused
+Documentations/test_phase4_components.py:27:27: F401 [*] `scan_profiles.ProfileType` imported but unused
+Documentations/test_phase4_components.py:29:30: F401 [*] `traffic_capture.HTTPExchange` imported but unused
+Documentations/test_phase4_components.py:29:44: F401 [*] `traffic_capture.HTTPRequest` imported but unused
+Documentations/test_phase4_components.py:29:57: F401 [*] `traffic_capture.HTTPResponse` imported but unused
+adaptive_fuzzing_engine.py:10:32: F401 [*] `typing.Optional` imported but unused
+api_discovery.py:16:8: F401 [*] `re` imported but unused
+api_discovery.py:18:42: F401 [*] `typing.Tuple` imported but unused
+api_discovery.py:19:35: F401 [*] `urllib.parse.urlparse` imported but unused
+api_schema_importer.py:3:8: F401 [*] `json` imported but unused
+architecture_guards.py:115:17: F841 Local variable `original_input` is assigned to but never used
+architecture_guards.py:146:9: F841 Local variable `target_type_str` is assigned to but never used
+auth_adapter.py:21:8: F401 [*] `requests` imported but unused
+auth_idor_orchestrator.py:15:44: F401 [*] `core.session_manager.SessionManager` imported but unused
+auth_idor_orchestrator.py:16:28: F401 [*] `findings_model.Finding` imported but unused
+auth_idor_orchestrator.py:16:55: F401 [*] `findings_model.Severity` imported but unused
+auth_utils/param_extractor.py:12:37: F401 [*] `typing.Optional` imported but unused
+auth_utils/param_extractor.py:12:47: F401 [*] `typing.Set` imported but unused
+auth_utils/response_analyzer.py:7:8: F401 [*] `difflib` imported but unused
+auth_utils/response_analyzer.py:13:47: F401 [*] `typing.Tuple` imported but unused
+automation_scanner_v2.py:14:32: F401 [*] `concurrent.futures.ThreadPoolExecutor` imported but unused
+automation_scanner_v2.py:14:52: F401 [*] `concurrent.futures.as_completed` imported but unused
+automation_scanner_v2.py:18:47: F401 [*] `typing.Tuple` imported but unused
+automation_scanner_v2.py:31:55: F401 [*] `decision_ledger.DecisionLedger` imported but unused
+automation_scanner_v2.py:33:38: F401 [*] `discovery_classification.get_tool_contract` imported but unused
+automation_scanner_v2.py:33:57: F401 [*] `discovery_classification.is_signal_producer` imported but unused
+automation_scanner_v2.py:38:38: F401 [*] `discovery_signal_parser.DiscoverySignalParser` imported but unused
+automation_scanner_v2.py:47:25: F401 [*] `gating_loop.GatingLoopOrchestrator` imported but unused
+automation_scanner_v2.py:57:27: F401 [*] `owasp_mapping.OWASPCategory` imported but unused
+automation_scanner_v2.py:57:42: F811 Redefinition of unused `map_to_owasp` from line 46
+automation_scanner_v2.py:59:33: F401 [*] `param_intelligence.filter_high_confidence` imported but unused
+automation_scanner_v2.py:64:30: F401 [*] `payload_strategy.PayloadReadinessGate` imported but unused
+automation_scanner_v2.py:79:43: F401 [*] `target_profile.TargetType` imported but unused
+automation_scanner_v2.py:82:31: F401 [*] `validation_engine.validate_finding_proof` imported but unused
+automation_scanner_v2.py:3730:9: F841 Local variable `f_type` is assigned to but never used
+automation_scanner_v2.py:3732:9: F841 Local variable `tool` is assigned to but never used
+automation_scanner_v2.py:4075:22: F541 [*] f-string without any placeholders
+automation_scanner_v2.py:4129:26: F541 [*] f-string without any placeholders
+automation_scanner_v2.py:4638:17: E722 Do not use bare `except`
+automation_scanner_v2.py:5989:22: F541 [*] f-string without any placeholders
+automation_scanner_v2.py.corrupt:177:1: E999 SyntaxError: unindent does not match any outer indentation level
+automation_scanner_v2.py.head:303:1: E999 SyntaxError: unexpected EOF while parsing
+ci_integration.py:16:8: F401 [*] `sys` imported but unused
+ci_integration.py:20:42: F401 [*] `typing.Tuple` imported but unused
+ci_integration.py:94:15: F541 [*] f-string without any placeholders
+core/request_engine.py:12:20: F401 [*] `typing.Any` imported but unused
+core/request_engine.py:12:41: F401 [*] `typing.Tuple` imported but unused
+crawl_adapter.py:7:8: F401 [*] `json` imported but unused
+crawl_adapter.py:12:26: F401 [*] `crawl_parser.CrawlParser` imported but unused
+crawl_parser.py:9:32: F401 [*] `typing.Optional` imported but unused
+crawl_parser.py:10:26: F401 [*] `urllib.parse.parse_qs` imported but unused
+crawl_parser.py:10:36: F401 [*] `urllib.parse.urlparse` imported but unused
+crawler_integration.py:410:9: E722 Do not use bare `except`
+decision_ledger.py:16:32: F401 [*] `typing.Optional` imported but unused
+decision_ledger.py:309:30: F541 [*] f-string without any placeholders
+discovery_classification.py:178:5: F811 Redefinition of unused `get_tool_contract` from line 173
+discovery_classification.py:184:5: F821 Undefined name `logger`
+discovery_completeness.py:8:32: F401 [*] `typing.Tuple` imported but unused
+discovery_completeness.py:215:25: F541 [*] f-string without any placeholders
+discovery_completeness.py:224:17: F541 [*] f-string without any placeholders
+discovery_signal_parser.py:6:8: F401 [*] `json` imported but unused
+discovery_signal_parser.py:9:26: F401 [*] `typing.List` imported but unused
+discovery_signal_parser.py:9:32: F401 [*] `typing.Optional` imported but unused
+discovery_signal_parser.py:9:42: F401 [*] `typing.Set` imported but unused
+endpoint_graph.py:27:25: F401 [*] `collections.defaultdict` imported but unused
+endpoint_graph.py:30:47: F401 [*] `typing.Tuple` imported but unused
+endpoint_graph.py:31:26: F401 [*] `urllib.parse.parse_qs` imported but unused
+endpoint_graph.py:262:13: F402 Import `field` from line 28 shadowed by loop variable
+endpoint_graph.py:299:13: F402 Import `field` from line 28 shadowed by loop variable
+endpoint_graph.py:299:22: F821 Undefined name `fields`
+endpoint_param_graph.py:17:32: F401 [*] `typing.Optional` imported but unused
+engine_resilience.py:16:8: F401 [*] `pickle` imported but unused
+engine_resilience.py:17:8: F401 [*] `signal` imported but unused
+external_intel_connector.py:6:8: F401 [*] `json` imported but unused
+finding_pipeline.py:298:9: E722 Do not use bare `except`
+finding_pipeline.py:389:9: F841 Local variable `finding_dict` is assigned to but never used
+gating_loop.py:44:20: F401 [*] `typing.Any` imported but unused
+gating_loop.py:44:37: F401 [*] `typing.Optional` imported but unused
+gating_loop.py:44:47: F401 [*] `typing.Tuple` imported but unused
+global_confidence_system.py:3:20: F401 [*] `typing.Dict` imported but unused
+html_report_generator.py:8:8: F401 [*] `json` imported but unused
+html_report_generator.py:9:22: F401 [*] `datetime.datetime` imported but unused
+html_report_generator.py:13:28: F401 [*] `findings_model.Severity` imported but unused
+html_report_generator.py:14:51: F401 [*] `intelligence_layer.IntelligenceEngine` imported but unused
+html_report_generator.py:1345:9: F841 Local variable `severity_breakdown` is assigned to but never used
+intelligence_layer.py:10:37: F401 [*] `typing.Tuple` imported but unused
+modules/access_control_engine.py:7:8: F401 [*] `asyncio` imported but unused
+modules/access_control_engine.py:11:20: F401 [*] `typing.Dict` imported but unused
+modules/access_control_engine.py:11:47: F401 [*] `typing.Tuple` imported but unused
+modules/access_control_engine.py:13:60: F401 [*] `auth_utils.response_analyzer.SensitivityLevel` imported but unused
+modules/access_control_engine.py:14:33: F401 [*] `core.request_engine.HTTPResponse` imported but unused
+modules/access_control_engine.py:165:13: F841 Local variable `high_resp` is assigned to but never used
+modules/auth_engine.py:7:8: F401 [*] `asyncio` imported but unused
+modules/auth_engine.py:10:8: F401 [*] `re` imported but unused
+modules/auth_engine.py:13:18: F401 [*] `enum.Enum` imported but unused
+modules/auth_engine.py:14:20: F401 [*] `typing.Any` imported but unused
+modules/idor_engine.py:7:8: F401 [*] `asyncio` imported but unused
+modules/idor_engine.py:12:22: F401 [*] `datetime.datetime` imported but unused
+modules/idor_engine.py:14:47: F401 [*] `typing.Tuple` imported but unused
+modules/idor_engine.py:18:43: F401 [*] `auth_utils.response_analyzer.ResponseAnalysisResult` imported but unused
+modules/idor_engine.py:20:62: F401 [*] `core.request_engine.RequestMethod` imported but unused
+oob_callback_system.py:15:42: F401 [*] `typing.Tuple` imported but unused
+oob_callback_system.py:16:26: F401 [*] `urllib.parse.urlparse` imported but unused
+oob_callback_system.py:338:28: F541 [*] f-string without any placeholders
+owasp_mapper.py:22:42: F401 [*] `typing.Set` imported but unused
+owasp_mapping.py:7:20: F401 [*] `typing.Dict` imported but unused
+owasp_mapping.py:7:26: F401 [*] `typing.Optional` imported but unused
+param_intelligence.py:14:32: F401 [*] `typing.Optional` imported but unused
+payload_command_builder.py:8:32: F401 [*] `typing.Optional` imported but unused
+payload_command_builder.py:8:42: F401 [*] `typing.Tuple` imported but unused
+payload_command_builder.py:9:26: F401 [*] `urllib.parse.urlencode` imported but unused
+payload_execution_validator.py:9:32: F401 [*] `typing.Optional` imported but unused
+payload_strategy.py:7:36: F401 [*] `dataclasses.field` imported but unused
+payload_strategy.py:9:42: F401 [*] `typing.Set` imported but unused
+phase2_pipeline.py:26:43: F401 [*] `endpoint_graph.ParameterSource` imported but unused
+phase2_pipeline.py:151:17: F841 Local variable `summary` is assigned to but never used
+proof_based_reporter.py:364:13: F541 [*] f-string without any placeholders
+risk_aggregation.py:19:42: F401 [*] `typing.Tuple` imported but unused
+risk_aggregation.py:303:20: F821 Undefined name `Set`
+risk_engine.py:19:32: F401 [*] `typing.Optional` imported but unused
+service_fingerprinting_engine.py:9:8: F401 [*] `ssl` imported but unused
+service_fingerprinting_engine.py:174:13: E722 Do not use bare `except`
+service_fingerprinting_engine.py:183:17: E722 Do not use bare `except`
+service_fingerprinting_engine.py:316:17: E722 Do not use bare `except`
+sqli_exploitation_engine.py:13:42: F401 [*] `typing.Tuple` imported but unused
+ssrf_exploitation_engine.py:10:42: F401 [*] `typing.Tuple` imported but unused
+ssrf_exploitation_engine.py:381:29: F541 [*] f-string without any placeholders
+ssrf_exploitation_engine.py:391:29: F541 [*] f-string without any placeholders
+ssrf_exploitation_engine.py:411:29: F541 [*] f-string without any placeholders
+ssrf_exploitation_engine.py:421:29: F541 [*] f-string without any placeholders
+strict_execution_handler.py:10:26: F401 [*] `typing.Optional` imported but unused
+strict_gating_loop.py:19:32: F401 [*] `typing.Optional` imported but unused
+subdomain_prioritization.py:7:8: F401 [*] `re` imported but unused
+subdomain_prioritization.py:10:42: F401 [*] `typing.Tuple` imported but unused
+test_auth_idor_engine.py:8:38: F401 [*] `unittest.mock.Mock` imported but unused
+test_auth_idor_engine.py:8:44: F401 [*] `unittest.mock.patch` imported but unused
+test_auth_idor_engine.py:14:33: F401 [*] `core.request_engine.HTTPResponse` imported but unused
+test_auth_idor_engine.py:14:62: F401 [*] `core.request_engine.RequestMethod` imported but unused
+test_auth_idor_engine.py:15:45: F401 [*] `core.session_manager.SessionData` imported but unused
+test_auth_idor_engine.py:28:16: E712 Avoid equality comparisons to `False`; use `if not engine.verify_ssl:` for false checks
+test_auth_idor_engine.py:65:9: F841 Local variable `session` is assigned to but never used
+test_auth_idor_engine.py:77:9: F841 Local variable `session` is assigned to but never used
+test_auth_idor_engine.py:211:9: F841 Local variable `param_extractor` is assigned to but never used
+test_auth_idor_engine.py:212:9: F841 Local variable `response_analyzer` is assigned to but never used
+tool_checker.py:7:8: F401 [*] `platform` imported but unused
+tool_checker.py:10:21: F401 [*] `pathlib.Path` imported but unused
+tool_checker.py:109:27: F541 [*] f-string without any placeholders
+tool_checker.py:128:35: F541 [*] f-string without any placeholders
+tool_checker.py:157:35: F541 [*] f-string without any placeholders
+tool_checker.py:220:15: F541 [*] f-string without any placeholders
+tool_manager.py:7:8: F401 [*] `json` imported but unused
+tool_manager.py:11:8: F401 [*] `sys` imported but unused
+tool_manager.py:12:21: F401 [*] `pathlib.Path` imported but unused
+tool_manager.py:55:13: E722 Do not use bare `except`
+tool_manager.py:314:9: E722 Do not use bare `except`
+tool_parsers.py:7:8: F401 [*] `json` imported but unused
+traffic_capture.py:18:42: F401 [*] `typing.Tuple` imported but unused
+traffic_capture.py:273:24: F541 [*] f-string without any placeholders
+validation_engine.py:11:26: F401 [*] `typing.List` imported but unused
+validation_engine.py:11:32: F401 [*] `typing.Optional` imported but unused
+validation_engine.py:11:42: F401 [*] `typing.Tuple` imported but unused
+validation_engine.py:171:31: F541 [*] f-string without any placeholders
+validation_engine.py:180:25: F541 [*] f-string without any placeholders
+validation_engine.py:222:25: F541 [*] f-string without any placeholders
+validation_engine.py:265:25: F541 [*] f-string without any placeholders
+validation_engine.py:334:17: F541 [*] f-string without any placeholders
+validation_engine.py:368:25: F541 [*] f-string without any placeholders
+xss_exploitation_engine.py:9:8: F401 [*] `re` imported but unused
+xss_exploitation_engine.py:410:26: F541 [*] f-string without any placeholders
+Found 249 errors.
+[*] 162 fixable with the `--fix` option (32 hidden fixes can be enabled with the `--unsafe-fixes` option).
+
+ruff-format..............................................................Failed
+- hook id: ruff-format
+- exit code: 2
+- files were modified by this hook
+
+error: Failed to parse Documentations/INTEGRATION_INSTRUCTIONS.py:36:1: Unexpected indentation
+error: Failed to parse automation_scanner_v2.py.corrupt:177:1: unindent does not match any outer indentation level
+error: Failed to parse automation_scanner_v2.py.head:303:1: unexpected EOF while parsing
+14 files reformatted, 75 files left unchanged
+
+mypy.....................................................................Failed
+- hook id: mypy
+- exit code: 2
+
+Documentations/INTEGRATION_INSTRUCTIONS.py:36: error: unexpected indent  [syntax]
+Found 1 error in 1 file (errors prevented further checking)
+
+Detect hardcoded secrets.................................................Passed
+semgrep..................................................................Passed
+bandit...................................................................Failed
+- hook id: bandit
+- exit code: 1
+
+[main]	INFO	profile include tests: None
+[main]	INFO	profile exclude tests: None
+[main]	INFO	cli include tests: None
+[main]	INFO	cli exclude tests: None
+[main]	INFO	running on Python 3.13.12
+Working... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+Run started:2026-04-02 07:24:40.036629
+
+Test results:
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:39:8
+38	        # Verify classification
+39	        assert classifier.target_type == expected_type, f"Type mismatch for {target}"
+40	        assert classifier.scope == expected_scope, f"Scope mismatch for {target}"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:40:8
+39	        assert classifier.target_type == expected_type, f"Type mismatch for {target}"
+40	        assert classifier.scope == expected_scope, f"Scope mismatch for {target}"
+41	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:64:4
+63	    )
+64	    assert context.should_run_dns() == True
+65	    assert context.should_run_subdomain_enum() == True
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:65:4
+64	    assert context.should_run_dns() == True
+65	    assert context.should_run_subdomain_enum() == True
+66	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:77:4
+76	    )
+77	    assert context.should_run_dns() == False
+78	    assert context.should_run_subdomain_enum() == False
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:78:4
+77	    assert context.should_run_dns() == False
+78	    assert context.should_run_subdomain_enum() == False
+79	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:90:4
+89	    )
+90	    assert context.should_run_dns() == False
+91	    assert context.should_run_subdomain_enum() == False
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:91:4
+90	    assert context.should_run_dns() == False
+91	    assert context.should_run_subdomain_enum() == False
+92	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:113:4
+112	    )
+113	    assert context.should_run_wordpress_tools() == False
+114	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:122:4
+121	    )
+122	    assert context.should_run_wordpress_tools() == True
+123	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:131:4
+130	    print(f"  Should run XSS: {context.should_run_xss_tools()} (expected: False)")
+131	    assert context.should_run_xss_tools() == False
+132	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:137:4
+136	    print(f"  Should run XSS: {context.should_run_xss_tools()} (expected: True)")
+137	    assert context.should_run_xss_tools() == True
+138	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:146:4
+145	    print(f"  Should run SQLMap: {context.should_run_sqlmap()} (expected: False)")
+146	    assert context.should_run_sqlmap() == False
+147	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_integration.py:152:4
+151	    print(f"  Should run SQLMap: {context.should_run_sqlmap()} (expected: True)")
+152	    assert context.should_run_sqlmap() == True
+153	    print("  ✓ PASS")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:68:4
+67	    dig_contract = get_tool_contract("dig_a")
+68	    assert dig_contract is not None, "dig_a contract not found"
+69	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:69:4
+68	    assert dig_contract is not None, "dig_a contract not found"
+69	    assert (
+70	        "dns_resolved" in dig_contract.signals_produced
+71	    ), "dig_a should produce dns_resolved signal"
+72	    print(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:77:4
+76	    # Test signal producer check
+77	    assert (
+78	        is_signal_producer("nmap_quick") == True
+79	    ), "nmap_quick should be signal producer"
+80	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:80:4
+79	    ), "nmap_quick should be signal producer"
+80	    assert (
+81	        is_signal_producer("gobuster") == False
+82	    ), "gobuster should not be signal producer"
+83	    print("✓ Signal producer classification working")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:86:4
+85	    # Test all tools registered
+86	    assert (
+87	        len(DISCOVERY_TOOLS) >= 10
+88	    ), f"Expected at least 10 tools, got {len(DISCOVERY_TOOLS)}"
+89	    print(f"✓ {len(DISCOVERY_TOOLS)} discovery tools classified")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:102:4
+101	    xss_cat = map_to_owasp("xss")
+102	    assert (
+103	        xss_cat == OWASPCategory.A03_INJECTION
+104	    ), f"XSS should map to A03, got {xss_cat}"
+105	    print(f"✓ XSS → {xss_cat.value}")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:109:4
+108	    sqli_cat = map_to_owasp("sql_injection")
+109	    assert (
+110	        sqli_cat == OWASPCategory.A03_INJECTION
+111	    ), f"SQLi should map to A03, got {sqli_cat}"
+112	    print(f"✓ SQLi → {sqli_cat.value}")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:116:4
+115	    ssrf_cat = map_to_owasp("ssrf")
+116	    assert ssrf_cat == OWASPCategory.A10_SSRF, f"SSRF should map to A10, got {ssrf_cat}"
+117	    print(f"✓ SSRF → {ssrf_cat.value}")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:121:4
+120	    desc = get_owasp_description(OWASPCategory.A03_INJECTION)
+121	    assert "injection" in desc.lower(), "A03 description should mention injection"
+122	    print(f"✓ OWASP descriptions available")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:139:4
+138	    )
+139	    assert len(xss_payloads) > 0, "Should generate XSS payloads"
+140	    assert any(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:140:4
+139	    assert len(xss_payloads) > 0, "Should generate XSS payloads"
+140	    assert any(
+141	        "<script>" in p.get("payload", "") for p in xss_payloads
+142	    ), "Should include script tags"
+143	    print(f"✓ Generated {len(xss_payloads)} XSS payloads")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:149:4
+148	    )
+149	    assert len(sqli_payloads) > 0, "Should generate SQLi payloads"
+150	    assert any(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:150:4
+149	    assert len(sqli_payloads) > 0, "Should generate SQLi payloads"
+150	    assert any(
+151	        "'" in p.get("payload", "") for p in sqli_payloads
+152	    ), "Should include SQL quotes"
+153	    print(f"✓ Generated {len(sqli_payloads)} SQLi payloads")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:166:4
+165	    summary = strategy.get_attempts_summary()
+166	    assert summary["total_attempts"] == 1, "Should track 1 attempt"
+167	    assert summary["successful_attempts"] == 1, "Should track 1 success"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:167:4
+166	    assert summary["total_attempts"] == 1, "Should track 1 attempt"
+167	    assert summary["successful_attempts"] == 1, "Should track 1 success"
+168	    print("✓ Payload tracking working")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:190:4
+189	
+190	    assert factors.final_score > 0, "Should calculate confidence score"
+191	    assert factors.final_score <= 100, "Score should not exceed 100"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:191:4
+190	    assert factors.final_score > 0, "Should calculate confidence score"
+191	    assert factors.final_score <= 100, "Score should not exceed 100"
+192	    print(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:205:4
+204	
+205	    assert factors_corr.corroboration_bonus > 0, "Should apply corroboration bonus"
+206	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:206:4
+205	    assert factors_corr.corroboration_bonus > 0, "Should apply corroboration bonus"
+206	    assert (
+207	        factors_corr.final_score > factors.final_score
+208	    ), "Corroboration should boost confidence"
+209	    print(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:215:4
+214	    label_high = engine.get_confidence_label(85)
+215	    assert label_high == "High", f"85 should be High, got {label_high}"
+216	    label_low = engine.get_confidence_label(35)
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:217:4
+216	    label_low = engine.get_confidence_label(35)
+217	    assert label_low == "Very Low", f"35 should be Very Low, got {label_low}"
+218	    print("✓ Confidence labels working")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:262:4
+261	    # Should merge the two XSS findings
+262	    assert (
+263	        len(deduplicated) == 2
+264	    ), f"Should have 2 unique findings, got {len(deduplicated)}"
+265	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:268:4
+267	    xss_finding = next((f for f in deduplicated if f["type"] == "xss"), None)
+268	    assert xss_finding is not None, "XSS finding should exist"
+269	    assert xss_finding["severity"] == "high", "Should keep highest severity"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:269:4
+268	    assert xss_finding is not None, "XSS finding should exist"
+269	    assert xss_finding["severity"] == "high", "Should keep highest severity"
+270	    assert "corroborating_tools" in xss_finding, "Should have corroborating tools"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:270:4
+269	    assert xss_finding["severity"] == "high", "Should keep highest severity"
+270	    assert "corroborating_tools" in xss_finding, "Should have corroborating tools"
+271	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:271:4
+270	    assert "corroborating_tools" in xss_finding, "Should have corroborating tools"
+271	    assert (
+272	        len(xss_finding["corroborating_tools"]) == 1
+273	    ), "Should have 1 corroborating tool"
+274	    print(f"✓ Deduplicated {len(findings)} → {len(deduplicated)} findings")
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase1_4_integration.py:278:4
+277	    report = engine.get_deduplication_report()
+278	    assert report["duplicate_groups"] >= 0, "Should have deduplication report"
+279	    print(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:28:4
+27	    # Validate
+28	    assert (
+29	        len(cache.endpoints) == 2
+30	    ), f"Expected 2 endpoints, got {len(cache.endpoints)}"
+31	    assert len(cache.params) == 2, f"Expected 2 params, got {len(cache.params)}"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:31:4
+30	    ), f"Expected 2 endpoints, got {len(cache.endpoints)}"
+31	    assert len(cache.params) == 2, f"Expected 2 params, got {len(cache.params)}"
+32	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:32:4
+31	    assert len(cache.params) == 2, f"Expected 2 params, got {len(cache.params)}"
+32	    assert (
+33	        len(cache.reflections) > 0
+34	    ), f"Expected reflections, got {len(cache.reflections)}"
+35	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:69:4
+68	    all_endpoints = graph.get_all_endpoints()
+69	    assert len(all_endpoints) == 2, f"Expected 2 endpoints, got {len(all_endpoints)}"
+70	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:72:4
+71	    reflectable = graph.get_reflectable_endpoints()
+72	    assert (
+73	        "/search" in reflectable
+74	    ), f"Expected /search in reflectable, got {reflectable}"
+75	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:77:4
+76	    sql_injectable = graph.get_injectable_sql_endpoints()
+77	    assert (
+78	        "/api/users" in sql_injectable
+79	    ), f"Expected /api/users in SQL injectable, got {sql_injectable}"
+80	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:82:4
+81	    parametric = graph.get_parametric_endpoints()
+82	    assert (
+83	        len(parametric) == 2
+84	    ), f"Expected 2 parametric endpoints, got {len(parametric)}"
+85	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:99:4
+98	    status, reason = gate_fail.check_crawler_status()
+99	    assert status == CrawlerStatus.FAILED, f"Expected FAILED, got {status}"
+100	    assert not gate_fail.crawler_succeeded(), "Expected crawler_succeeded() = False"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:100:4
+99	    assert status == CrawlerStatus.FAILED, f"Expected FAILED, got {status}"
+100	    assert not gate_fail.crawler_succeeded(), "Expected crawler_succeeded() = False"
+101	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:103:4
+102	    blocked_tools = gate_fail.get_blocked_tools()
+103	    assert "dalfox" in blocked_tools, f"Expected dalfox blocked, got {blocked_tools}"
+104	    assert "sqlmap" in blocked_tools, f"Expected sqlmap blocked, got {blocked_tools}"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:104:4
+103	    assert "dalfox" in blocked_tools, f"Expected dalfox blocked, got {blocked_tools}"
+104	    assert "sqlmap" in blocked_tools, f"Expected sqlmap blocked, got {blocked_tools}"
+105	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:120:4
+119	    status, reason = gate_ok.check_crawler_status()
+120	    assert status == CrawlerStatus.SUCCESS, f"Expected SUCCESS, got {status}"
+121	    assert gate_ok.crawler_succeeded(), "Expected crawler_succeeded() = True"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:121:4
+120	    assert status == CrawlerStatus.SUCCESS, f"Expected SUCCESS, got {status}"
+121	    assert gate_ok.crawler_succeeded(), "Expected crawler_succeeded() = True"
+122	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:124:4
+123	    blocked_tools = gate_ok.get_blocked_tools()
+124	    assert len(blocked_tools) == 0, f"Expected no blocked tools, got {blocked_tools}"
+125	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:130:4
+129	    report = gate_ok.get_gate_report()
+130	    assert report["crawler_succeeded"] == True, "Expected crawler_succeeded in report"
+131	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:131:4
+130	    assert report["crawler_succeeded"] == True, "Expected crawler_succeeded in report"
+131	    assert (
+132	        report["endpoints_discovered"] == 1
+133	    ), f"Expected 1 endpoint, got {report['endpoints_discovered']}"
+134	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:160:4
+159	    # Validate flags were set
+160	    assert (
+161	        graph.get_parameter("search").reflectable == True
+162	    ), "Expected search to be reflectable"
+163	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:163:4
+162	    ), "Expected search to be reflectable"
+163	    assert (
+164	        graph.get_parameter("cmd").injectable_cmd == True
+165	    ), "Expected cmd to be cmd-injectable"
+166	    assert (
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./Documentations/test_phase2_validation.py:166:4
+165	    ), "Expected cmd to be cmd-injectable"
+166	    assert (
+167	        graph.get_parameter("user_id").injectable_sql == True
+168	    ), "Expected user_id to be SQL-injectable"
+169	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'admin123'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./Documentations/test_phase3_components.py:313:15
+312	        """Test credential registration"""
+313	        cred = CredentialSet(
+314	            credential_id="admin",
+315	            username="admin",
+316	            password="admin123",
+317	            privilege_level="ADMIN",
+318	        )
+319	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./Documentations/test_phase3_components.py:358:15
+357	        """Test Bearer token header"""
+358	        cred = CredentialSet(
+359	            credential_id="oauth",
+360	            bearer_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+361	            privilege_level="USER",
+362	        )
+363	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'pass'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./Documentations/test_phase3_components.py:369:15
+368	        """Test Basic authentication header"""
+369	        cred = CredentialSet(credential_id="basic", username="user", password="pass")
+370	
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./api_discovery.py:143:23
+142	
+143	            response = requests.get(url, timeout=self.timeout, verify=False)
+144	
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./api_schema_importer.py:31:23
+30	                url = f"{base_url.rstrip('/')}{candidate}"
+31	                resp = requests.get(url, timeout=self.timeout, verify=False)
+32	                if resp.status_code >= 400:
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./api_schema_importer.py:56:12
+55	                    )
+56	            except Exception:
+57	                continue
+58	
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./auth_adapter.py:224:23
+223	
+224	            response = requests.get(test_url, headers=headers, timeout=5, verify=False)
+225	            is_valid = response.status_code < 400
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'token'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b105_hardcoded_password_string.html
+   Location: ./auth_utils/param_extractor.py:26:12
+25	    API_KEY = "api_key"  # Looks like key
+26	    TOKEN = "token"  # JWT-like
+27	    ENUM = "enum"  # true/false, admin/user
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: ./automation_scanner_v2.py:11:0
+10	import ssl
+11	import subprocess
+12	import sys
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: ./automation_scanner_v2.py:889:24
+888	                command,
+889	                shell=True,
+890	                input=stdin_text,
+891	                text=True,
+892	                capture_output=True,
+893	                timeout=timeout,
+894	            )
+895	        except Exception:
+896	            return []
+897	
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./automation_scanner_v2.py:916:23
+915	
+916	            response = requests.get(base_url, timeout=12, verify=False)
+917	            body = response.text if response is not None else ""
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./automation_scanner_v2.py:934:30
+933	                try:
+934	                    js_resp = requests.get(js_url, timeout=10, verify=False)
+935	                except Exception:
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:935:16
+934	                    js_resp = requests.get(js_url, timeout=10, verify=False)
+935	                except Exception:
+936	                    continue
+937	                for match in endpoint_pattern.findall(js_resp.text or ""):
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:1238:16
+1237	                    self.endpoint_graph.add_endpoint(endpoint, params, method)
+1238	                except Exception:
+1239	                    pass
+1240	
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./automation_scanner_v2.py:1254:23
+1253	
+1254	            response = requests.get(base_url, timeout=10, verify=False)
+1255	            passive_findings_raw = analyze_headers(base_url, dict(response.headers))
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:1653:16
+1652	                    self.cache.add_endpoint(endpoint)
+1653	                except Exception:
+1654	                    pass
+1655	
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:1695:12
+1694	                    _add("FREAK check passed (not vulnerable)")
+1695	            except Exception:
+1696	                continue
+1697	
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: ./automation_scanner_v2.py:2039:24
+2038	                command,
+2039	                shell=True,
+2040	                capture_output=True,
+2041	                text=True,
+2042	                input="",
+2043	                timeout=timeout,
+2044	            )
+2045	            rc = completed.returncode
+2046	            stdout_raw = (
+2047	                completed.stdout if isinstance(completed.stdout, (str, bytes)) else ""
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:2395:8
+2394	                return True
+2395	        except Exception:
+2396	            pass
+2397	
+
+--------------------------------------------------
+>> Issue: [B310:blacklist] Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.
+   Severity: Medium   Confidence: High
+   CWE: CWE-22 (https://cwe.mitre.org/data/definitions/22.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_calls.html#b310-urllib-urlopen
+   Location: ./automation_scanner_v2.py:2413:16
+2412	                req = Request(url, method="HEAD")
+2413	                urlopen(req, timeout=3)
+2414	                return True
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:2531:16
+2530	                    self.cache.add_port(int(port))
+2531	                except Exception:
+2532	                    pass
+2533	            # Count ports for gating
+
+--------------------------------------------------
+>> Issue: [B310:blacklist] Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.
+   Severity: Medium   Confidence: High
+   CWE: CWE-22 (https://cwe.mitre.org/data/definitions/22.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_calls.html#b310-urllib-urlopen
+   Location: ./automation_scanner_v2.py:2650:17
+2649	            req = Request(probe_url, headers={"User-Agent": "Mozilla/5.0"})
+2650	            with urlopen(req, timeout=5) as resp:
+2651	                body = resp.read(2048).decode(errors="ignore")
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: ./automation_scanner_v2.py:2696:33
+2695	                install_result = subprocess.run(
+2696	                    install_cmd, shell=True, capture_output=True, text=True
+2697	                )
+2698	                if install_result.returncode != 0:
+2699	                    self.log(
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:2854:12
+2853	                port = int(p)
+2854	            except Exception:
+2855	                continue
+2856	            if port in {443, 8443, 9443, 10443, 4443}:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:3093:8
+3092	            self._parse_discoveries(tool_name, stdout)
+3093	        except Exception:
+3094	            pass
+3095	        try:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:3099:8
+3098	            )
+3099	        except Exception:
+3100	            pass
+3101	
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: ./automation_scanner_v2.py:3201:25
+3200	                    rc = subprocess.run(
+3201	                        install_cmd, shell=True, capture_output=True, text=True
+3202	                    ).returncode
+3203	                    if rc != 0:
+3204	                        self.manual_out_of_scope_report[
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:3506:12
+3505	                txt = Path(path).read_text(encoding="utf-8", errors="ignore").lower()
+3506	            except Exception:
+3507	                continue
+3508	            content_by_tool[tool] = txt
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:4641:16
+4640	                    f_dict["owasp"] = owasp_cat.value
+4641	                except:
+4642	                    pass
+4643	            self._autofill_actionability_fields(f_dict)
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:4820:16
+4819	                        missing_tools.append(tool)
+4820	                except Exception:
+4821	                    continue
+4822	        coverage_report["skipped"] = {"tools": skipped_tools}
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:5072:20
+5071	                            missing_tools.append(tool)
+5072	                    except Exception:
+5073	                        continue
+5074	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./automation_scanner_v2.py:5680:12
+5679	                )
+5680	            except Exception:
+5681	                pass
+5682	
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:5730:12
+5729	                )
+5730	            except Exception:
+5731	                continue
+5732	        return risk_engine.to_dict()
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b112_try_except_continue.html
+   Location: ./automation_scanner_v2.py:5889:12
+5888	                    open_ports.append(port)
+5889	            except Exception:
+5890	                continue
+5891	        return sorted(open_ports)
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'bearer_token'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b105_hardcoded_password_string.html
+   Location: ./core/session_manager.py:23:19
+22	    API_KEY = "api_key"
+23	    BEARER_TOKEN = "bearer_token"
+24	    BASIC_AUTH = "basic_auth"
+
+--------------------------------------------------
+>> Issue: [B403:blacklist] Consider possible security implications associated with pickle module.
+   Severity: Low   Confidence: High
+   CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_imports.html#b403-import-pickle
+   Location: ./engine_resilience.py:16:0
+15	import logging
+16	import pickle
+17	import signal
+
+--------------------------------------------------
+>> Issue: [B108:hardcoded_tmp_directory] Probable insecure usage of temp file/directory.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-377 (https://cwe.mitre.org/data/definitions/377.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b108_hardcoded_tmp_directory.html
+   Location: ./engine_resilience.py:345:45
+344	
+345	    def __init__(self, checkpoint_dir: str = "/tmp/scanner_checkpoints"):
+346	        self.checkpoint_dir = checkpoint_dir
+
+--------------------------------------------------
+>> Issue: [B108:hardcoded_tmp_directory] Probable insecure usage of temp file/directory.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-377 (https://cwe.mitre.org/data/definitions/377.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b108_hardcoded_tmp_directory.html
+   Location: ./gating_loop.py:381:51
+380	    # Step 1: Crawl
+381	    adapter = CrawlAdapter(TEST_DOMAIN, output_dir="/tmp/gating_test")
+382	    success, msg = adapter.run()
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./js_browser_discovery.py:243:16
+242	                                params.add(param_name)
+243	                except Exception:
+244	                    pass
+245	        except Exception as e:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./js_browser_discovery.py:255:12
+254	                    page.close()
+255	            except Exception:
+256	                pass
+257	            try:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./js_browser_discovery.py:260:12
+259	                    context.close()
+260	            except Exception:
+261	                pass
+262	            try:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./js_browser_discovery.py:265:12
+264	                    browser.close()
+265	            except Exception:
+266	                pass
+267	
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: ./katana_crawler.py:10:0
+9	import re
+10	import subprocess
+11	from dataclasses import asdict, dataclass, field
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b607_start_process_with_partial_path.html
+   Location: ./katana_crawler.py:77:21
+76	        try:
+77	            result = subprocess.run(
+78	                ["katana", "-version"], capture_output=True, timeout=5
+79	            )
+80	            return result.returncode == 0
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./katana_crawler.py:77:21
+76	        try:
+77	            result = subprocess.run(
+78	                ["katana", "-version"], capture_output=True, timeout=5
+79	            )
+80	            return result.returncode == 0
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./katana_crawler.py:119:21
+118	            logger.info(f"[Katana] Starting crawl: {self.target} (depth={self.depth})")
+119	            result = subprocess.run(
+120	                cmd, capture_output=True, text=True, timeout=self.timeout + 30
+121	            )
+122	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'token'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./modules/auth_engine.py:228:25
+227	        try:
+228	            token_info = TokenInfo(
+229	                token=config.bearer_token, token_field="token", token_type="Bearer"
+230	            )
+231	            await self.session_manager.set_token(role, token_info)
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'Bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./modules/auth_engine.py:259:25
+258	
+259	            token_info = TokenInfo(
+260	                token=token_value,
+261	                token_field=config.token_field_path,
+262	                expires_at=expires_at,
+263	                token_type="Bearer",
+264	                raw_response=response_json,
+265	            )
+266	
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_calls.html#b311-random
+   Location: ./modules/idor_engine.py:293:31
+292	                if original.isdigit():
+293	                    return str(random.randint(1000, 9999))
+294	                else:
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_calls.html#b311-random
+   Location: ./modules/idor_engine.py:297:24
+296	                    return "".join(
+297	                        random.choices(string.ascii_letters + string.digits, k=8)
+298	                    )
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'password'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b105_hardcoded_password_string.html
+   Location: ./param_intelligence.py:32:15
+31	    # Authentication/sensitive
+32	    PASSWORD = "password"
+33	    TOKEN = "token"
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'token'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b105_hardcoded_password_string.html
+   Location: ./param_intelligence.py:33:12
+32	    PASSWORD = "password"
+33	    TOKEN = "token"
+34	    API_KEY = "api_key"
+
+--------------------------------------------------
+>> Issue: [B307:blacklist] Use of possibly insecure function - consider using safer ast.literal_eval.
+   Severity: Medium   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_calls.html#b307-eval
+   Location: ./regression_engine.py:107:20
+106	            # Parse key
+107	            parts = eval(key_str)  # (endpoint, parameter, type)
+108	            finding = Finding(
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./response_diffing_engine.py:46:29
+45	        if not self.body_hash:
+46	            self.body_hash = hashlib.md5(self.body.encode()).hexdigest()
+47	        if not self.content_length:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./service_fingerprinting_engine.py:183:16
+182	                    return banner, "http"
+183	                except:
+184	                    pass
+185	
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./service_fingerprinting_engine.py:261:23
+260	            response = requests.head(
+261	                url, timeout=5, verify=False, allow_redirects=False
+262	            )
+263	
+264	            tech_stack = []
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to requests with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b501_request_with_no_cert_validation.html
+   Location: ./service_fingerprinting_engine.py:298:36
+297	                try:
+298	                    response_full = requests.get(url, timeout=5, verify=False)
+299	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./service_fingerprinting_engine.py:316:16
+315	
+316	                except:
+317	                    pass
+318	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./sqli_exploitation_engine.py:137:16
+136	            hashes.append(
+137	                hashlib.md5(body.encode("utf-8", errors="ignore")).hexdigest()
+138	            )
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./sqli_exploitation_engine.py:259:16
+258	                    variants.extend([entry["payload"] for entry in retry_seq[1:]])
+259	                except Exception:
+260	                    pass
+261	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./sqli_exploitation_engine.py:418:31
+417	            if evidence["found_error"]:
+418	                payload_hash = hashlib.md5(
+419	                    (response.text or "").encode("utf-8", errors="ignore")
+420	                ).hexdigest()
+421	                finding = {
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./sqli_exploitation_engine.py:556:29
+555	            # capture hashes from the last successful run
+556	            last_true_hash = hashlib.md5(
+557	                (response_true.text or "").encode("utf-8", errors="ignore")
+558	            ).hexdigest()
+559	            last_false_hash = hashlib.md5(
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./sqli_exploitation_engine.py:559:30
+558	            ).hexdigest()
+559	            last_false_hash = hashlib.md5(
+560	                (response_false.text or "").encode("utf-8", errors="ignore")
+561	            ).hexdigest()
+562	            evidence["payload_response_hash"] = f"{last_true_hash}|{last_false_hash}"
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./sqli_exploitation_engine.py:684:31
+683	            if evidence["vulnerable"]:
+684	                payload_hash = hashlib.md5(
+685	                    (payload_response.text or "").encode("utf-8", errors="ignore")
+686	                ).hexdigest()
+687	                finding = {
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./ssl_certificate_checker.py:114:12
+113	                            self._apply_expiry_fields(base, cert.get("notAfter"))
+114	            except Exception:
+115	                pass
+116	
+
+--------------------------------------------------
+>> Issue: [B104:hardcoded_bind_all_interfaces] Possible binding to all interfaces.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-605 (https://cwe.mitre.org/data/definitions/605.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b104_hardcoded_bind_all_interfaces.html
+   Location: ./ssrf_exploitation_engine.py:79:8
+78	        "localhost",
+79	        "0.0.0.0",
+80	        "169.254.169.254",  # AWS metadata
+81	        "metadata.google.internal",  # GCP metadata
+82	        "169.254.170.2",  # Azure metadata
+83	    ]
+84	
+85	    # Cloud metadata endpoints
+86	    METADATA_ENDPOINTS = [
+87	        "http://169.254.169.254/latest/meta-data/",  # AWS
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./ssrf_exploitation_engine.py:282:31
+281	                baseline_hash = ""
+282	                payload_hash = hashlib.md5(
+283	                    (response.text or "").encode("utf-8", errors="ignore")
+284	                ).hexdigest()
+285	                diff_score = 0.0
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:26:8
+25	        engine = RequestEngine(timeout=30.0, verify_ssl=False)
+26	        assert engine.timeout == 30.0
+27	        assert engine.verify_ssl == False
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:27:8
+26	        assert engine.timeout == 30.0
+27	        assert engine.verify_ssl == False
+28	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:33:8
+32	        engine = RequestEngine()
+33	        assert isinstance(engine.request_log, list)
+34	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:44:8
+43	        session = await manager.create_session("user", AuthType.FORM_LOGIN)
+44	        assert session.role == "user"
+45	        assert session.auth_type == AuthType.FORM_LOGIN
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:45:8
+44	        assert session.role == "user"
+45	        assert session.auth_type == AuthType.FORM_LOGIN
+46	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:54:8
+53	        # Not expired immediately
+54	        assert not session.is_expired()
+55	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:58:8
+57	        await asyncio.sleep(2)
+58	        assert session.is_expired()
+59	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:70:8
+69	        retrieved = await manager.get_session("user")
+70	        assert retrieved.cookies == cookies
+71	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'jwt_token_here'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./test_auth_idor_engine.py:78:16
+77	
+78	        token = TokenInfo(token="jwt_token_here", token_field="access_token")
+79	        await manager.set_token("user", token)
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:82:8
+81	        retrieved = await manager.get_session("user")
+82	        assert retrieved.token_info == token
+83	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:94:8
+93	        params = extractor.extract_from_url(url, "/users")
+94	        assert len(params) > 0
+95	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:97:8
+96	        user_id = params[0]
+97	        assert user_id.name == "user_id"
+98	        assert user_id.param_type == ParameterType.NUMERIC_ID
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:98:8
+97	        assert user_id.name == "user_id"
+98	        assert user_id.param_type == ParameterType.NUMERIC_ID
+99	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:107:8
+106	
+107	        assert len(params) > 0
+108	        assert params[0].name == "account_id"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:108:8
+107	        assert len(params) > 0
+108	        assert params[0].name == "account_id"
+109	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:119:8
+118	        param_names = [p.name for p in params]
+119	        assert "api_key" not in param_names
+120	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:132:8
+131	
+132	        assert result.has_sensitive_data
+133	        assert any("email" in m.field_name for m in result.sensitive_matches)
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:133:8
+132	        assert result.has_sensitive_data
+133	        assert any("email" in m.field_name for m in result.sensitive_matches)
+134	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:148:8
+147	        ]
+148	        assert len(critical) > 0
+149	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:159:8
+158	
+159	        assert result.is_json
+160	        assert result.json_structure is not None
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:160:8
+159	        assert result.is_json
+160	        assert result.json_structure is not None
+161	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'password123'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./test_auth_idor_engine.py:172:17
+171	
+172	        config = LoginConfig(
+173	            role="user",
+174	            auth_type=AuthType.FORM_LOGIN,
+175	            login_url="https://example.com/login",
+176	            username="test@example.com",
+177	            password="password123",
+178	        )
+179	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:181:8
+180	        success = await auth_engine.register_login_flow(config)
+181	        assert success
+182	        assert "user" in auth_engine.login_configs
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:182:8
+181	        assert success
+182	        assert "user" in auth_engine.login_configs
+183	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:198:8
+197	        success = await auth_engine.register_login_flow(invalid_config)
+198	        assert not success
+199	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'password123'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b106_hardcoded_password_funcarg.html
+   Location: ./test_auth_idor_engine.py:214:17
+213	        # Register config (would come from JSON in practice)
+214	        config = LoginConfig(
+215	            role="user",
+216	            auth_type=AuthType.FORM_LOGIN,
+217	            login_url="https://example.com/login",
+218	            username="test@example.com",
+219	            password="password123",
+220	            login_data={"email": "test@example.com", "password": "password123"},
+221	        )
+222	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:224:8
+223	        success = await auth_engine.register_login_flow(config)
+224	        assert success
+225	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b101_assert_used.html
+   Location: ./test_auth_idor_engine.py:228:8
+227	        sessions = await auth_engine.session_manager.list_sessions()
+228	        assert isinstance(sessions, dict)
+229	
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: ./tool_checker.py:8:0
+7	import platform
+8	import subprocess
+9	import sys
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: ./tool_checker.py:191:25
+190	                result = subprocess.run(
+191	                    command, shell=True, capture_output=False, text=True, timeout=600
+192	                )
+193	
+194	                if result.returncode == 0:
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: ./tool_manager.py:10:0
+9	import platform
+10	import subprocess
+11	import sys
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b607_start_process_with_partial_path.html
+   Location: ./tool_manager.py:51:25
+50	            try:
+51	                result = subprocess.run(
+52	                    ["lsb_release", "-si"], capture_output=True, text=True
+53	                )
+54	                return result.stdout.strip().lower()
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./tool_manager.py:51:25
+50	            try:
+51	                result = subprocess.run(
+52	                    ["lsb_release", "-si"], capture_output=True, text=True
+53	                )
+54	                return result.stdout.strip().lower()
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./tool_manager.py:273:29
+272	                for cmd in ["testssl", "testssl.sh"]:
+273	                    result = subprocess.run(
+274	                        ["which", cmd] if self.os_type == "Linux" else ["where", cmd],
+275	                        capture_output=True,
+276	                        text=True,
+277	                    )
+278	                    if result.returncode == 0 and result.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./tool_manager.py:283:21
+282	            # First try standard which/where
+283	            result = subprocess.run(
+284	                ["which", binary] if self.os_type == "Linux" else ["where", binary],
+285	                capture_output=True,
+286	                text=True,
+287	            )
+288	            if result.returncode == 0 and result.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: ./tool_manager.py:413:21
+412	        try:
+413	            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+414	            if result.returncode == 0:
+
+--------------------------------------------------
+>> Issue: [B602:subprocess_popen_with_shell_equals_true] subprocess call with shell=True identified, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b602_subprocess_popen_with_shell_equals_true.html
+   Location: ./tool_manager.py:459:22
+458	                print(f"[*] Installing {tool}...")
+459	                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+460	                if res.returncode == 0:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./xss_exploitation_engine.py:214:20
+213	                        )
+214	                    except Exception:
+215	                        pass
+216	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b110_try_except_pass.html
+   Location: ./xss_exploitation_engine.py:262:16
+261	                    )
+262	                except Exception:
+263	                    pass
+264	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b324_hashlib.html
+   Location: ./xss_exploitation_engine.py:354:31
+353	                baseline_hash = ""
+354	                payload_hash = hashlib.md5(
+355	                    (response.text or "").encode("utf-8", errors="ignore")
+356	                ).hexdigest()
+357	                diff_score = 0.0
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: ./zap_adapter.py:9:0
+8	import logging
+9	import subprocess
+10	import time
+
+--------------------------------------------------
+>> Issue: [B104:hardcoded_bind_all_interfaces] Possible binding to all interfaces.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-605 (https://cwe.mitre.org/data/definitions/605.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b104_hardcoded_bind_all_interfaces.html
+   Location: ./zap_adapter.py:244:12
+243	            "-host",
+244	            "0.0.0.0",
+245	            "-port",
+246	            "8090",
+247	            "-config",
+248	            "api.disablekey=true",
+249	            "-config",
+250	            "api.addrs.addr.name=.*",
+251	            "-config",
+252	            "api.addrs.addr.regex=true",
+253	            "-config",
+254	            "autoupdate.checkOnStart=false",
+255	            "-config",
+256	            "autoupdate.installAddonUpdates=false",
+257	            "-config",
+258	            "autoupdate.downloadNewRelease=false",
+259	        ]
+260	
+261	        try:
+262	            completed = subprocess.run(
+263	                cmd,
+264	                capture_output=True,
+265	                text=True,
+266	                timeout=40,
+267	                check=False,
+268	            )
+269	            if completed.returncode != 0:
+270	                err = (
+271	                    completed.stderr or completed.stdout or "unknown docker error"
+272	                ).strip()
+273	                raise RuntimeError(
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./zap_adapter.py:262:24
+261	        try:
+262	            completed = subprocess.run(
+263	                cmd,
+264	                capture_output=True,
+265	                text=True,
+266	                timeout=40,
+267	                check=False,
+268	            )
+269	            if completed.returncode != 0:
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b607_start_process_with_partial_path.html
+   Location: ./zap_adapter.py:287:12
+286	        try:
+287	            subprocess.run(
+288	                ["docker", "rm", "-f", container_name],
+289	                capture_output=True,
+290	                text=True,
+291	                timeout=8,
+292	                check=False,
+293	            )
+294	        except subprocess.TimeoutExpired:
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./zap_adapter.py:287:12
+286	        try:
+287	            subprocess.run(
+288	                ["docker", "rm", "-f", container_name],
+289	                capture_output=True,
+290	                text=True,
+291	                timeout=8,
+292	                check=False,
+293	            )
+294	        except subprocess.TimeoutExpired:
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/0.0.0/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./zap_adapter.py:374:28
+373	                logger.info("[ZAP] Running baseline docker scan with image %s", image)
+374	                completed = subprocess.run(
+375	                    cmd,
+376	                    capture_output=True,
+377	                    text=True,
+378	                    timeout=self.timeout_seconds,
+379	                    check=False,
+380	                )
+381	                if completed.returncode == 0:
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 32952
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 143
+		Medium: 7
+		High: 23
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 16
+		High: 157
+Files skipped (3):
+	./Documentations/INTEGRATION_INSTRUCTIONS.py (syntax error while parsing AST from file)
+	./automation_scanner_v2.py.corrupt (syntax error while parsing AST from file)
+	./automation_scanner_v2.py.head (syntax error while parsing AST from file)
+

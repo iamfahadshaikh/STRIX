@@ -3,9 +3,9 @@ Normalized findings model: deduplicated, OWASP-mapped, actionable intelligence.
 """
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Set, List, Optional, Dict, Any
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 
 
 class Severity(Enum):
@@ -35,9 +35,10 @@ class FindingType(Enum):
 class Finding:
     """
     Immutable finding record.
-    
+
     Deduplication key: (type, location, cwe)
     """
+
     type: FindingType
     severity: Severity
     location: str  # URL, endpoint, or host
@@ -59,7 +60,7 @@ class Finding:
     exploitability: str = ""
     verification_steps: str = ""
     discovered_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    
+
     def __hash__(self):
         """Deduplication hash: method + endpoint/location + parameter + category/type."""
         return hash(
@@ -70,7 +71,7 @@ class Finding:
                 (self.category or self.type.value or "").strip().lower(),
             )
         )
-    
+
     def __eq__(self, other):
         """Deduplication equality aligned with endpoint+method+parameter+category."""
         if not isinstance(other, Finding):
@@ -144,7 +145,10 @@ class Finding:
         category = str(data.get("category") or data.get("type") or vuln_type.value)
         method = str(data.get("method") or data.get("http_method") or "GET").upper()
         confidence = float(data.get("confidence", 0.0) or 0.0)
-        description = str(data.get("description") or f"Confirmed {vuln_type.value} exploitation signal")
+        description = str(
+            data.get("description")
+            or f"Confirmed {vuln_type.value} exploitation signal"
+        )
         payload = str(data.get("payload") or data.get("payload_true") or "")
         if payload and "payload" not in proof:
             proof["payload"] = payload
@@ -175,25 +179,25 @@ class FindingsRegistry:
     """
     Central findings store: deduplicates, maps to OWASP, tracks severity.
     """
-    
+
     def __init__(self):
         self._findings: Set[Finding] = set()
         self._by_severity: dict[Severity, List[Finding]] = {s: [] for s in Severity}
-    
+
     def add(self, finding: Finding) -> bool:
         """
         Add finding to registry. Returns True if new, False if duplicate.
         """
         if finding in self._findings:
             return False  # Duplicate
-        
+
         self._findings.add(finding)
         self._by_severity[finding.severity].append(finding)
         return True
-    
+
     def deduplicate_nuclei(self, tool_findings: List[Finding]) -> List[Finding]:
         """Deduplicate nuclei findings within a tool run.
-        
+
         Nuclei often reports the same vulnerability from multiple templates.
         Group by (type, location) and keep highest severity instance only.
         """
@@ -205,29 +209,41 @@ class FindingsRegistry:
             else:
                 # Keep higher severity
                 existing = by_location[key]
-                sev_order = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
+                sev_order = [
+                    Severity.CRITICAL,
+                    Severity.HIGH,
+                    Severity.MEDIUM,
+                    Severity.LOW,
+                    Severity.INFO,
+                ]
                 if sev_order.index(f.severity) < sev_order.index(existing.severity):
                     by_location[key] = f
-        
+
         return list(by_location.values())
-    
+
     def get_all(self) -> List[Finding]:
         """Get all findings (sorted by severity)"""
-        order = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
+        order = [
+            Severity.CRITICAL,
+            Severity.HIGH,
+            Severity.MEDIUM,
+            Severity.LOW,
+            Severity.INFO,
+        ]
         return [f for sev in order for f in self._by_severity[sev]]
-    
+
     def get_by_severity(self, severity: Severity) -> List[Finding]:
         """Get findings by severity"""
         return self._by_severity[severity]
-    
+
     def count_by_severity(self) -> dict[Severity, int]:
         """Count findings by severity"""
         return {sev: len(findings) for sev, findings in self._by_severity.items()}
-    
+
     def has_critical(self) -> bool:
         """Check if any critical findings exist"""
         return len(self._by_severity[Severity.CRITICAL]) > 0
-    
+
     def summary(self) -> str:
         """Human-readable summary"""
         counts = self.count_by_severity()
@@ -238,10 +254,11 @@ class FindingsRegistry:
             f"Low: {counts[Severity.LOW]}, "
             f"Info: {counts[Severity.INFO]}"
         )
-    
+
     def to_dict(self) -> dict:
         """Export to dict for JSON serialization"""
         from enum import Enum
+
         return {
             "total": len(self._findings),
             "by_severity": {s.value: len(f) for s, f in self._by_severity.items()},

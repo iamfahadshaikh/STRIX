@@ -39,62 +39,70 @@ for url in sql_endpoints:
 """
 
 import logging
-from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
-from param_intelligence import classify_parameters, filter_controllable, filter_high_confidence
+from param_intelligence import (
+    classify_parameters,
+    filter_controllable,
+    filter_high_confidence,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class TargetingStrategy(Enum):
     """Tool-specific targeting strategies"""
-    XSS = "xss"           # Reflection-focused endpoints
-    SQL = "sql"           # Parameter-carrying endpoints
-    COMMIX = "commix"     # Any parameter endpoints
-    TEMPLATE = "template" # All endpoints (nuclei)
-    API = "api"           # API-specific (OpenAPI endpoints)
+
+    XSS = "xss"  # Reflection-focused endpoints
+    SQL = "sql"  # Parameter-carrying endpoints
+    COMMIX = "commix"  # Any parameter endpoints
+    TEMPLATE = "template"  # All endpoints (nuclei)
+    API = "api"  # API-specific (OpenAPI endpoints)
 
 
 @dataclass
 class ToolTargets:
     """Per-tool targeting information"""
+
     tool_name: str
     can_run: bool
     target_urls: List[str] = field(default_factory=list)
     parameters: Dict[str, List[str]] = field(default_factory=dict)  # url → param list
-    forms: Dict[str, List[Dict]] = field(default_factory=dict)      # url → form data
-    reflections: List[str] = field(default_factory=list)            # Reflected URLs
+    forms: Dict[str, List[Dict]] = field(default_factory=dict)  # url → form data
+    reflections: List[str] = field(default_factory=list)  # Reflected URLs
     strategy: TargetingStrategy = TargetingStrategy.TEMPLATE
     priority: int = 0
     reason: str = ""
 
     def __repr__(self) -> str:
-        return (f"ToolTargets({self.tool_name}, can_run={self.can_run}, "
-                f"targets={len(self.target_urls)}, params={sum(len(p) for p in self.parameters.values())})")
+        return (
+            f"ToolTargets({self.tool_name}, can_run={self.can_run}, "
+            f"targets={len(self.target_urls)}, params={sum(len(p) for p in self.parameters.values())})"
+        )
 
     def to_dict(self) -> dict:
         return {
-            'tool': self.tool_name,
-            'can_run': self.can_run,
-            'target_count': len(self.target_urls),
-            'targets': self.target_urls,
-            'param_count': sum(len(p) for p in self.parameters.values()),
-            'parameters': self.parameters,
-            'forms': self.forms,
-            'reflection_count': len(self.reflections),
-            'reflections': self.reflections,
-            'strategy': self.strategy.value,
-            'priority': self.priority,
-            'reason': self.reason
+            "tool": self.tool_name,
+            "can_run": self.can_run,
+            "target_count": len(self.target_urls),
+            "targets": self.target_urls,
+            "param_count": sum(len(p) for p in self.parameters.values()),
+            "parameters": self.parameters,
+            "forms": self.forms,
+            "reflection_count": len(self.reflections),
+            "reflections": self.reflections,
+            "strategy": self.strategy.value,
+            "priority": self.priority,
+            "reason": self.reason,
         }
 
 
 class GatingLoopOrchestrator:
     """
     Orchestrates crawl → graph → per-tool decisions
-    
+
     Coordinates:
       1. Crawl adapter signals (reflection_count, parameter_count, etc.)
       2. Decision ledger (per-tool allow/deny)
@@ -105,7 +113,7 @@ class GatingLoopOrchestrator:
     def __init__(self, decision_ledger, crawl_adapter, endpoint_graph=None):
         """
         Initialize gating loop
-        
+
         Args:
             decision_ledger: DecisionLedger instance (with crawl gating applied)
             crawl_adapter: CrawlAdapter instance (with crawl results)
@@ -115,16 +123,16 @@ class GatingLoopOrchestrator:
         self.adapter = crawl_adapter
         self.graph = endpoint_graph
         self._targets_cache: Dict[str, ToolTargets] = {}
-        
+
         logger.info("[GatingLoop] Initialized with decision ledger and crawl adapter")
 
     def build_targets(self) -> Dict[str, ToolTargets]:
         """
         Build per-tool targeting from crawl signals + decisions
-        
+
         Returns:
             Dict[tool_name] → ToolTargets
-            
+
         Usage:
             targets_map = orchestrator.build_targets()
             for tool, targets in targets_map.items():
@@ -133,23 +141,33 @@ class GatingLoopOrchestrator:
         gating = self.adapter.gating_signals
         targets_map = {}
 
-        logger.info(f"[GatingLoop] Building targets for {gating.get('crawled_url_count', 0)} endpoints, "
-                   f"{gating['parameter_count']} parameters, {gating['reflection_count']} reflections")
+        logger.info(
+            f"[GatingLoop] Building targets for {gating.get('crawled_url_count', 0)} endpoints, "
+            f"{gating['parameter_count']} parameters, {gating['reflection_count']} reflections"
+        )
 
         # === XSSTRIKE ===
         xss_targets = ToolTargets(
             tool_name="xsstrike",
-            can_run=self.ledger.should_run_payload_tool_with_crawl("xsstrike", self.adapter),
-            strategy=TargetingStrategy.XSS
+            can_run=self.ledger.should_run_payload_tool_with_crawl(
+                "xsstrike", self.adapter
+            ),
+            strategy=TargetingStrategy.XSS,
         )
         if xss_targets.can_run:
             # Note: we don't have specific endpoint URLs from basic gating signals
             # In production, you'd integrate with endpoint_param_graph.py for detailed URLs
-            xss_targets.target_urls = [f"[{gating['reflection_count']} reflection endpoints]"]
-            xss_targets.reflections = gating.get('reflectable_params', [])
+            xss_targets.target_urls = [
+                f"[{gating['reflection_count']} reflection endpoints]"
+            ]
+            xss_targets.reflections = gating.get("reflectable_params", [])
             xss_targets.priority = self.ledger.get_priority("xsstrike")
-            xss_targets.reason = f"Reflection endpoints: {gating['reflection_count']} identified"
-            logger.info(f"[GatingLoop] xsstrike ENABLED: {gating['reflection_count']} reflection targets")
+            xss_targets.reason = (
+                f"Reflection endpoints: {gating['reflection_count']} identified"
+            )
+            logger.info(
+                f"[GatingLoop] xsstrike ENABLED: {gating['reflection_count']} reflection targets"
+            )
         else:
             xss_targets.reason = "No reflectable parameters (crawl)"
             logger.info(f"[GatingLoop] xsstrike DISABLED: {xss_targets.reason}")
@@ -159,15 +177,23 @@ class GatingLoopOrchestrator:
         # === DALFOX ===
         dalfox_targets = ToolTargets(
             tool_name="dalfox",
-            can_run=self.ledger.should_run_payload_tool_with_crawl("dalfox", self.adapter),
-            strategy=TargetingStrategy.XSS
+            can_run=self.ledger.should_run_payload_tool_with_crawl(
+                "dalfox", self.adapter
+            ),
+            strategy=TargetingStrategy.XSS,
         )
         if dalfox_targets.can_run:
-            dalfox_targets.target_urls = [f"[{gating['reflection_count']} reflection endpoints]"]
-            dalfox_targets.reflections = gating.get('reflectable_params', [])
+            dalfox_targets.target_urls = [
+                f"[{gating['reflection_count']} reflection endpoints]"
+            ]
+            dalfox_targets.reflections = gating.get("reflectable_params", [])
             dalfox_targets.priority = self.ledger.get_priority("dalfox")
-            dalfox_targets.reason = f"XSS testing on {gating['reflection_count']} reflection endpoints"
-            logger.info(f"[GatingLoop] dalfox ENABLED: {gating['reflection_count']} targets")
+            dalfox_targets.reason = (
+                f"XSS testing on {gating['reflection_count']} reflection endpoints"
+            )
+            logger.info(
+                f"[GatingLoop] dalfox ENABLED: {gating['reflection_count']} targets"
+            )
         else:
             dalfox_targets.reason = "No reflection endpoints"
             logger.info(f"[GatingLoop] dalfox DISABLED: {dalfox_targets.reason}")
@@ -177,14 +203,20 @@ class GatingLoopOrchestrator:
         # === SQLMAP ===
         sql_targets = ToolTargets(
             tool_name="sqlmap",
-            can_run=self.ledger.should_run_payload_tool_with_crawl("sqlmap", self.adapter),
-            strategy=TargetingStrategy.SQL
+            can_run=self.ledger.should_run_payload_tool_with_crawl(
+                "sqlmap", self.adapter
+            ),
+            strategy=TargetingStrategy.SQL,
         )
         if sql_targets.can_run:
-            sql_targets.target_urls = [f"[{gating['parameter_count']} parameter-carrying endpoints]"]
+            sql_targets.target_urls = [
+                f"[{gating['parameter_count']} parameter-carrying endpoints]"
+            ]
             sql_targets.priority = self.ledger.get_priority("sqlmap")
             sql_targets.reason = f"SQL injection on {gating['parameter_count']} parameters ({gating.get('parameter_names', [])})"
-            logger.info(f"[GatingLoop] sqlmap ENABLED: {gating['parameter_count']} param-carrying endpoints")
+            logger.info(
+                f"[GatingLoop] sqlmap ENABLED: {gating['parameter_count']} param-carrying endpoints"
+            )
         else:
             sql_targets.reason = "No parameters discovered"
             logger.info(f"[GatingLoop] sqlmap DISABLED: {sql_targets.reason}")
@@ -194,14 +226,22 @@ class GatingLoopOrchestrator:
         # === COMMIX ===
         commix_targets = ToolTargets(
             tool_name="commix",
-            can_run=self.ledger.should_run_payload_tool_with_crawl("commix", self.adapter),
-            strategy=TargetingStrategy.COMMIX
+            can_run=self.ledger.should_run_payload_tool_with_crawl(
+                "commix", self.adapter
+            ),
+            strategy=TargetingStrategy.COMMIX,
         )
         if commix_targets.can_run:
-            commix_targets.target_urls = [f"[{gating['parameter_count']} parameter-carrying endpoints]"]
+            commix_targets.target_urls = [
+                f"[{gating['parameter_count']} parameter-carrying endpoints]"
+            ]
             commix_targets.priority = self.ledger.get_priority("commix")
-            commix_targets.reason = f"Command injection on {gating['parameter_count']} parameters"
-            logger.info(f"[GatingLoop] commix ENABLED: {len(commix_targets.target_urls)} targets")
+            commix_targets.reason = (
+                f"Command injection on {gating['parameter_count']} parameters"
+            )
+            logger.info(
+                f"[GatingLoop] commix ENABLED: {len(commix_targets.target_urls)} targets"
+            )
         else:
             commix_targets.reason = "No parameters or tool disabled"
             logger.info(f"[GatingLoop] commix DISABLED: {commix_targets.reason}")
@@ -214,13 +254,13 @@ class GatingLoopOrchestrator:
     def get_tool_targets(self, tool_name: str) -> List[str]:
         """
         Get target URLs for specific tool
-        
+
         Args:
             tool_name: Tool identifier
-            
+
         Returns:
             List[str]: Target URLs
-            
+
         Usage:
             urls = orchestrator.get_tool_targets("xsstrike")
         """
@@ -235,7 +275,7 @@ class GatingLoopOrchestrator:
     def get_targets_for_all_tools(self) -> Dict[str, ToolTargets]:
         """
         Get targeting information for all tools
-        
+
         Returns:
             Dict[tool_name] → ToolTargets
         """
@@ -246,10 +286,10 @@ class GatingLoopOrchestrator:
     def should_run_tool(self, tool_name: str) -> bool:
         """
         Check if tool should run (gated decision)
-        
+
         Args:
             tool_name: Tool identifier
-            
+
         Returns:
             bool: True if tool should run
         """
@@ -265,29 +305,41 @@ class GatingLoopOrchestrator:
             "===== GATING LOOP SUMMARY =====",
             f"Crawl: {gating.get('crawled_url_count', 0)} endpoints, {gating['parameter_count']} parameters, {gating['reflection_count']} reflections",
             "",
-            "Tool Decisions:"
+            "Tool Decisions:",
         ]
 
         for tool_name, targets in sorted(self._targets_cache.items()):
             status = "✓ RUN" if targets.can_run else "✗ SKIP"
-            target_info = f"({len(targets.target_urls)} URLs)" if targets.target_urls else "(no targets)"
-            summary_lines.append(f"  {tool_name}: {status} {target_info} - {targets.reason}")
+            target_info = (
+                f"({len(targets.target_urls)} URLs)"
+                if targets.target_urls
+                else "(no targets)"
+            )
+            summary_lines.append(
+                f"  {tool_name}: {status} {target_info} - {targets.reason}"
+            )
 
         summary_lines.append("")
         summary_lines.append("Execution Order (by priority):")
         sorted_tools = sorted(
             [t for t in self._targets_cache.values() if t.can_run],
-            key=lambda x: -x.priority
+            key=lambda x: -x.priority,
         )
         for i, targets in enumerate(sorted_tools, 1):
-            summary_lines.append(f"  {i}. {targets.tool_name} (priority {targets.priority})")
+            summary_lines.append(
+                f"  {i}. {targets.tool_name} (priority {targets.priority})"
+            )
 
         return "\n".join(summary_lines)
 
-    def has_valid_params(self, endpoint: str, method: str, params: List[Dict], threshold: float = 0.70) -> bool:
+    def has_valid_params(
+        self, endpoint: str, method: str, params: List[Dict], threshold: float = 0.70
+    ) -> bool:
         """Return True only when endpoint has controllable, high-confidence parameters."""
         try:
-            enriched = classify_parameters(endpoint=endpoint, method=method, params=params)
+            enriched = classify_parameters(
+                endpoint=endpoint, method=method, params=params
+            )
             controllable = filter_controllable(enriched)
             high_conf = filter_high_confidence(controllable, threshold=threshold)
             return len(high_conf) > 0
@@ -301,23 +353,24 @@ class GatingLoopOrchestrator:
             self.build_targets()
 
         return {
-            'crawl': self.adapter.gating_signals,
-            'tools': {
-                tool: targets.to_dict()
-                for tool, targets in self._targets_cache.items()
+            "crawl": self.adapter.gating_signals,
+            "tools": {
+                tool: targets.to_dict() for tool, targets in self._targets_cache.items()
             },
-            'summary': self.get_summary()
+            "summary": self.get_summary(),
         }
 
 
 # ===== CLI TESTING =====
 if __name__ == "__main__":
     import json
+
     from crawl_adapter import CrawlAdapter
     from decision_ledger import DecisionEngine
 
-    logging.basicConfig(level=logging.INFO, 
-                       format='%(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.INFO, format="%(name)s - %(levelname)s - %(message)s"
+    )
 
     # Test domain
     TEST_DOMAIN = "https://dev-erp.sisschools.org"
@@ -337,16 +390,19 @@ if __name__ == "__main__":
     engine = DecisionEngine()
     # Build minimal profile
     from target_profile import TargetProfileBuilder, TargetType
-    profile = (TargetProfileBuilder()
-              .with_original_input(TEST_DOMAIN)
-              .with_target_type(TargetType.SUBDOMAIN)
-              .with_host("dev-erp.sisschools.org")
-              .with_base_domain("sisschools.org")
-              .with_is_web_target(True)
-              .with_is_https(True)
-              .build())
+
+    profile = (
+        TargetProfileBuilder()
+        .with_original_input(TEST_DOMAIN)
+        .with_target_type(TargetType.SUBDOMAIN)
+        .with_host("dev-erp.sisschools.org")
+        .with_base_domain("sisschools.org")
+        .with_is_web_target(True)
+        .with_is_https(True)
+        .build()
+    )
     ledger = engine.build_ledger(profile)
-    
+
     # Log crawl-based gating decisions (no modification to ledger)
     logger.info("Applying crawl signals to payload tool gating...")
     gating_summary = ledger.get_crawl_gating_summary(adapter)
@@ -378,7 +434,12 @@ if __name__ == "__main__":
     # Step 7: Export as JSON
     print("===== EXPORTED AS JSON =====\n")
     export = orchestrator.to_dict()
-    print(json.dumps({
-        'crawl_summary': export['crawl'],
-        'tools': {k: v for k, v in export['tools'].items() if v['can_run']}
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "crawl_summary": export["crawl"],
+                "tools": {k: v for k, v in export["tools"].items() if v["can_run"]},
+            },
+            indent=2,
+        )
+    )

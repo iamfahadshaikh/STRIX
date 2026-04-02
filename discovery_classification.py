@@ -5,11 +5,12 @@ Purpose: Classify every discovery tool with explicit contracts
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Set, Optional
+from typing import Optional, Set
 
 
 class ToolClass(Enum):
     """Discovery tool classification"""
+
     SIGNAL_PRODUCER = "signal_producer"  # Produces actionable signals
     INFORMATIONAL_ONLY = "informational_only"  # Nice-to-have, no hard signals
     EXTERNAL_INTEL = "external_intel"  # Third-party enrichment
@@ -18,6 +19,7 @@ class ToolClass(Enum):
 @dataclass
 class ToolContract:
     """Explicit contract for discovery tools"""
+
     tool_name: str
     classification: ToolClass
     signals_produced: Set[str]
@@ -36,7 +38,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"dns_resolved", "ip_address"},
         confidence_weight=0.95,
         missing_output_acceptable=False,
-        description="DNS A record resolution"
+        description="DNS A record resolution",
     ),
     "dig_ns": ToolContract(
         tool_name="dig_ns",
@@ -44,7 +46,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"nameservers"},
         confidence_weight=0.9,
         missing_output_acceptable=True,
-        description="DNS NS record enumeration"
+        description="DNS NS record enumeration",
     ),
     "dig_mx": ToolContract(
         tool_name="dig_mx",
@@ -52,7 +54,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"mail_servers"},
         confidence_weight=0.9,
         missing_output_acceptable=True,
-        description="DNS MX record enumeration"
+        description="DNS MX record enumeration",
     ),
     "dnsrecon": ToolContract(
         tool_name="dnsrecon",
@@ -60,9 +62,8 @@ DISCOVERY_TOOLS = {
         signals_produced={"subdomains", "dns_records"},
         confidence_weight=0.85,
         missing_output_acceptable=True,
-        description="Comprehensive DNS reconnaissance"
+        description="Comprehensive DNS reconnaissance",
     ),
-    
     # === Network Tools (signal_producer) ===
     "ping": ToolContract(
         tool_name="ping",
@@ -70,7 +71,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"reachable", "network_latency"},
         confidence_weight=0.9,
         missing_output_acceptable=False,
-        description="ICMP reachability check"
+        description="ICMP reachability check",
     ),
     "nmap_quick": ToolContract(
         tool_name="nmap_quick",
@@ -78,7 +79,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"ports_known", "open_ports", "services"},
         confidence_weight=0.95,
         missing_output_acceptable=False,
-        description="Port scan (common ports)"
+        description="Port scan (common ports)",
     ),
     "nmap_vuln": ToolContract(
         tool_name="nmap_vuln",
@@ -86,9 +87,8 @@ DISCOVERY_TOOLS = {
         signals_produced={"vulnerabilities", "service_versions"},
         confidence_weight=0.85,
         missing_output_acceptable=True,
-        description="Vulnerability scan via NSE scripts"
+        description="Vulnerability scan via NSE scripts",
     ),
-    
     # === Web Detection (signal_producer) ===
     "whatweb": ToolContract(
         tool_name="whatweb",
@@ -96,9 +96,8 @@ DISCOVERY_TOOLS = {
         signals_produced={"web_target", "tech_stack", "cms"},
         confidence_weight=0.9,
         missing_output_acceptable=False,
-        description="Web technology fingerprinting"
+        description="Web technology fingerprinting",
     ),
-    
     # === SSL/TLS (signal_producer) ===
     "sslscan": ToolContract(
         tool_name="sslscan",
@@ -106,7 +105,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"https", "ssl_version", "ciphers"},
         confidence_weight=0.95,
         missing_output_acceptable=True,
-        description="SSL/TLS configuration scan"
+        description="SSL/TLS configuration scan",
     ),
     "testssl": ToolContract(
         tool_name="testssl",
@@ -114,9 +113,8 @@ DISCOVERY_TOOLS = {
         signals_produced={"https", "ssl_vulnerabilities"},
         confidence_weight=0.9,
         missing_output_acceptable=True,
-        description="Comprehensive SSL/TLS testing"
+        description="Comprehensive SSL/TLS testing",
     ),
-    
     # === Subdomain Enumeration (signal_producer) ===
     "findomain": ToolContract(
         tool_name="findomain",
@@ -124,7 +122,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"subdomains"},
         confidence_weight=0.85,
         missing_output_acceptable=True,
-        description="Fast subdomain enumeration"
+        description="Fast subdomain enumeration",
     ),
     "sublist3r": ToolContract(
         tool_name="sublist3r",
@@ -132,7 +130,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"subdomains"},
         confidence_weight=0.8,
         missing_output_acceptable=True,
-        description="Multi-source subdomain enumeration"
+        description="Multi-source subdomain enumeration",
     ),
     "assetfinder": ToolContract(
         tool_name="assetfinder",
@@ -140,9 +138,8 @@ DISCOVERY_TOOLS = {
         signals_produced={"subdomains"},
         confidence_weight=0.8,
         missing_output_acceptable=True,
-        description="Asset discovery via passive sources"
+        description="Asset discovery via passive sources",
     ),
-    
     # === Directory Enumeration (informational_only - high noise) ===
     "gobuster": ToolContract(
         tool_name="gobuster",
@@ -150,7 +147,7 @@ DISCOVERY_TOOLS = {
         signals_produced={"endpoints"},
         confidence_weight=0.7,
         missing_output_acceptable=True,
-        description="Directory brute-force (wordlist-based)"
+        description="Directory brute-force (wordlist-based)",
     ),
     "dirsearch": ToolContract(
         tool_name="dirsearch",
@@ -158,9 +155,8 @@ DISCOVERY_TOOLS = {
         signals_produced={"endpoints"},
         confidence_weight=0.7,
         missing_output_acceptable=True,
-        description="Web path scanner"
+        description="Web path scanner",
     ),
-    
     # === External Intel (external_intel) ===
     "crtsh": ToolContract(
         tool_name="crtsh",
@@ -169,7 +165,7 @@ DISCOVERY_TOOLS = {
         confidence_weight=0.8,
         missing_output_acceptable=True,
         requires_network=True,
-        description="Certificate transparency logs (crt.sh)"
+        description="Certificate transparency logs (crt.sh)",
     ),
 }
 
@@ -183,16 +179,18 @@ def get_tool_contract(tool_name: str) -> ToolContract:
     """Get contract for a tool, with default fallback"""
     if tool_name in DISCOVERY_TOOLS:
         return DISCOVERY_TOOLS[tool_name]
-    
+
     # Default for unknown tools: informational_only
-    logger.warning(f"Tool '{tool_name}' not in registry - defaulting to INFORMATIONAL_ONLY")
+    logger.warning(
+        f"Tool '{tool_name}' not in registry - defaulting to INFORMATIONAL_ONLY"
+    )
     return ToolContract(
         tool_name=tool_name,
         classification=ToolClass.INFORMATIONAL_ONLY,
         signals_produced=set(),
         confidence_weight=0.5,
         missing_output_acceptable=True,
-        description="Unknown tool - informational only"
+        description="Unknown tool - informational only",
     )
 
 

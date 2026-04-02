@@ -11,7 +11,6 @@ import ssl
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -96,15 +95,21 @@ class SSLCertificateChecker:
                 insecure_ctx.check_hostname = False
                 insecure_ctx.verify_mode = ssl.CERT_NONE
                 with socket.create_connection((host, port), timeout=5) as sock:
-                    with insecure_ctx.wrap_socket(sock, server_hostname=host) as tls_sock:
+                    with insecure_ctx.wrap_socket(
+                        sock, server_hostname=host
+                    ) as tls_sock:
                         cert = tls_sock.getpeercert() or {}
                         if cert:
                             base["tls_enabled"] = True
                             base["certificate_present"] = True
                             if not base["subject"]:
-                                base["subject"] = self._flatten_name(cert.get("subject", ()))
+                                base["subject"] = self._flatten_name(
+                                    cert.get("subject", ())
+                                )
                             if not base["issuer"]:
-                                base["issuer"] = self._flatten_name(cert.get("issuer", ()))
+                                base["issuer"] = self._flatten_name(
+                                    cert.get("issuer", ())
+                                )
                             self._apply_expiry_fields(base, cert.get("notAfter"))
             except Exception:
                 pass

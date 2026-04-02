@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from typing import Dict, List, Optional, Set
-from urllib.parse import parse_qs, urlparse, urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +52,18 @@ class JSBrowserDiscovery:
         self.timeout = timeout
         self.max_pages = max_pages
 
-    def discover(self, base_url: str, role_headers: Optional[Dict[str, Dict[str, str]]] = None) -> Dict:
+    def discover(
+        self, base_url: str, role_headers: Optional[Dict[str, Dict[str, str]]] = None
+    ) -> Dict:
         logger.info("JS_DISCOVERY_START target=%s", base_url)
         role_headers = role_headers or {}
         pw_result = self._discover_with_playwright(base_url, role_headers)
         if not pw_result:
             raise Exception("JS discovery runtime failed")
         if pw_result.get("signal_strength") == "low":
-            logger.info("JS_DISCOVERY_LOW_SIGNAL: browser ran but produced limited signals")
+            logger.info(
+                "JS_DISCOVERY_LOW_SIGNAL: browser ran but produced limited signals"
+            )
         logger.info(
             "JS_DISCOVERY_SUCCESS requests=%d responses=%d api_calls=%d",
             len(pw_result.get("requests", [])),
@@ -68,7 +72,9 @@ class JSBrowserDiscovery:
         )
         return pw_result
 
-    def _discover_with_playwright(self, base_url: str, role_headers: Dict[str, Dict[str, str]]) -> Optional[Dict]:
+    def _discover_with_playwright(
+        self, base_url: str, role_headers: Dict[str, Dict[str, str]]
+    ) -> Optional[Dict]:
         try:
             playwright_sync_api = importlib.import_module("playwright.sync_api")
             sync_playwright = getattr(playwright_sync_api, "sync_playwright")
@@ -106,7 +112,9 @@ class JSBrowserDiscovery:
                         time.sleep(1.0)
 
                 if browser is None:
-                    raise Exception(f"Chromium launch failed after retry: {launch_error}")
+                    raise Exception(
+                        f"Chromium launch failed after retry: {launch_error}"
+                    )
 
                 context = browser.new_context(ignore_https_errors=True)
                 page = context.new_page()
@@ -198,7 +206,9 @@ class JSBrowserDiscovery:
 
                 page.on("request", on_request)
                 page.on("response", on_response)
-                page.goto(base_url, wait_until="networkidle", timeout=self.timeout * 1000)
+                page.goto(
+                    base_url, wait_until="networkidle", timeout=self.timeout * 1000
+                )
 
                 try:
                     captured = page.evaluate("window.__vaptCaptured || []")
@@ -212,7 +222,11 @@ class JSBrowserDiscovery:
                             kind = str(item.get("kind") or "").lower()
                             if kind not in {"fetch", "xhr_open", "xhr_send", "axios"}:
                                 continue
-                            url = raw if raw.startswith("http") else f"{base_url.rstrip('/')}/{raw.lstrip('/')}"
+                            url = (
+                                raw
+                                if raw.startswith("http")
+                                else f"{base_url.rstrip('/')}/{raw.lstrip('/')}"
+                            )
                             if not self._is_same_host(base_url, url):
                                 continue
                             if not self._is_js_api_signal_url(url):
@@ -221,7 +235,9 @@ class JSBrowserDiscovery:
                             endpoints.add(self._path_only(url))
                             api_endpoints.add(self._path_only(url))
                             api_calls_detected += 1
-                            api_calls_list.append({"url": url, "source": f"runtime_hook:{kind}"})
+                            api_calls_list.append(
+                                {"url": url, "source": f"runtime_hook:{kind}"}
+                            )
                             for param_name in parse_qs(urlparse(url).query).keys():
                                 params.add(param_name)
                 except Exception:
@@ -282,7 +298,9 @@ class JSBrowserDiscovery:
         }
 
         if signal_strength == "low":
-            result["warning"] = "JS discovery executed but returned no useful network signals"
+            result["warning"] = (
+                "JS discovery executed but returned no useful network signals"
+            )
 
         return result
 
@@ -294,7 +312,21 @@ class JSBrowserDiscovery:
         low = value.lower()
         if any(part in low for part in ["/node_modules/", "/src/"]):
             return False
-        if low.endswith((".ts", ".map", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf", ".css")):
+        if low.endswith(
+            (
+                ".ts",
+                ".map",
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".svg",
+                ".woff",
+                ".woff2",
+                ".ttf",
+                ".css",
+            )
+        ):
             return False
         if low.endswith(".js") and not self._is_api_like(low):
             return False

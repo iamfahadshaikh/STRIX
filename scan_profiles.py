@@ -11,15 +11,16 @@ Profiles:
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class ProfileType(str, Enum):
     """Scan profile types"""
+
     RECON_ONLY = "recon-only"
     SAFE_VA = "safe-va"
     AUTH_VA = "auth-va"
@@ -30,6 +31,7 @@ class ProfileType(str, Enum):
 @dataclass
 class ToolConfig:
     """Configuration for a security tool"""
+
     name: str
     enabled: bool = True
     max_payloads: int = 100
@@ -41,38 +43,39 @@ class ToolConfig:
 @dataclass
 class ScanProfile:
     """Complete scan profile configuration"""
+
     name: str
     profile_type: ProfileType
     description: str
-    
+
     # Scope
     crawl_depth: int = 2
     max_endpoints: int = 500
     max_parameters_per_endpoint: int = 10
-    
+
     # Tools
     enabled_tools: List[str] = field(default_factory=list)
     tool_configs: Dict[str, ToolConfig] = field(default_factory=dict)
-    
+
     # Payloads
     payload_categories: List[str] = field(default_factory=list)
     max_total_payloads: int = 1000
     concurrent_requests: int = 5
-    
+
     # Runtime
     timeout_minutes: int = 60
     max_retries: int = 2
     partial_failure_tolerance: bool = True
-    
+
     # Output
     capture_traffic: bool = True
     export_formats: List[str] = field(default_factory=list)  # json, sarif, junit, har
-    
+
     # Security boundaries (what NOT to do)
     skip_dangerous: bool = False  # Skip file delete, system command execution
     auth_bypass_only: bool = False  # Only test auth bypasses, not data extraction
     information_only: bool = False  # Only collect info, no exploitation
-    
+
     def to_dict(self) -> Dict:
         """Serialize profile"""
         return {
@@ -82,7 +85,7 @@ class ScanProfile:
             "scope": {
                 "crawl_depth": self.crawl_depth,
                 "max_endpoints": self.max_endpoints,
-                "max_parameters_per_endpoint": self.max_parameters_per_endpoint
+                "max_parameters_per_endpoint": self.max_parameters_per_endpoint,
             },
             "tools": {
                 name: {
@@ -90,46 +93,46 @@ class ScanProfile:
                     "max_payloads": config.max_payloads,
                     "timeout_seconds": config.timeout_seconds,
                     "depth_level": config.depth_level,
-                    "aggressive": config.aggressive
+                    "aggressive": config.aggressive,
                 }
                 for name, config in self.tool_configs.items()
             },
             "payloads": {
                 "categories": self.payload_categories,
                 "max_total": self.max_total_payloads,
-                "concurrent_requests": self.concurrent_requests
+                "concurrent_requests": self.concurrent_requests,
             },
             "runtime": {
                 "timeout_minutes": self.timeout_minutes,
                 "max_retries": self.max_retries,
-                "partial_failure_tolerance": self.partial_failure_tolerance
+                "partial_failure_tolerance": self.partial_failure_tolerance,
             },
             "output": {
                 "capture_traffic": self.capture_traffic,
-                "export_formats": self.export_formats
+                "export_formats": self.export_formats,
             },
             "boundaries": {
                 "skip_dangerous": self.skip_dangerous,
                 "auth_bypass_only": self.auth_bypass_only,
-                "information_only": self.information_only
-            }
+                "information_only": self.information_only,
+            },
         }
 
 
 class ScanProfileManager:
     """
     Manage scan profiles
-    
+
     Usage:
         manager = ScanProfileManager()
-        
+
         # Get profile
         profile = manager.get_profile("ci-fast")
-        
+
         # List profiles
         for profile_name in manager.list_profiles():
             print(profile_name)
-        
+
         # Create custom profile
         custom = manager.create_custom_profile(
             name="custom",
@@ -145,7 +148,7 @@ class ScanProfileManager:
 
     def _setup_default_profiles(self) -> None:
         """Initialize default profiles"""
-        
+
         # 1. RECON-ONLY: Discovery only, zero risk
         recon = ScanProfile(
             name="recon-only",
@@ -159,7 +162,7 @@ class ScanProfileManager:
             concurrent_requests=3,
             capture_traffic=True,
             export_formats=["json"],
-            information_only=True
+            information_only=True,
         )
         recon.tool_configs["crawling"] = ToolConfig(
             name="crawling",
@@ -167,7 +170,7 @@ class ScanProfileManager:
             max_payloads=0,
             timeout_seconds=300,
             depth_level=1,
-            aggressive=False
+            aggressive=False,
         )
         self.profiles[ProfileType.RECON_ONLY.value] = recon
 
@@ -186,7 +189,7 @@ class ScanProfileManager:
             concurrent_requests=5,
             capture_traffic=True,
             export_formats=["json", "sarif"],
-            information_only=True
+            information_only=True,
         )
         safe.tool_configs["nuclei"] = ToolConfig(
             name="nuclei",
@@ -194,7 +197,7 @@ class ScanProfileManager:
             max_payloads=200,
             timeout_seconds=120,
             depth_level=2,
-            aggressive=False
+            aggressive=False,
         )
         safe.tool_configs["dalfox"] = ToolConfig(
             name="dalfox",
@@ -202,7 +205,7 @@ class ScanProfileManager:
             max_payloads=150,
             timeout_seconds=90,
             depth_level=1,
-            aggressive=False
+            aggressive=False,
         )
         self.profiles[ProfileType.SAFE_VA.value] = safe
 
@@ -216,15 +219,20 @@ class ScanProfileManager:
             max_parameters_per_endpoint=15,
             enabled_tools=["nuclei", "dalfox", "sqlmap", "jwt-scanner"],
             payload_categories=[
-                "info-disclosure", "weak-auth", "sql-injection", "xss", 
-                "auth-bypass", "privilege-escalation", "idor"
+                "info-disclosure",
+                "weak-auth",
+                "sql-injection",
+                "xss",
+                "auth-bypass",
+                "privilege-escalation",
+                "idor",
             ],
             max_total_payloads=2000,
             timeout_minutes=90,
             concurrent_requests=8,
             capture_traffic=True,
             export_formats=["json", "sarif", "junit"],
-            skip_dangerous=True  # Don't delete files or execute commands
+            skip_dangerous=True,  # Don't delete files or execute commands
         )
         auth.tool_configs["nuclei"] = ToolConfig(
             name="nuclei",
@@ -232,7 +240,7 @@ class ScanProfileManager:
             max_payloads=500,
             timeout_seconds=180,
             depth_level=3,
-            aggressive=False
+            aggressive=False,
         )
         auth.tool_configs["dalfox"] = ToolConfig(
             name="dalfox",
@@ -240,7 +248,7 @@ class ScanProfileManager:
             max_payloads=300,
             timeout_seconds=120,
             depth_level=2,
-            aggressive=False
+            aggressive=False,
         )
         auth.tool_configs["sqlmap"] = ToolConfig(
             name="sqlmap",
@@ -248,7 +256,7 @@ class ScanProfileManager:
             max_payloads=500,
             timeout_seconds=180,
             depth_level=2,
-            aggressive=False
+            aggressive=False,
         )
         auth.tool_configs["jwt-scanner"] = ToolConfig(
             name="jwt-scanner",
@@ -256,7 +264,7 @@ class ScanProfileManager:
             max_payloads=100,
             timeout_seconds=120,
             depth_level=2,
-            aggressive=False
+            aggressive=False,
         )
         self.profiles[ProfileType.AUTH_VA.value] = auth
 
@@ -275,7 +283,7 @@ class ScanProfileManager:
             concurrent_requests=10,  # Parallel to speed up
             capture_traffic=True,
             export_formats=["json", "sarif"],
-            information_only=True
+            information_only=True,
         )
         ci.tool_configs["nuclei"] = ToolConfig(
             name="nuclei",
@@ -283,7 +291,7 @@ class ScanProfileManager:
             max_payloads=200,
             timeout_seconds=60,
             depth_level=1,
-            aggressive=False
+            aggressive=False,
         )
         self.profiles[ProfileType.CI_FAST.value] = ci
 
@@ -297,16 +305,27 @@ class ScanProfileManager:
             max_parameters_per_endpoint=30,
             enabled_tools=["nuclei", "dalfox", "sqlmap", "jwt-scanner", "paramspider"],
             payload_categories=[
-                "info-disclosure", "weak-auth", "sql-injection", "xss", "xxe",
-                "command-injection", "auth-bypass", "privilege-escalation", "idor",
-                "weak-crypto", "csrf", "cors", "headers", "cache-poison"
+                "info-disclosure",
+                "weak-auth",
+                "sql-injection",
+                "xss",
+                "xxe",
+                "command-injection",
+                "auth-bypass",
+                "privilege-escalation",
+                "idor",
+                "weak-crypto",
+                "csrf",
+                "cors",
+                "headers",
+                "cache-poison",
             ],
             max_total_payloads=5000,
             timeout_minutes=180,
             concurrent_requests=12,
             capture_traffic=True,
             export_formats=["json", "sarif", "junit", "har"],
-            skip_dangerous=True
+            skip_dangerous=True,
         )
         full.tool_configs["nuclei"] = ToolConfig(
             name="nuclei",
@@ -314,7 +333,7 @@ class ScanProfileManager:
             max_payloads=1500,
             timeout_seconds=300,
             depth_level=3,
-            aggressive=True
+            aggressive=True,
         )
         full.tool_configs["dalfox"] = ToolConfig(
             name="dalfox",
@@ -322,7 +341,7 @@ class ScanProfileManager:
             max_payloads=800,
             timeout_seconds=240,
             depth_level=3,
-            aggressive=True
+            aggressive=True,
         )
         full.tool_configs["sqlmap"] = ToolConfig(
             name="sqlmap",
@@ -330,7 +349,7 @@ class ScanProfileManager:
             max_payloads=1000,
             timeout_seconds=300,
             depth_level=3,
-            aggressive=False
+            aggressive=False,
         )
         full.tool_configs["jwt-scanner"] = ToolConfig(
             name="jwt-scanner",
@@ -338,7 +357,7 @@ class ScanProfileManager:
             max_payloads=200,
             timeout_seconds=180,
             depth_level=2,
-            aggressive=False
+            aggressive=False,
         )
         full.tool_configs["paramspider"] = ToolConfig(
             name="paramspider",
@@ -346,7 +365,7 @@ class ScanProfileManager:
             max_payloads=500,
             timeout_seconds=120,
             depth_level=2,
-            aggressive=False
+            aggressive=False,
         )
         self.profiles[ProfileType.FULL_VA.value] = full
 
@@ -404,7 +423,7 @@ class ScanProfileManager:
         enabled_tools: Optional[List[str]] = None,
         timeout_minutes: Optional[int] = None,
         payload_categories: Optional[List[str]] = None,
-        crawl_depth: Optional[int] = None
+        crawl_depth: Optional[int] = None,
     ) -> ScanProfile:
         """Create custom profile based on existing one"""
         if base_profile not in self.profiles:
@@ -428,7 +447,7 @@ class ScanProfileManager:
             concurrent_requests=base.concurrent_requests,
             capture_traffic=base.capture_traffic,
             export_formats=base.export_formats,
-            skip_dangerous=base.skip_dangerous
+            skip_dangerous=base.skip_dangerous,
         )
 
         # Copy tool configs for enabled tools
@@ -464,7 +483,9 @@ class ScanProfileManager:
         # Check tool configs
         for tool in profile.enabled_tools:
             if tool not in profile.tool_configs:
-                logger.warning(f"[ScanProfiles] Tool {tool} not configured, using defaults")
+                logger.warning(
+                    f"[ScanProfiles] Tool {tool} not configured, using defaults"
+                )
 
         return len(errors) == 0, errors
 
@@ -475,7 +496,8 @@ class ScanProfileManager:
             return
 
         import json
-        with open(filepath, 'w') as f:
+
+        with open(filepath, "w") as f:
             json.dump(self.profiles[profile_name].to_dict(), f, indent=2)
 
         logger.info(f"[ScanProfiles] Exported profile to {filepath}")

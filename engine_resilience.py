@@ -11,21 +11,22 @@ Features:
   6. Graceful degradation
 """
 
-import logging
-import signal
 import json
+import logging
 import pickle
-from typing import Dict, List, Optional, Any, Callable
+import signal
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import time
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class ToolState(str, Enum):
     """Tool execution state"""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
@@ -37,6 +38,7 @@ class ToolState(str, Enum):
 @dataclass
 class ToolCheckpoint:
     """Checkpoint for tool execution"""
+
     tool_name: str
     endpoint: str
     parameter: Optional[str]
@@ -44,7 +46,7 @@ class ToolCheckpoint:
     results: List[Dict] = field(default_factory=list)
     error_message: Optional[str] = None
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-    
+
     def to_dict(self) -> Dict:
         return {
             "tool_name": self.tool_name,
@@ -53,21 +55,24 @@ class ToolCheckpoint:
             "state": self.state.value,
             "results": self.results,
             "error_message": self.error_message,
-            "timestamp": self.timestamp
+            "timestamp": self.timestamp,
         }
 
 
 @dataclass
 class ScanCheckpoint:
     """Scan-level checkpoint for resume"""
+
     scan_id: str
     scan_start_time: str
-    progress: Dict[str, int] = field(default_factory=dict)  # tool -> endpoints_completed
+    progress: Dict[str, int] = field(
+        default_factory=dict
+    )  # tool -> endpoints_completed
     tool_checkpoints: List[ToolCheckpoint] = field(default_factory=list)
     completed_endpoints: List[str] = field(default_factory=list)
     pending_endpoints: List[str] = field(default_factory=list)
     accumulated_results: List[Dict] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict:
         return {
             "scan_id": self.scan_id,
@@ -76,17 +81,17 @@ class ScanCheckpoint:
             "tool_checkpoints": [cp.to_dict() for cp in self.tool_checkpoints],
             "completed_endpoints": self.completed_endpoints,
             "pending_endpoints": self.pending_endpoints,
-            "accumulated_results": self.accumulated_results
+            "accumulated_results": self.accumulated_results,
         }
 
 
 class TimeoutHandler:
     """
     Enforce timeouts, no hanging
-    
+
     Usage:
         handler = TimeoutHandler(timeout_seconds=120)
-        
+
         try:
             handler.start()
             result = risky_function()
@@ -131,16 +136,17 @@ class TimeoutHandler:
 
 class TimeoutException(Exception):
     """Raised when operation times out"""
+
     pass
 
 
 class ToolCrashIsolator:
     """
     Isolate tool crashes, continue scanning
-    
+
     Usage:
         isolator = ToolCrashIsolator()
-        
+
         results = isolator.execute_tool_safe(
             tool_name="sqlmap",
             tool_function=lambda: run_sqlmap(endpoint, params),
@@ -158,11 +164,11 @@ class ToolCrashIsolator:
         tool_function: Callable,
         timeout_seconds: float = 120,
         fallback_value: Any = None,
-        context: str = ""
+        context: str = "",
     ) -> Any:
         """
         Execute tool with crash isolation
-        
+
         Returns:
             Tool result, or fallback_value if crash/timeout
         """
@@ -195,9 +201,7 @@ class ToolCrashIsolator:
         """Log crash for analysis"""
         if tool_name not in self.crash_log:
             self.crash_log[tool_name] = []
-        self.crash_log[tool_name].append(
-            f"{datetime.now().isoformat()}: {error_msg}"
-        )
+        self.crash_log[tool_name].append(f"{datetime.now().isoformat()}: {error_msg}")
 
     def get_crash_report(self) -> Dict:
         """Get crash summary"""
@@ -206,30 +210,30 @@ class ToolCrashIsolator:
             "crashes_by_tool": {
                 tool: len(crashes) for tool, crashes in self.crash_log.items()
             },
-            "details": self.crash_log
+            "details": self.crash_log,
         }
 
 
 class PartialFailureHandler:
     """
     Continue scanning on partial failures
-    
+
     Usage:
         handler = PartialFailureHandler(
             fail_threshold=0.5,  # Fail if 50% of tools crash
             skip_failed_tools=True
         )
-        
+
         for endpoint in endpoints:
             handler.add_endpoint_attempt(endpoint)
-            
+
             for tool in tools:
                 try:
                     results = run_tool(tool, endpoint)
                     handler.record_success(endpoint, tool)
                 except:
                     handler.record_failure(endpoint, tool)
-            
+
             if handler.should_skip_endpoint(endpoint):
                 continue
     """
@@ -238,7 +242,7 @@ class PartialFailureHandler:
         self,
         fail_threshold: float = 0.5,
         skip_failed_tools: bool = True,
-        max_failures_per_endpoint: int = 3
+        max_failures_per_endpoint: int = 3,
     ):
         self.fail_threshold = fail_threshold  # 0-1: proportion of tools allowed to fail
         self.skip_failed_tools = skip_failed_tools
@@ -253,7 +257,7 @@ class PartialFailureHandler:
                 "successes": 0,
                 "failures": 0,
                 "skipped": 0,
-                "tools_count": tools_count
+                "tools_count": tools_count,
             }
 
     def record_success(self, endpoint: str, tool: str) -> None:
@@ -301,7 +305,8 @@ class PartialFailureHandler:
         """Get overall scanning health"""
         total_endpoints = len(self.endpoint_stats)
         successful_endpoints = sum(
-            1 for stats in self.endpoint_stats.values()
+            1
+            for stats in self.endpoint_stats.values()
             if stats["successes"] > stats["failures"]
         )
 
@@ -309,21 +314,19 @@ class PartialFailureHandler:
             "total_endpoints": total_endpoints,
             "successful_endpoints": successful_endpoints,
             "success_rate": (
-                successful_endpoints / total_endpoints
-                if total_endpoints > 0
-                else 0
+                successful_endpoints / total_endpoints if total_endpoints > 0 else 0
             ),
-            "details": self.endpoint_stats
+            "details": self.endpoint_stats,
         }
 
 
 class CheckpointManager:
     """
     Save and resume scans
-    
+
     Usage:
         manager = CheckpointManager(checkpoint_dir="/tmp/checkpoints")
-        
+
         # During scan
         checkpoint = ScanCheckpoint(
             scan_id="scan_123",
@@ -331,7 +334,7 @@ class CheckpointManager:
             completed_endpoints=["/api/users", "/api/posts"]
         )
         manager.save_checkpoint("scan_123", checkpoint)
-        
+
         # Resume scan
         checkpoint = manager.load_checkpoint("scan_123")
         if checkpoint:
@@ -342,14 +345,16 @@ class CheckpointManager:
     def __init__(self, checkpoint_dir: str = "/tmp/scanner_checkpoints"):
         self.checkpoint_dir = checkpoint_dir
         import os
+
         os.makedirs(checkpoint_dir, exist_ok=True)
 
     def save_checkpoint(self, scan_id: str, checkpoint: ScanCheckpoint) -> None:
         """Save checkpoint to disk"""
         import os
+
         filepath = os.path.join(self.checkpoint_dir, f"{scan_id}.json")
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(checkpoint.to_dict(), f, indent=2)
 
         logger.info(f"[Checkpoint] Saved checkpoint for {scan_id}")
@@ -357,6 +362,7 @@ class CheckpointManager:
     def load_checkpoint(self, scan_id: str) -> Optional[ScanCheckpoint]:
         """Load checkpoint from disk"""
         import os
+
         filepath = os.path.join(self.checkpoint_dir, f"{scan_id}.json")
 
         if not os.path.exists(filepath):
@@ -364,7 +370,7 @@ class CheckpointManager:
             return None
 
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 data = json.load(f)
 
             checkpoint = ScanCheckpoint(
@@ -373,7 +379,7 @@ class CheckpointManager:
                 progress=data.get("progress", {}),
                 completed_endpoints=data.get("completed_endpoints", []),
                 pending_endpoints=data.get("pending_endpoints", []),
-                accumulated_results=data.get("accumulated_results", [])
+                accumulated_results=data.get("accumulated_results", []),
             )
 
             logger.info(f"[Checkpoint] Loaded checkpoint for {scan_id}")
@@ -386,6 +392,7 @@ class CheckpointManager:
     def cleanup_checkpoint(self, scan_id: str) -> None:
         """Delete checkpoint (scan complete)"""
         import os
+
         filepath = os.path.join(self.checkpoint_dir, f"{scan_id}.json")
 
         if os.path.exists(filepath):
@@ -396,14 +403,14 @@ class CheckpointManager:
 class ResilienceEngine:
     """
     Combined resilience layer
-    
+
     Usage:
         engine = ResilienceEngine(
             timeout_seconds=3600,
             fail_threshold=0.5,
             checkpoint_enabled=True
         )
-        
+
         try:
             for endpoint in endpoints:
                 results = engine.execute_tool_safe(
@@ -411,12 +418,12 @@ class ResilienceEngine:
                     endpoint=endpoint,
                     tool_function=lambda: run_sqlmap(endpoint)
                 )
-                
+
                 if results:
                     engine.record_success(endpoint, "sqlmap")
                 else:
                     engine.record_failure(endpoint, "sqlmap")
-                
+
                 engine.checkpoint()
         finally:
             report = engine.get_resilience_report()
@@ -427,7 +434,7 @@ class ResilienceEngine:
         scan_id: str = "scan_default",
         timeout_seconds: float = 3600,
         fail_threshold: float = 0.5,
-        checkpoint_enabled: bool = True
+        checkpoint_enabled: bool = True,
     ):
         self.scan_id = scan_id
         self.timeout_handler = TimeoutHandler(timeout_seconds)
@@ -436,10 +443,9 @@ class ResilienceEngine:
             fail_threshold=fail_threshold
         )
         self.checkpoint_manager = CheckpointManager() if checkpoint_enabled else None
-        
+
         self.scan_checkpoint = ScanCheckpoint(
-            scan_id=scan_id,
-            scan_start_time=datetime.now().isoformat()
+            scan_id=scan_id, scan_start_time=datetime.now().isoformat()
         )
 
     def execute_tool_safe(
@@ -448,7 +454,7 @@ class ResilienceEngine:
         endpoint: str,
         tool_function: Callable,
         timeout_override: Optional[float] = None,
-        context: str = ""
+        context: str = "",
     ) -> Any:
         """Execute tool with full resilience"""
         # Check global timeout
@@ -465,7 +471,7 @@ class ResilienceEngine:
             tool_function=tool_function,
             timeout_seconds=tool_timeout,
             fallback_value=[],
-            context=f"on {endpoint}"
+            context=f"on {endpoint}",
         )
 
         # Track execution
@@ -491,9 +497,7 @@ class ResilienceEngine:
     def checkpoint(self) -> None:
         """Save current progress"""
         if self.checkpoint_manager:
-            self.checkpoint_manager.save_checkpoint(
-                self.scan_id, self.scan_checkpoint
-            )
+            self.checkpoint_manager.save_checkpoint(self.scan_id, self.scan_checkpoint)
 
     def get_resilience_report(self) -> Dict:
         """Complete resilience report"""
@@ -502,10 +506,9 @@ class ResilienceEngine:
             "crash_report": self.crash_isolator.get_crash_report(),
             "health_report": self.partial_failure_handler.get_health_report(),
             "scan_duration": (
-                datetime.now() - datetime.fromisoformat(
-                    self.scan_checkpoint.scan_start_time
-                )
-            ).total_seconds()
+                datetime.now()
+                - datetime.fromisoformat(self.scan_checkpoint.scan_start_time)
+            ).total_seconds(),
         }
 
 
@@ -528,11 +531,11 @@ try:
             tool_function=lambda: run_sqlmap(endpoint),
             timeout_override=120
         )
-        
+
         # Check if should continue
         if engine.should_skip_endpoint(endpoint):
             continue
-        
+
         # Checkpoint periodically
         engine.checkpoint()
 

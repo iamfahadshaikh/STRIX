@@ -55,7 +55,9 @@ class RequestContextManager:
     def get_context(self, role: str) -> Optional[RoleRequestContext]:
         return self._contexts.get(role)
 
-    def build_headers(self, role: str, extra_headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    def build_headers(
+        self, role: str, extra_headers: Optional[Dict[str, str]] = None
+    ) -> Dict[str, str]:
         headers: Dict[str, str] = {}
         ctx = self._contexts.get(role)
         if ctx:

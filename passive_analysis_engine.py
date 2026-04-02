@@ -56,7 +56,10 @@ def analyze_headers(url: str, headers: Dict[str, str]) -> List[Dict]:
             }
         )
 
-    if "set-cookie" in lowered and "secure" not in lowered.get("set-cookie", "").lower():
+    if (
+        "set-cookie" in lowered
+        and "secure" not in lowered.get("set-cookie", "").lower()
+    ):
         findings.append(
             {
                 "category": "Cookie Missing Secure Flag",
@@ -68,7 +71,10 @@ def analyze_headers(url: str, headers: Dict[str, str]) -> List[Dict]:
             }
         )
 
-    if "set-cookie" in lowered and "httponly" not in lowered.get("set-cookie", "").lower():
+    if (
+        "set-cookie" in lowered
+        and "httponly" not in lowered.get("set-cookie", "").lower()
+    ):
         findings.append(
             {
                 "category": "Cookie Missing HttpOnly Flag",

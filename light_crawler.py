@@ -16,7 +16,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 import urllib3
@@ -38,6 +38,7 @@ DEBUG_PAGE_MARKERS = [
 @dataclass
 class LightCrawlResult:
     """Lightweight crawl output"""
+
     url: str
     status: int = 0
     title: Optional[str] = None
@@ -80,40 +81,46 @@ class LightCrawler:
         """Create session with retries"""
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         session = requests.Session()
-        retry = Retry(connect=1, backoff_factor=0.1, status_forcelist=[429, 500, 502, 503, 504])
+        retry = Retry(
+            connect=1, backoff_factor=0.1, status_forcelist=[429, 500, 502, 503, 504]
+        )
         adapter = HTTPAdapter(max_retries=retry)
-        session.mount('http://', adapter)
-        session.mount('https://', adapter)
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+        )
         return session
 
     def crawl(self) -> bool:
         """
         Quick crawl of target
-        
+
         Returns:
             bool: True if crawl succeeded
         """
         try:
             logger.info(f"[LightCrawl] Starting crawl: {self.target}")
-            
+
             # Fetch main page
             resp = self.session.get(self.target, timeout=self.timeout, verify=False)
             resp.raise_for_status()
-            
+
             logger.info(f"[LightCrawl] Got response: {resp.status_code}")
-            
+
             # Extract from HTML
             self._extract_from_html(resp.text, self.target)
             self._extract_api_candidates_from_text(resp.text, self.target)
             self._detect_debug_page(resp.text, self.target)
             self._probe_api_entrypoints(self.target)
-            
-            logger.info(f"[LightCrawl] Crawl complete: {len(self.endpoints)} endpoints found")
+
+            logger.info(
+                f"[LightCrawl] Crawl complete: {len(self.endpoints)} endpoints found"
+            )
             return True
-            
+
         except requests.exceptions.RequestException as e:
             logger.warning(f"[LightCrawl] Request failed: {e}")
             return False
@@ -123,52 +130,56 @@ class LightCrawler:
 
     def _extract_from_html(self, html: str, page_url: str):
         """Extract links, forms, parameters from HTML"""
-        
+
         # Extract URLs from href and src
-        href_pattern = r'''(href|src)=["']([^"']+)["']'''
+        href_pattern = r"""(href|src)=["']([^"']+)["']"""
         for match in re.finditer(href_pattern, html, re.IGNORECASE):
             url = match.group(2)
             full_url = urljoin(page_url, url)
-            
+
             # Filter to same domain
             if self._is_same_domain(full_url, page_url):
                 self.endpoints.add(full_url)
-                
+
                 # Check if API endpoint
                 if self._is_api_like_path(full_url):
                     self.api_endpoints.add(full_url)
-                elif full_url.endswith('.js'):
+                elif full_url.endswith(".js"):
                     self.js_endpoints.add(full_url)
-        
+
         # Extract forms
-        form_pattern = r'<form[^>]*>.*?</form>'
+        form_pattern = r"<form[^>]*>.*?</form>"
         for form_match in re.finditer(form_pattern, html, re.IGNORECASE | re.DOTALL):
             form_html = form_match.group(0)
-            action_match = re.search(r'action=["\'](.*?)["\']', form_html, re.IGNORECASE)
-            
+            action_match = re.search(
+                r'action=["\'](.*?)["\']', form_html, re.IGNORECASE
+            )
+
             action = action_match.group(1) if action_match else page_url
             action = urljoin(page_url, action)
-            
+
             # Extract input fields
             fields = []
             input_pattern = r'<input[^>]*name=["\'](.*?)["\']'
             for input_match in re.finditer(input_pattern, form_html, re.IGNORECASE):
                 fields.append(input_match.group(1))
-            
+
             if fields:
-                self.forms.append({
-                    "action": action,
-                    "method": "POST",
-                    "fields": fields,
-                    "found_on": page_url
-                })
-                
+                self.forms.append(
+                    {
+                        "action": action,
+                        "method": "POST",
+                        "fields": fields,
+                        "found_on": page_url,
+                    }
+                )
+
                 # Add field names as parameters
                 for field in fields:
                     if field not in self.parameters:
                         self.parameters[field] = set()
                     self.parameters[field].add("")
-        
+
         # Extract parameters from URLs already found
         for endpoint in list(self.endpoints):
             parsed = urlparse(endpoint)
@@ -278,7 +289,9 @@ class LightCrawler:
                                     self.parameters[name] = set()
                                 self.parameters[name].add("")
 
-    def _register_endpoint_candidate(self, candidate_path: str, page_url: str, is_api_hint: bool = False):
+    def _register_endpoint_candidate(
+        self, candidate_path: str, page_url: str, is_api_hint: bool = False
+    ):
         """Normalize, scope, and register a candidate endpoint path."""
         full_url = urljoin(page_url, candidate_path)
         if not self._is_same_domain(full_url, page_url):
@@ -328,7 +341,10 @@ class LightCrawler:
                 continue
 
             # End section when Django switches to mismatch/debug explanation.
-            if "didn't match any of these" in line.lower() or "debug = true" in line.lower():
+            if (
+                "didn't match any of these" in line.lower()
+                or "debug = true" in line.lower()
+            ):
                 break
 
             # Remove numbering (e.g., "12.") and normalize whitespace.
@@ -359,11 +375,20 @@ class LightCrawler:
                 continue
 
             # Track base prefix from entries like "api/customer-account/".
-            if candidate.startswith("api/") and candidate.endswith("/") and "<" not in candidate and len(parts) == 1:
+            if (
+                candidate.startswith("api/")
+                and candidate.endswith("/")
+                and "<" not in candidate
+                and len(parts) == 1
+            ):
                 base_prefix = candidate
 
             # If this line is a leaf route and we have a prefix, compose full path.
-            if base_prefix and not candidate.startswith("api/") and not candidate.startswith("admin/"):
+            if (
+                base_prefix
+                and not candidate.startswith("api/")
+                and not candidate.startswith("admin/")
+            ):
                 candidate = base_prefix.rstrip("/") + "/" + candidate.lstrip("/")
 
             # Convert Django typed converters into a stable placeholder path segment.
@@ -375,7 +400,9 @@ class LightCrawler:
                     self.parameters["id"] = set()
                 self.parameters["id"].add("")
 
-            self._register_endpoint_candidate(candidate, page_url, is_api_hint=candidate.startswith("api/"))
+            self._register_endpoint_candidate(
+                candidate, page_url, is_api_hint=candidate.startswith("api/")
+            )
 
     def _is_same_domain(self, url: str, base_url: str) -> bool:
         """Check if URL is on same domain as base"""
@@ -406,27 +433,25 @@ class LightCrawler:
 
     def to_json(self) -> str:
         """Serialize to JSON"""
-        return json.dumps({
-            "summary": self.get_summary(),
-            "results": []
-        }, indent=2)
+        return json.dumps({"summary": self.get_summary(), "results": []}, indent=2)
 
 
 if __name__ == "__main__":
     import sys
-    
+
     if len(sys.argv) < 2:
         print("Usage: python3 light_crawler.py <url>")
         sys.exit(1)
-    
+
     target = sys.argv[1]
-    
+
     # Disable SSL warnings
     import urllib3
+
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    
+
     crawler = LightCrawler(target, timeout=30)
-    
+
     if crawler.crawl():
         print(crawler.to_json())
     else:

@@ -35,7 +35,13 @@ class APISchemaImporter:
                 if candidate == "/graphql":
                     if "graphql" in resp.text.lower():
                         return APISchemaResult(
-                            endpoints=[{"endpoint": "/graphql", "method": "POST", "params": ["query", "variables"]}],
+                            endpoints=[
+                                {
+                                    "endpoint": "/graphql",
+                                    "method": "POST",
+                                    "params": ["query", "variables"],
+                                }
+                            ],
                             source="graphql_probe",
                             success=True,
                         )
@@ -44,11 +50,15 @@ class APISchemaImporter:
                 doc = resp.json()
                 endpoints = self._parse_openapi(doc)
                 if endpoints:
-                    return APISchemaResult(endpoints=endpoints, source=candidate, success=True)
+                    return APISchemaResult(
+                        endpoints=endpoints, source=candidate, success=True
+                    )
             except Exception:
                 continue
 
-        return APISchemaResult(endpoints=[], source="none", success=False, error="No API schema detected")
+        return APISchemaResult(
+            endpoints=[], source="none", success=False, error="No API schema detected"
+        )
 
     def _parse_openapi(self, doc: Dict) -> List[Dict]:
         paths = doc.get("paths", {}) if isinstance(doc, dict) else {}
@@ -64,7 +74,11 @@ class APISchemaImporter:
                     continue
                 params: List[str] = []
                 if isinstance(meta, dict):
-                    for p in meta.get("parameters", []) if isinstance(meta.get("parameters"), list) else []:
+                    for p in (
+                        meta.get("parameters", [])
+                        if isinstance(meta.get("parameters"), list)
+                        else []
+                    ):
                         if isinstance(p, dict) and p.get("name"):
                             params.append(str(p["name"]))
                 out.append(

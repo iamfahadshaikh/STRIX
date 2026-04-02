@@ -5,7 +5,7 @@ Purpose: BLOCK all payload tools if crawler hasn't run successfully
 Architecture Rule:
   Crawler is NOT optional. It is MANDATORY.
   No payload tool may run without crawler confirmation.
-  
+
   If crawler fails:
     - BLOCK all payload tools (dalfox, sqlmap, commix, etc.)
     - ALLOW only discovery tools (nuclei passive scan)
@@ -18,14 +18,15 @@ Integration:
 """
 
 import logging
-from typing import Dict, List, Tuple
 from enum import Enum
+from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class CrawlerStatus(str, Enum):
     """Crawler execution status"""
+
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     NOT_RUN = "NOT_RUN"
@@ -34,10 +35,10 @@ class CrawlerStatus(str, Enum):
 class CrawlerMandatoryGate:
     """
     Enforces crawler as mandatory prerequisite for payload testing
-    
+
     Usage:
         gate = CrawlerMandatoryGate(discovery_cache, endpoint_graph)
-        
+
         if not gate.crawler_succeeded():
             # Block payload tools
             blocked_tools = gate.get_blocked_tools()
@@ -81,20 +82,22 @@ class CrawlerMandatoryGate:
     def check_crawler_status(self) -> Tuple[CrawlerStatus, str]:
         """
         Check if crawler ran successfully
-        
+
         Returns:
             (status, reason)
         """
         # Check cache for crawler signals
-        cache_has_endpoints = (hasattr(self.cache, 'endpoints') and len(self.cache.endpoints) > 0)
-        
+        cache_has_endpoints = (
+            hasattr(self.cache, "endpoints") and len(self.cache.endpoints) > 0
+        )
+
         if not cache_has_endpoints:
             self._crawler_status = CrawlerStatus.FAILED
             self._failure_reason = "No endpoints discovered by crawler"
             return self._crawler_status, self._failure_reason
 
         # Check for parameters (crawler should find params)
-        if not hasattr(self.cache, 'params') or len(self.cache.params) == 0:
+        if not hasattr(self.cache, "params") or len(self.cache.params) == 0:
             logger.warning("[CrawlerGate] Crawler found endpoints but no parameters")
             # This is OK - some sites have no params
             # But log it as suspicious
@@ -111,7 +114,7 @@ class CrawlerMandatoryGate:
                 self._crawler_status = CrawlerStatus.FAILED
                 self._failure_reason = "EndpointGraph has no endpoints"
                 return self._crawler_status, self._failure_reason
-            
+
             # Populate parameter flags based on heuristics and cache signals
             self._populate_parameter_flags()
 
@@ -119,6 +122,7 @@ class CrawlerMandatoryGate:
         self._crawler_status = CrawlerStatus.SUCCESS
         self._failure_reason = ""
         return self._crawler_status, ""
+
     def _populate_parameter_flags(self):
         """
         Populate parameter flags in EndpointGraph based on cache signals
@@ -126,39 +130,43 @@ class CrawlerMandatoryGate:
         """
         if not self.graph or not self.cache:
             return
-        
+
         # Mark reflectable parameters (from cache.reflections)
-        if hasattr(self.cache, 'reflections'):
+        if hasattr(self.cache, "reflections"):
             for reflection in self.cache.reflections:
                 # Remove "hint:" prefix if present
                 param_name = reflection.replace("hint:", "")
                 self.graph.mark_reflectable(param_name)
-        
+
         # Mark command-injectable parameters (from cache.command_params)
-        if hasattr(self.cache, 'command_params'):
+        if hasattr(self.cache, "command_params"):
             for param_name in self.cache.command_params:
                 self.graph.mark_injectable_cmd(param_name)
-        
+
         # Mark SSRF-prone parameters (from cache.ssrf_params)
-        if hasattr(self.cache, 'ssrf_params'):
+        if hasattr(self.cache, "ssrf_params"):
             for param_name in self.cache.ssrf_params:
                 self.graph.mark_injectable_ssrf(param_name)
-        
+
         # Mark SQL-injectable parameters (heuristic: any numeric or id-like param)
         for param_name, param in self.graph.get_all_parameters().items():
-            if any(x in param_name.lower() for x in ['id', 'uid', 'user_id', 'post_id', 'order_id']):
+            if any(
+                x in param_name.lower()
+                for x in ["id", "uid", "user_id", "post_id", "order_id"]
+            ):
                 self.graph.mark_injectable_sql(param_name)
-        
-        logger.info(f"[CrawlerGate] Populated parameter flags: "
-                   f"{len(self.graph.get_reflectable_endpoints())} reflectable, "
-                   f"{len(self.graph.get_injectable_sql_endpoints())} SQL-injectable, "
-                   f"{len(self.graph.get_injectable_cmd_endpoints())} cmd-injectable")
 
+        logger.info(
+            f"[CrawlerGate] Populated parameter flags: "
+            f"{len(self.graph.get_reflectable_endpoints())} reflectable, "
+            f"{len(self.graph.get_injectable_sql_endpoints())} SQL-injectable, "
+            f"{len(self.graph.get_injectable_cmd_endpoints())} cmd-injectable"
+        )
 
     def crawler_succeeded(self) -> bool:
         """
         Check if crawler ran successfully
-        
+
         Returns:
             bool: True if crawler succeeded
         """
@@ -168,7 +176,7 @@ class CrawlerMandatoryGate:
     def get_blocked_tools(self) -> List[str]:
         """
         Get list of tools that should be blocked due to crawler failure
-        
+
         Returns:
             List of tool names
         """
@@ -180,7 +188,7 @@ class CrawlerMandatoryGate:
     def get_allowed_tools(self) -> List[str]:
         """
         Get list of tools that can run even without crawler
-        
+
         Returns:
             List of tool names
         """
@@ -189,10 +197,10 @@ class CrawlerMandatoryGate:
     def should_block_tool(self, tool_name: str) -> Tuple[bool, str]:
         """
         Check if tool should be blocked due to crawler failure
-        
+
         Args:
             tool_name: Tool to check
-            
+
         Returns:
             (should_block: bool, reason: str)
         """
@@ -207,7 +215,7 @@ class CrawlerMandatoryGate:
     def get_gate_report(self) -> Dict:
         """
         Get detailed gate report
-        
+
         Returns:
             Dict with gate status and details
         """
@@ -220,20 +228,22 @@ class CrawlerMandatoryGate:
             "blocked_tools": self.get_blocked_tools(),
             "allowed_tools": self.get_allowed_tools(),
             "endpoints_discovered": (
-                len(self.cache.endpoints) if hasattr(self.cache, 'endpoints') else 0
+                len(self.cache.endpoints) if hasattr(self.cache, "endpoints") else 0
             ),
             "parameters_discovered": (
-                len(self.cache.params) if hasattr(self.cache, 'params') else 0
+                len(self.cache.params) if hasattr(self.cache, "params") else 0
             ),
             "graph_endpoints": (
-                len(self.graph.get_all_endpoints()) if self.graph and self.graph.is_finalized else 0
-            )
+                len(self.graph.get_all_endpoints())
+                if self.graph and self.graph.is_finalized
+                else 0
+            ),
         }
 
     def update_decision_ledger(self, ledger) -> None:
         """
         Update decision ledger to block payload tools if crawler failed
-        
+
         Args:
             ledger: DecisionLedger instance
         """
@@ -247,10 +257,12 @@ class CrawlerMandatoryGate:
             if tool_name in ledger.decisions:
                 # Update existing decision to DENY
                 ledger.decisions[tool_name].decision = "DENY"
-                ledger.decisions[tool_name].reason = (
-                    f"BLOCKED: Crawler {self._crawler_status.value} - {self._failure_reason}"
+                ledger.decisions[
+                    tool_name
+                ].reason = f"BLOCKED: Crawler {self._crawler_status.value} - {self._failure_reason}"
+                logger.warning(
+                    f"[CrawlerGate] Blocked {tool_name} due to crawler failure"
                 )
-                logger.warning(f"[CrawlerGate] Blocked {tool_name} due to crawler failure")
 
         logger.error(
             f"[CrawlerGate] Crawler failed, blocked {len(blocked_tools)} payload tools"
@@ -274,7 +286,7 @@ gate = CrawlerMandatoryGate(cache, graph)
 if not gate.crawler_succeeded():
     # Block payload tools
     gate.update_decision_ledger(ledger)
-    
+
     report = gate.get_gate_report()
     print(f"Crawler Status: {report['crawler_status']}")
     print(f"Blocked Tools: {report['blocked_tools']}")

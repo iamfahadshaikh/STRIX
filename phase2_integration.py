@@ -11,11 +11,11 @@ This module provides:
 
 import logging
 import threading
-from typing import Optional, Dict, List
 from pathlib import Path
+from typing import Dict, List, Optional
 
-from phase2_pipeline import Phase2Pipeline
 from decision_ledger import DecisionLedger
+from phase2_pipeline import Phase2Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -23,23 +23,29 @@ logger = logging.getLogger(__name__)
 class Phase2IntegrationHelper:
     """
     Wrapper for Phase 2 pipeline, safe to integrate into automation_scanner_v2
-    
+
     Usage:
         helper = Phase2IntegrationHelper(
             target_url="https://example.com",
             output_dir="./results",
             decision_ledger=ledger
         )
-        
+
         if helper.should_run_tool("dalfox"):
             targets = helper.get_tool_targets("dalfox")
             # Run tool on targets
-            
+
         conf, owasp = helper.score_finding(...)
     """
 
-    def __init__(self, target_url: str, output_dir: str, decision_ledger: DecisionLedger,
-                 timeout: int = 180, enabled: bool = True):
+    def __init__(
+        self,
+        target_url: str,
+        output_dir: str,
+        decision_ledger: DecisionLedger,
+        timeout: int = 180,
+        enabled: bool = True,
+    ):
         """
         Args:
             target_url: Target URL (with scheme)
@@ -63,7 +69,7 @@ class Phase2IntegrationHelper:
         """
         Initialize Phase 2 pipeline in background thread
         Call this early in scan to parallelize with other phases
-        
+
         Usage:
             helper.initialize_async()
             # ... do other work ...
@@ -74,21 +80,27 @@ class Phase2IntegrationHelper:
 
         def _init():
             try:
-                logger.info("[Phase2Helper] Initializing Phase 2 pipeline in background...")
+                logger.info(
+                    "[Phase2Helper] Initializing Phase 2 pipeline in background..."
+                )
                 pipeline = Phase2Pipeline(
                     target_url=self.target_url,
                     output_dir=str(self.output_dir),
                     decision_ledger=self.decision_ledger,
-                    timeout=self.timeout
+                    timeout=self.timeout,
                 )
 
                 if pipeline.run():
                     with self._lock:
                         self.pipeline = pipeline
                         self._initialized = True
-                    logger.info("[Phase2Helper] Phase 2 pipeline initialized successfully")
+                    logger.info(
+                        "[Phase2Helper] Phase 2 pipeline initialized successfully"
+                    )
                 else:
-                    logger.warning("[Phase2Helper] Phase 2 pipeline initialization failed, gating disabled")
+                    logger.warning(
+                        "[Phase2Helper] Phase 2 pipeline initialization failed, gating disabled"
+                    )
                     with self._lock:
                         self._initialized = True
 
@@ -103,10 +115,10 @@ class Phase2IntegrationHelper:
     def wait_for_initialization(self, timeout: int = 180) -> bool:
         """
         Wait for Phase 2 initialization to complete
-        
+
         Args:
             timeout: Max seconds to wait
-            
+
         Returns:
             bool: True if pipeline is ready, False if timed out or failed
         """
@@ -121,7 +133,7 @@ class Phase2IntegrationHelper:
     def should_run_tool(self, tool_name: str) -> bool:
         """
         Check if tool should run (from Phase 2 gating)
-        
+
         Returns:
             bool: True if tool should run based on graph analysis
         """
@@ -137,7 +149,7 @@ class Phase2IntegrationHelper:
     def get_tool_targets(self, tool_name: str) -> List[str]:
         """
         Get endpoints that tool should target (from graph)
-        
+
         Returns:
             List of endpoint paths for tool to test
         """
@@ -150,18 +162,22 @@ class Phase2IntegrationHelper:
             logger.warning(f"[Phase2Helper] Error getting targets for {tool_name}: {e}")
             return []
 
-    def score_finding(self, finding_id: str, vuln_type: str,
-                     tools_reporting: List[str],
-                     success_indicator: Optional[str] = None) -> tuple:
+    def score_finding(
+        self,
+        finding_id: str,
+        vuln_type: str,
+        tools_reporting: List[str],
+        success_indicator: Optional[str] = None,
+    ) -> tuple:
         """
         Score finding confidence and get OWASP category
-        
+
         Args:
             finding_id: Unique finding ID
             vuln_type: Vulnerability type (xss, sqli, etc)
             tools_reporting: Tools that detected this
             success_indicator: Type of success (confirmed_reflected, etc)
-            
+
         Returns:
             (confidence_level, owasp_category)
             Example: ("HIGH", "A03:2021 – Injection")
@@ -174,7 +190,7 @@ class Phase2IntegrationHelper:
                 finding_id=finding_id,
                 vuln_type=vuln_type,
                 tools_reporting=tools_reporting,
-                success_indicator=success_indicator
+                success_indicator=success_indicator,
             )
             return (confidence.value, owasp)
         except Exception as e:
@@ -229,7 +245,7 @@ for tool_name, cmd, meta in plan:
         if not phase2_helper.should_run_tool(tool_name):
             self.log(f"[{tool_name}] GATED (Phase 2 analysis)", "INFO")
             continue
-        
+
         targets = phase2_helper.get_tool_targets(tool_name)
         if targets:
             self.log(f"[{tool_name}] Targeting: {targets}", "DEBUG")

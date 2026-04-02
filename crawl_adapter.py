@@ -4,12 +4,13 @@ Purpose: Connect crawler layer to automation_scanner_v2 without core modificatio
 Approach: Optional crawl phase that feeds gating signals to decision_ledger
 """
 
-import logging
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Optional, Tuple
-from crawler_integration import CrawlerIntegration
+
 from crawl_parser import CrawlParser
+from crawler_integration import CrawlerIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 class CrawlAdapter:
     """
     Bridge between crawler layer and scanner orchestration
-    
+
     Workflow:
     1. Scanner runs DNS/Network phase
     2. CrawlAdapter.run() executes crawl (Katana or light_crawler)
@@ -43,10 +44,10 @@ class CrawlAdapter:
     def run(self) -> Tuple[bool, Dict]:
         """
         Execute crawl and return gating signals
-        
+
         Returns:
             (success, gating_signals)
-            
+
         Safe to call multiple times (caches result)
         """
         if self.crawl_result is not None:
@@ -61,7 +62,7 @@ class CrawlAdapter:
                 cache=self.cache,
                 output_dir=str(self.output_dir),
                 timeout=self.timeout,
-                depth=1
+                depth=1,
             )
 
             success, gating = crawler_int.run()
@@ -69,9 +70,13 @@ class CrawlAdapter:
             if success:
                 self.crawl_result = crawler_int.crawl_result
                 self.gating_signals = gating
-                logger.info(f"[CrawlAdapter] Crawl success (type={gating.get('crawler_type')})")
-                logger.info(f"[CrawlAdapter]   Endpoints: {gating['parameter_count']} params, "
-                           f"{gating['reflection_count']} reflections")
+                logger.info(
+                    f"[CrawlAdapter] Crawl success (type={gating.get('crawler_type')})"
+                )
+                logger.info(
+                    f"[CrawlAdapter]   Endpoints: {gating['parameter_count']} params, "
+                    f"{gating['reflection_count']} reflections"
+                )
             else:
                 logger.warning("[CrawlAdapter] Crawl failed, using empty signals")
                 self.gating_signals = self._empty_signals()
@@ -86,10 +91,10 @@ class CrawlAdapter:
     def get_gating_for_tool(self, tool_name: str) -> bool:
         """
         Determine if a payload tool should run based on crawl
-        
+
         Args:
             tool_name: Tool identifier (xsstrike, sqlmap, commix, dalfox, nuclei)
-            
+
         Returns:
             bool: True if tool should run
         """
@@ -101,15 +106,15 @@ class CrawlAdapter:
 
         # XSS tools: need reflectable parameters or forms
         if "xss" in tool_lower or tool_lower == "dalfox":
-            return gating['reflection_count'] > 0 or gating['has_forms']
+            return gating["reflection_count"] > 0 or gating["has_forms"]
 
         # SQL injection: need any parameters
         elif "sql" in tool_lower:
-            return gating['parameter_count'] > 0
+            return gating["parameter_count"] > 0
 
         # Command injection: need any parameters
         elif "commix" in tool_lower:
-            return gating['parameter_count'] > 0
+            return gating["parameter_count"] > 0
 
         # Template-based: different model (always runs)
         elif "nuclei" in tool_lower:
@@ -121,12 +126,12 @@ class CrawlAdapter:
     def apply_to_decision_ledger(self, decision_ledger) -> None:
         """
         Update decision_ledger with crawl-based gating
-        
+
         Usage:
             adapter = CrawlAdapter(target, output_dir)
             adapter.run()
             adapter.apply_to_decision_ledger(decision_ledger)
-        
+
         This updates ALLOW/BLOCK decisions based on crawl findings.
         """
         if not self.gating_signals:
@@ -136,17 +141,19 @@ class CrawlAdapter:
         gating = self.gating_signals
 
         # XSS tools (xsstrike, dalfox)
-        for tool in ['xsstrike', 'dalfox']:
-            if gating['reflection_count'] > 0 or gating['has_forms']:
+        for tool in ["xsstrike", "dalfox"]:
+            if gating["reflection_count"] > 0 or gating["has_forms"]:
                 decision_ledger.ALLOW[tool] = True
                 logger.info(f"[CrawlAdapter] ALLOW {tool} (found reflections/forms)")
             else:
-                decision_ledger.BLOCK[tool] = "No reflectable parameters found via crawl"
+                decision_ledger.BLOCK[tool] = (
+                    "No reflectable parameters found via crawl"
+                )
                 logger.info(f"[CrawlAdapter] BLOCK {tool}")
 
         # SQL injection tools
-        for tool in ['sqlmap']:
-            if gating['parameter_count'] > 0:
+        for tool in ["sqlmap"]:
+            if gating["parameter_count"] > 0:
                 decision_ledger.ALLOW[tool] = True
                 logger.info(f"[CrawlAdapter] ALLOW {tool} (found parameters)")
             else:
@@ -154,8 +161,8 @@ class CrawlAdapter:
                 logger.info(f"[CrawlAdapter] BLOCK {tool}")
 
         # Command injection
-        for tool in ['commix']:
-            if gating['parameter_count'] > 0:
+        for tool in ["commix"]:
+            if gating["parameter_count"] > 0:
                 decision_ledger.ALLOW[tool] = True
                 logger.info(f"[CrawlAdapter] ALLOW {tool} (found parameters)")
             else:
@@ -178,7 +185,7 @@ class CrawlAdapter:
             "forms": summary.get("forms", 0),
             "api_endpoints": summary.get("api_endpoints", 0),
             "crawled_urls": summary.get("crawled_urls", 0),
-            "gating_signals": self.gating_signals
+            "gating_signals": self.gating_signals,
         }
 
     @staticmethod
@@ -196,7 +203,7 @@ class CrawlAdapter:
             "reflection_count": 0,
             "crawled_url_count": 0,
             "crawl_success": False,
-            "crawler_type": "none"
+            "crawler_type": "none",
         }
 
 
@@ -229,7 +236,7 @@ In automation_scanner_v2.py (optional, non-invasive):
     # After nmap runs (after phase 3)
     if self.target_profile.is_web():
         from crawl_adapter import CrawlAdapter
-        
+
         crawl_adapter = CrawlAdapter(
             target=self.target,
             output_dir=self.output_dir,
@@ -248,11 +255,11 @@ In decision_ledger.py (modify should_run_*() methods):
         # Existing logic
         if not self._is_web_target():
             return False
-        
+
         # New: Check crawl signals if available
         if hasattr(self, 'crawl_gating'):
             return self.crawl_gating.get('reflection_count', 0) > 0
-        
+
         # Fallback: conservative
         return False
 """

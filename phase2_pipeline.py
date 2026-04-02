@@ -16,16 +16,16 @@ Preserves existing gating architecture while adding graph + scoring
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
+from confidence_engine import Confidence, ConfidenceEngine
 from crawl_adapter import CrawlAdapter
-from endpoint_graph import EndpointGraph, ParameterSource
-from strict_gating_loop import StrictGatingLoop
-from confidence_engine import ConfidenceEngine, Confidence
-from owasp_mapper import OWASPMapper, FindingClassification
 from decision_ledger import DecisionLedger
+from endpoint_graph import EndpointGraph, ParameterSource
+from owasp_mapper import FindingClassification, OWASPMapper
+from strict_gating_loop import StrictGatingLoop
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +33,20 @@ logger = logging.getLogger(__name__)
 class Phase2Pipeline:
     """
     Unified Phase 2 pipeline: crawl → graph → gate → score → map → report
-    
+
     Usage:
         pipeline = Phase2Pipeline(target_url, output_dir, decision_ledger)
         pipeline.run()
         summary = pipeline.get_summary()
     """
 
-    def __init__(self, target_url: str, output_dir: str, decision_ledger: DecisionLedger, 
-                 timeout: int = 180):
+    def __init__(
+        self,
+        target_url: str,
+        output_dir: str,
+        decision_ledger: DecisionLedger,
+        timeout: int = 180,
+    ):
         """
         Args:
             target_url: Target to scan (with scheme)
@@ -70,7 +75,7 @@ class Phase2Pipeline:
     def run(self) -> bool:
         """
         Execute full Phase 2 pipeline
-        
+
         Returns:
             bool: Success flag
         """
@@ -79,7 +84,9 @@ class Phase2Pipeline:
 
             # Step 1: Crawl target
             if not self._crawl_target():
-                logger.warning("[Phase2Pipeline] Crawl failed, continuing with empty graph")
+                logger.warning(
+                    "[Phase2Pipeline] Crawl failed, continuing with empty graph"
+                )
                 self._init_empty_graph()
 
             # Step 2: Build endpoint graph
@@ -112,14 +119,16 @@ class Phase2Pipeline:
             self.crawl_adapter = CrawlAdapter(
                 target=self.target_url,
                 output_dir=str(self.output_dir),
-                timeout=self.timeout
+                timeout=self.timeout,
             )
 
             success, signals = self.crawl_adapter.run()
 
             if success:
-                logger.info(f"[Phase2Pipeline] Crawl success: {signals['crawled_url_count']} endpoints, "
-                           f"{signals['parameter_count']} params, {signals['reflection_count']} reflections")
+                logger.info(
+                    f"[Phase2Pipeline] Crawl success: {signals['crawled_url_count']} endpoints, "
+                    f"{signals['parameter_count']} params, {signals['reflection_count']} reflections"
+                )
                 return True
             else:
                 logger.warning("[Phase2Pipeline] Crawl unsuccessful but continuing")
@@ -149,7 +158,7 @@ class Phase2Pipeline:
                         params=result.get("params"),
                         is_api=result.get("is_api", False),
                         is_form=result.get("is_form", False),
-                        status_code=result.get("status_code")
+                        status_code=result.get("status_code"),
                     )
 
                 # Mark parameters based on crawl analysis
@@ -197,7 +206,7 @@ class Phase2Pipeline:
     def should_run_tool(self, tool_name: str) -> bool:
         """
         Check if tool should run (from strict gating)
-        
+
         Usage in automation_scanner_v2:
             if pipeline.should_run_tool("dalfox"):
                 run_dalfox()
@@ -212,12 +221,16 @@ class Phase2Pipeline:
             return []
         return self.gating_decisions[tool_name].target_endpoints
 
-    def score_finding(self, finding_id: str, vuln_type: str,
-                     tools_reporting: List[str],
-                     success_indicator: Optional[str] = None) -> Tuple[Confidence, str]:
+    def score_finding(
+        self,
+        finding_id: str,
+        vuln_type: str,
+        tools_reporting: List[str],
+        success_indicator: Optional[str] = None,
+    ) -> Tuple[Confidence, str]:
         """
         Score a finding's confidence
-        
+
         Usage:
             conf, owasp = pipeline.score_finding(
                 finding_id="xss_001",
@@ -247,14 +260,14 @@ class Phase2Pipeline:
             tools_reporting=tools_reporting,
             success_indicator=success_indicator,
             source_type=source_type,
-            param_frequency=param_frequency
+            param_frequency=param_frequency,
         )
 
         # Map to OWASP
         mapping = self.owasp_mapper.map_finding(
             vuln_type=vuln_type,
             classification=classification,
-            confidence=confidence.value
+            confidence=confidence.value,
         )
 
         # Store
@@ -294,7 +307,7 @@ class Phase2Pipeline:
                 fid: {
                     "category": mapping.category.value,
                     "cwe": mapping.cwe,
-                    "classification": mapping.classification.value
+                    "classification": mapping.classification.value,
                 }
                 for fid, mapping in self.owasp_mappings.items()
             }
@@ -318,10 +331,10 @@ class Phase2Pipeline:
                 fid: {
                     "category": mapping.category.value,
                     "cwe": mapping.cwe,
-                    "classification": mapping.classification.value
+                    "classification": mapping.classification.value,
                 }
                 for fid, mapping in self.owasp_mappings.items()
-            }
+            },
         }
 
 

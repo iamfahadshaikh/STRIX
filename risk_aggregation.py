@@ -11,18 +11,19 @@ Features:
   6. Business risk scoring
 """
 
-import logging
 import json
-from typing import Dict, List, Optional, Tuple
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class RiskLevel(str, Enum):
     """Business risk levels"""
+
     CRITICAL = "CRITICAL"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
@@ -33,44 +34,48 @@ class RiskLevel(str, Enum):
 @dataclass
 class AggregatedFinding:
     """Aggregated finding (multiple tools agreement)"""
-    identifier: str          # e.g., "endpoint:/api/users?id"
+
+    identifier: str  # e.g., "endpoint:/api/users?id"
     vulnerability_type: str
     affected_endpoints: List[str] = field(default_factory=list)
     affected_parameters: List[str] = field(default_factory=list)
-    
+
     tool_agreement: int = 0  # Number of tools that found this
     max_confidence: float = 0.0
-    
-    severity_distribution: Dict[str, int] = field(default_factory=dict)  # severity -> count
+
+    severity_distribution: Dict[str, int] = field(
+        default_factory=dict
+    )  # severity -> count
     business_impact: str = ""  # Description of business impact
-    
+
     owasp_category: str = ""
     cwe_ids: List[str] = field(default_factory=list)
-    
+
     estimated_fix_effort: str = ""  # EASY|MEDIUM|HARD
 
 
 @dataclass
 class PerEndpointRisk:
     """Risk aggregation per endpoint"""
+
     endpoint: str
     parameters: List[str] = field(default_factory=list)
-    
+
     critical_count: int = 0
     high_count: int = 0
     medium_count: int = 0
     low_count: int = 0
-    
+
     business_risk_score: float = 0.0  # 0-100
     overall_severity: str = "LOW"
-    
+
     def calculate_risk_score(self) -> float:
         """Calculate business risk (0-100)"""
         score = (
-            self.critical_count * 25 +
-            self.high_count * 10 +
-            self.medium_count * 3 +
-            self.low_count * 0.5
+            self.critical_count * 25
+            + self.high_count * 10
+            + self.medium_count * 3
+            + self.low_count * 0.5
         )
         return min(100, score)
 
@@ -78,23 +83,24 @@ class PerEndpointRisk:
 @dataclass
 class PerOWASPRisk:
     """Risk aggregation per OWASP category"""
+
     owasp_category: str  # e.g., "A01:2021 - Broken Authentication"
     affected_endpoints: List[str] = field(default_factory=list)
-    
+
     critical_count: int = 0
     high_count: int = 0
     medium_count: int = 0
     low_count: int = 0
-    
+
     trend: str = "STABLE"  # STABLE|IMPROVING|DEGRADING
-    
+
     def calculate_risk_score(self) -> float:
         """Calculate OWASP category risk"""
         score = (
-            self.critical_count * 25 +
-            self.high_count * 10 +
-            self.medium_count * 3 +
-            self.low_count * 0.5
+            self.critical_count * 25
+            + self.high_count * 10
+            + self.medium_count * 3
+            + self.low_count * 0.5
         )
         return min(100, score)
 
@@ -102,31 +108,32 @@ class PerOWASPRisk:
 @dataclass
 class PerApplicationRisk:
     """Risk aggregation per application"""
+
     app_name: str
     endpoints_scanned: int = 0
     total_findings: int = 0
-    
+
     critical_count: int = 0
     high_count: int = 0
     medium_count: int = 0
     low_count: int = 0
-    
+
     top_vulnerabilities: List[str] = field(default_factory=list)
     owasp_distribution: Dict[str, int] = field(default_factory=dict)
-    
+
     business_risk_score: float = 0.0  # 0-100
     risk_rating: str = "LOW"  # CRITICAL|HIGH|MEDIUM|LOW
-    
+
     def calculate_risk_score(self) -> float:
         """Calculate application risk"""
         score = (
-            self.critical_count * 25 +
-            self.high_count * 10 +
-            self.medium_count * 3 +
-            self.low_count * 0.5
+            self.critical_count * 25
+            + self.high_count * 10
+            + self.medium_count * 3
+            + self.low_count * 0.5
         )
         return min(100, score)
-    
+
     def calculate_risk_rating(self) -> str:
         """Rating for executives"""
         if self.critical_count > 0:
@@ -142,10 +149,10 @@ class PerApplicationRisk:
 class RiskAggregator:
     """
     Aggregate findings for business view
-    
+
     Usage:
         agg = RiskAggregator(app_name="myapp")
-        
+
         # Add findings
         for finding in findings_from_scanner:
             agg.add_finding(
@@ -157,12 +164,12 @@ class RiskAggregator:
                 confidence=finding.confidence,
                 owasp_category=finding.owasp
             )
-        
+
         # Aggregate
         per_endpoint = agg.aggregate_by_endpoint()
         per_owasp = agg.aggregate_by_owasp()
         per_app = agg.aggregate_by_application()
-        
+
         # Generate report
         report = agg.generate_report()
     """
@@ -170,7 +177,7 @@ class RiskAggregator:
     def __init__(self, app_name: str):
         self.app_name = app_name
         self.findings: List[Dict] = []
-        
+
     def add_finding(
         self,
         endpoint: str,
@@ -181,7 +188,7 @@ class RiskAggregator:
         parameter: Optional[str] = None,
         owasp_category: Optional[str] = None,
         cwe_ids: Optional[List[str]] = None,
-        business_impact: Optional[str] = None
+        business_impact: Optional[str] = None,
     ) -> None:
         """Add finding for aggregation"""
         finding = {
@@ -191,30 +198,37 @@ class RiskAggregator:
             "severity": severity,
             "tool_name": tool_name,
             "confidence": confidence,
-            "owasp_category": (owasp_category.value if hasattr(owasp_category, "value") else owasp_category) or "UNKNOWN",
+            "owasp_category": (
+                owasp_category.value
+                if hasattr(owasp_category, "value")
+                else owasp_category
+            )
+            or "UNKNOWN",
             "cwe_ids": cwe_ids or [],
-            "business_impact": business_impact or ""
+            "business_impact": business_impact or "",
         }
         self.findings.append(finding)
-        logger.debug(f"[RiskAggregator] Added finding: {vulnerability_type} on {endpoint}")
+        logger.debug(
+            f"[RiskAggregator] Added finding: {vulnerability_type} on {endpoint}"
+        )
 
     def aggregate_by_endpoint(self) -> Dict[str, PerEndpointRisk]:
         """Group findings by endpoint"""
         endpoint_risks: Dict[str, PerEndpointRisk] = {}
-        
+
         for finding in self.findings:
             endpoint = finding["endpoint"]
             param = finding["parameter"]
             severity = finding["severity"]
-            
+
             if endpoint not in endpoint_risks:
                 endpoint_risks[endpoint] = PerEndpointRisk(endpoint=endpoint)
-            
+
             risk = endpoint_risks[endpoint]
-            
+
             if param and param not in risk.parameters:
                 risk.parameters.append(param)
-            
+
             # Count by severity
             if severity == "CRITICAL":
                 risk.critical_count += 1
@@ -224,41 +238,53 @@ class RiskAggregator:
                 risk.medium_count += 1
             elif severity == "LOW":
                 risk.low_count += 1
-            
+
             # Update overall severity (max)
-            severity_order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
+            severity_order = {
+                "CRITICAL": 4,
+                "HIGH": 3,
+                "MEDIUM": 2,
+                "LOW": 1,
+                "INFO": 0,
+            }
             current_order = severity_order.get(risk.overall_severity, -1)
             finding_order = severity_order.get(severity, -1)
-            
+
             if finding_order > current_order:
                 risk.overall_severity = severity
-        
+
         # Calculate risk scores
         for risk in endpoint_risks.values():
             risk.business_risk_score = risk.calculate_risk_score()
-        
+
         logger.info(f"[RiskAggregator] Aggregated {len(endpoint_risks)} endpoints")
         return endpoint_risks
 
     def aggregate_by_owasp(self) -> Dict[str, PerOWASPRisk]:
         """Group findings by OWASP category"""
         owasp_risks: Dict[str, PerOWASPRisk] = {}
-        
+
         for finding in self.findings:
             owasp_raw = finding["owasp_category"]
             # Ensure owasp is always a string for dict keys
-            owasp = owasp_raw.value if hasattr(owasp_raw, 'value') else str(owasp_raw) if owasp_raw else "UNKNOWN"
+            owasp = (
+                owasp_raw.value
+                if hasattr(owasp_raw, "value")
+                else str(owasp_raw)
+                if owasp_raw
+                else "UNKNOWN"
+            )
             endpoint = finding["endpoint"]
             severity = finding["severity"]
-            
+
             if owasp not in owasp_risks:
                 owasp_risks[owasp] = PerOWASPRisk(owasp_category=owasp)
-            
+
             risk = owasp_risks[owasp]
-            
+
             if endpoint not in risk.affected_endpoints:
                 risk.affected_endpoints.append(endpoint)
-            
+
             # Count by severity
             if severity == "CRITICAL":
                 risk.critical_count += 1
@@ -268,14 +294,14 @@ class RiskAggregator:
                 risk.medium_count += 1
             elif severity == "LOW":
                 risk.low_count += 1
-        
+
         logger.info(f"[RiskAggregator] Aggregated {len(owasp_risks)} OWASP categories")
         return owasp_risks
 
     def aggregate_by_application(self) -> PerApplicationRisk:
         """Aggregate all findings for entire application"""
         app_risk = PerApplicationRisk(app_name=self.app_name)
-        
+
         endpoints: Set[str] = set()
         owasp_dist: Dict[str, int] = {}
 
@@ -284,9 +310,9 @@ class RiskAggregator:
             severity = finding["severity"]
             owasp_raw = finding["owasp_category"]
             owasp = owasp_raw.value if hasattr(owasp_raw, "value") else str(owasp_raw)
-            
+
             app_risk.total_findings += 1
-            
+
             if severity == "CRITICAL":
                 app_risk.critical_count += 1
             elif severity == "HIGH":
@@ -295,27 +321,27 @@ class RiskAggregator:
                 app_risk.medium_count += 1
             elif severity == "LOW":
                 app_risk.low_count += 1
-            
+
             owasp_dist[owasp] = owasp_dist.get(owasp, 0) + 1
-        
+
         app_risk.endpoints_scanned = len(endpoints)
         app_risk.owasp_distribution = owasp_dist
         app_risk.business_risk_score = app_risk.calculate_risk_score()
         app_risk.risk_rating = app_risk.calculate_risk_rating()
-        
+
         # Top vulnerabilities
         vuln_types: Dict[str, int] = {}
         for finding in self.findings:
             vtype = finding["vulnerability_type"]
             vuln_types[vtype] = vuln_types.get(vtype, 0) + 1
-        
+
         app_risk.top_vulnerabilities = sorted(
-            vuln_types.items(),
-            key=lambda x: x[1],
-            reverse=True
+            vuln_types.items(), key=lambda x: x[1], reverse=True
         )[:5]
-        
-        logger.info(f"[RiskAggregator] Application risk: {app_risk.risk_rating} ({app_risk.business_risk_score:.1f})")
+
+        logger.info(
+            f"[RiskAggregator] Application risk: {app_risk.risk_rating} ({app_risk.business_risk_score:.1f})"
+        )
         return app_risk
 
     def generate_report(self) -> Dict:
@@ -323,12 +349,12 @@ class RiskAggregator:
         per_endpoint = self.aggregate_by_endpoint()
         per_owasp = self.aggregate_by_owasp()
         per_app = self.aggregate_by_application()
-        
+
         report = {
             "metadata": {
                 "app_name": self.app_name,
                 "timestamp": datetime.now().isoformat(),
-                "total_findings": len(self.findings)
+                "total_findings": len(self.findings),
             },
             "application_risk": {
                 "app_name": per_app.app_name,
@@ -340,13 +366,13 @@ class RiskAggregator:
                     "critical": per_app.critical_count,
                     "high": per_app.high_count,
                     "medium": per_app.medium_count,
-                    "low": per_app.low_count
+                    "low": per_app.low_count,
                 },
                 "top_vulnerabilities": [
                     {"vulnerability": v[0], "count": v[1]}
                     for v in per_app.top_vulnerabilities
                 ],
-                "owasp_distribution": per_app.owasp_distribution
+                "owasp_distribution": per_app.owasp_distribution,
             },
             "per_endpoint": {
                 endpoint: {
@@ -356,7 +382,7 @@ class RiskAggregator:
                     "critical": risk.critical_count,
                     "high": risk.high_count,
                     "medium": risk.medium_count,
-                    "low": risk.low_count
+                    "low": risk.low_count,
                 }
                 for endpoint, risk in per_endpoint.items()
             },
@@ -366,27 +392,27 @@ class RiskAggregator:
                     "critical": risk.critical_count,
                     "high": risk.high_count,
                     "medium": risk.medium_count,
-                    "low": risk.low_count
+                    "low": risk.low_count,
                 }
                 for owasp, risk in per_owasp.items()
-            }
+            },
         }
-        
+
         return report
 
     def export_json(self, filepath: str) -> None:
         """Export aggregation report"""
         report = self.generate_report()
-        
-        with open(filepath, 'w') as f:
+
+        with open(filepath, "w") as f:
             json.dump(report, f, indent=2)
-        
+
         logger.info(f"[RiskAggregator] Exported report to {filepath}")
 
     def get_executive_summary(self) -> str:
         """Get 1-page executive summary"""
         per_app = self.aggregate_by_application()
-        
+
         summary = f"""
 ╔════════════════════════════════════════════════════════════════╗
 ║              SECURITY ASSESSMENT EXECUTIVE SUMMARY              ║
