@@ -2,3 +2,4 @@ scan_results*
 **/__pycache__/
 *.pyc
 pre-commit-*.pyz
+*/__pycache__/*
