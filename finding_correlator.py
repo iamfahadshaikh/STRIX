@@ -19,26 +19,28 @@ Correlation Model:
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional, Tuple
-from enum import Enum
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class CorrelationStatus(Enum):
     """How correlated finding is"""
-    SINGLE_TOOL = "single_tool"           # Only one tool reported
-    CORROBORATED = "corroborated"         # Multiple tools agree
-    CONFIRMED = "confirmed"               # Payload success confirmed
-    FALSE_POSITIVE = "false_positive"     # Contradictory evidence
+
+    SINGLE_TOOL = "single_tool"  # Only one tool reported
+    CORROBORATED = "corroborated"  # Multiple tools agree
+    CONFIRMED = "confirmed"  # Payload success confirmed
+    FALSE_POSITIVE = "false_positive"  # Contradictory evidence
 
 
 @dataclass
 class ToolReport:
     """Single tool's report of a finding"""
+
     tool_name: str
     endpoint: str
     parameter: Optional[str] = None
@@ -56,40 +58,40 @@ class ToolReport:
             "type": self.vulnerability_type,
             "severity": self.severity,
             "evidence": self.evidence,
-            "success": self.success_indicator
+            "success": self.success_indicator,
         }
 
 
 @dataclass
 class CorrelatedFinding:
     """De-duplicated, correlated finding from multiple tools"""
+
     finding_id: str
     vuln_type: str
     endpoint: str
     parameter: Optional[str] = None
-    
+
     # Tool reports that led to this finding
     tool_reports: List[ToolReport] = field(default_factory=list)
-    
+
     # Correlation data
     status: CorrelationStatus = CorrelationStatus.SINGLE_TOOL
     tool_count: int = 1
     tools: Set[str] = field(default_factory=set)
-    
+
     # Assessment
     is_false_positive: bool = False
     fp_reason: str = ""
-    
+
     # Classification
     owasp_category: str = ""
     cwe: str = ""
     confidence: str = "MEDIUM"
     risk: str = "MEDIUM"
-    
+
     # Metadata
     first_seen: str = field(default_factory=lambda: datetime.now().isoformat())
     last_seen: str = field(default_factory=lambda: datetime.now().isoformat())
-    
 
     def add_report(self, report: ToolReport):
         """Add tool report to finding"""
@@ -97,18 +99,21 @@ class CorrelatedFinding:
         self.tools.add(report.tool_name)
         self.tool_count = len(self.tools)
         self.last_seen = datetime.now().isoformat()
-        
+
         # Update status based on corroboration
         if self.tool_count == 1:
             self.status = CorrelationStatus.SINGLE_TOOL
         elif self.tool_count >= 2:
             # Multiple tools = corroborated
             self.status = CorrelationStatus.CORROBORATED
-            
+
             # If any has confirmed success, mark as CONFIRMED
             if any(
-                r.success_indicator is True or
-                (isinstance(r.success_indicator, str) and "confirmed" in r.success_indicator.lower())
+                r.success_indicator is True
+                or (
+                    isinstance(r.success_indicator, str)
+                    and "confirmed" in r.success_indicator.lower()
+                )
                 for r in self.tool_reports
             ):
                 self.status = CorrelationStatus.CONFIRMED
@@ -129,23 +134,23 @@ class CorrelatedFinding:
             "is_false_positive": self.is_false_positive,
             "tool_reports": [r.to_dict() for r in self.tool_reports],
             "first_seen": self.first_seen,
-            "last_seen": self.last_seen
+            "last_seen": self.last_seen,
         }
 
 
 class FindingCorrelator:
     """
     De-duplicate and correlate findings across tools
-    
+
     Purpose:
     - Same endpoint/param tested by multiple tools → link them
     - Multiple tools = higher confidence (corroboration)
     - Aggregate by OWASP category
     - Detect false positives (conflicting evidence)
-    
+
     Usage:
         correlator = FindingCorrelator()
-        
+
         # Add reports as tools run
         correlator.add_report(
             tool="dalfox",
@@ -155,7 +160,7 @@ class FindingCorrelator:
             evidence="payload reflected in response",
             success_indicator="confirmed_reflected"
         )
-        
+
         correlator.add_report(
             tool="xsstrike",
             endpoint="/search",
@@ -163,7 +168,7 @@ class FindingCorrelator:
             vuln_type="xss",
             evidence="XXS vector successful"
         )
-        
+
         # Get correlated findings
         findings = correlator.get_findings()
         for f in findings:
@@ -175,22 +180,29 @@ class FindingCorrelator:
     def __init__(self):
         # Deduplication key: (endpoint, parameter, vuln_type) -> CorrelatedFinding
         self.findings: Dict[Tuple[str, Optional[str], str], CorrelatedFinding] = {}
-        
+
         # By OWASP category
         self.by_owasp: Dict[str, List[CorrelatedFinding]] = defaultdict(list)
-        
+
         # By tool
         self.by_tool: Dict[str, List[CorrelatedFinding]] = defaultdict(list)
-        
+
         # Tracking
         self._next_id = 0
 
-    def add_report(self, tool: str, endpoint: str, parameter: Optional[str],
-                  vuln_type: str, severity: str = "MEDIUM", 
-                  evidence: str = "", success_indicator: Optional[str] = None) -> str:
+    def add_report(
+        self,
+        tool: str,
+        endpoint: str,
+        parameter: Optional[str],
+        vuln_type: str,
+        severity: str = "MEDIUM",
+        evidence: str = "",
+        success_indicator: Optional[str] = None,
+    ) -> str:
         """
         Add tool report to correlator
-        
+
         Args:
             tool: Tool name (dalfox, sqlmap, etc)
             endpoint: Endpoint path
@@ -199,7 +211,7 @@ class FindingCorrelator:
             severity: CRITICAL/HIGH/MEDIUM/LOW/INFO
             evidence: Human-readable evidence
             success_indicator: confirmed_reflected, error_based, etc.
-            
+
         Returns:
             Finding ID (for tracking)
         """
@@ -218,7 +230,7 @@ class FindingCorrelator:
                 finding_id=f"finding_{self._next_id}",
                 vuln_type=vuln_type,
                 endpoint=endpoint,
-                parameter=parameter
+                parameter=parameter,
             )
             self._next_id += 1
 
@@ -232,15 +244,17 @@ class FindingCorrelator:
             vulnerability_type=vuln_type,
             severity=severity,
             evidence=evidence,
-            success_indicator=success_indicator
+            success_indicator=success_indicator,
         )
         finding.add_report(report)
 
         # Track by tool
         self.by_tool[tool].append(finding)
 
-        logger.info(f"[Correlator] Added report: {tool} found {vuln_type} on {endpoint}"
-                   f" (tools now: {finding.tool_count})")
+        logger.info(
+            f"[Correlator] Added report: {tool} found {vuln_type} on {endpoint}"
+            f" (tools now: {finding.tool_count})"
+        )
 
         return finding.finding_id
 
@@ -262,14 +276,18 @@ class FindingCorrelator:
                 finding.is_false_positive = True
                 finding.fp_reason = reason
                 finding.status = CorrelationStatus.FALSE_POSITIVE
-                logger.info(f"[Correlator] Marked {finding_id} as false positive: {reason}")
+                logger.info(
+                    f"[Correlator] Marked {finding_id} as false positive: {reason}"
+                )
                 return
 
     def get_findings(self) -> List[CorrelatedFinding]:
         """Get all correlated findings"""
         return list(self.findings.values())
 
-    def get_findings_by_status(self, status: CorrelationStatus) -> List[CorrelatedFinding]:
+    def get_findings_by_status(
+        self, status: CorrelationStatus
+    ) -> List[CorrelatedFinding]:
         """Get findings by correlation status"""
         return [f for f in self.findings.values() if f.status == status]
 
@@ -298,24 +316,20 @@ class FindingCorrelator:
             "corroborated_findings": len(corroborated),
             "confirmed_findings": len(confirmed),
             "false_positives": len(false_positives),
-            "by_owasp": {
-                cat: len(findings) for cat, findings in self.by_owasp.items()
-            },
-            "by_tool": {
-                tool: len(findings) for tool, findings in self.by_tool.items()
-            },
+            "by_owasp": {cat: len(findings) for cat, findings in self.by_owasp.items()},
+            "by_tool": {tool: len(findings) for tool, findings in self.by_tool.items()},
             "by_status": {
                 "single_tool": len([f for f in all_findings if f.tool_count == 1]),
                 "corroborated": len(corroborated),
                 "confirmed": len(confirmed),
-                "false_positive": len(false_positives)
-            }
+                "false_positive": len(false_positives),
+            },
         }
 
     def deduplicate(self) -> int:
         """
         Remove duplicates and conflicting reports
-        
+
         Returns:
             Number of issues found and resolved
         """
@@ -326,11 +340,13 @@ class FindingCorrelator:
             if len(finding.tool_reports) > 1:
                 # Multiple reports for same finding
                 severities = [r.severity for r in finding.tool_reports]
-                
+
                 # Flag if conflicting
                 if len(set(severities)) > 1:
                     # Different severity levels = potential conflicting reports
-                    logger.warning(f"[Correlator] Conflicting severity for {finding.finding_id}: {severities}")
+                    logger.warning(
+                        f"[Correlator] Conflicting severity for {finding.finding_id}: {severities}"
+                    )
                     issues_found += 1
 
         logger.info(f"[Correlator] Deduplication found {issues_found} issues")
@@ -344,7 +360,7 @@ class FindingCorrelator:
             "by_owasp": {
                 cat: [f.finding_id for f in findings]
                 for cat, findings in self.by_owasp.items()
-            }
+            },
         }
 
     @staticmethod

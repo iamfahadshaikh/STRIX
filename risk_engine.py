@@ -14,15 +14,16 @@ Output Severity: INFO | LOW | MEDIUM | HIGH | CRITICAL
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class RiskSeverity(str, Enum):
     """Risk severity levels"""
+
     INFO = "INFO"
     LOW = "LOW"
     MEDIUM = "MEDIUM"
@@ -32,6 +33,7 @@ class RiskSeverity(str, Enum):
 
 class ImpactCategory(str, Enum):
     """OWASP impact mapping"""
+
     # OWASP Top-10 2021
     A01_BROKEN_ACCESS_CONTROL = "A01_BROKEN_ACCESS_CONTROL"
     A02_CRYPTOGRAPHIC_FAILURES = "A02_CRYPTOGRAPHIC_FAILURES"
@@ -50,14 +52,14 @@ class ImpactCategory(str, Enum):
         if self in [
             ImpactCategory.A01_BROKEN_ACCESS_CONTROL,
             ImpactCategory.A02_CRYPTOGRAPHIC_FAILURES,
-            ImpactCategory.A03_INJECTION
+            ImpactCategory.A03_INJECTION,
         ]:
             return "HIGH"
         # Medium-impact categories
         elif self in [
             ImpactCategory.A04_INSECURE_DESIGN,
             ImpactCategory.A05_SECURITY_MISCONFIGURATION,
-            ImpactCategory.A07_AUTH_FAILURES
+            ImpactCategory.A07_AUTH_FAILURES,
         ]:
             return "MEDIUM"
         # Lower-impact categories
@@ -68,6 +70,7 @@ class ImpactCategory(str, Enum):
 @dataclass
 class PayloadEvidence:
     """Evidence of successful payload execution"""
+
     tool_name: str  # dalfox, sqlmap, commix
     endpoint: str
     parameter: str
@@ -82,6 +85,7 @@ class PayloadEvidence:
 @dataclass
 class RiskFinding:
     """Final risk-scored finding"""
+
     endpoint: str
     parameter: str
     vulnerability_type: str
@@ -99,7 +103,7 @@ class RiskFinding:
 class RiskEngine:
     """
     Convert confidence + corroboration + evidence into risk severity
-    
+
     Scoring Model:
     1. Payload Success Rate (30%) - 0-1 score
     2. Corroboration Count (30%) - normalized (1 tool = 0.3, 2 = 0.6, 3+ = 1.0)
@@ -138,21 +142,17 @@ class RiskEngine:
         )
 
     def calculate_payload_success_rate(
-        self,
-        endpoint: str,
-        parameter: str,
-        attempts: int = 10,
-        successes: int = 8
+        self, endpoint: str, parameter: str, attempts: int = 10, successes: int = 8
     ) -> float:
         """
         Calculate payload success rate for given endpoint/parameter
-        
+
         Args:
             endpoint: Target endpoint
             parameter: Target parameter
             attempts: Total payload attempts
             successes: How many succeeded
-            
+
         Returns:
             Success rate (0-1)
         """
@@ -171,11 +171,11 @@ class RiskEngine:
         corroboration_count: int,  # How many tools found it
         tools: List[str],  # Which tools
         payload_success_rate: float = 0.0,  # Success rate (0-1)
-        privilege_level: str = "UNAUTHENTICATED"
+        privilege_level: str = "UNAUTHENTICATED",
     ) -> RiskFinding:
         """
         Calculate final risk severity
-        
+
         Args:
             endpoint: Target endpoint
             parameter: Target parameter
@@ -186,7 +186,7 @@ class RiskEngine:
             tools: List of tool names
             payload_success_rate: Payload execution success rate (0-1)
             privilege_level: UNAUTHENTICATED | USER | ADMIN
-            
+
         Returns:
             RiskFinding with calculated severity
         """
@@ -219,15 +219,15 @@ class RiskEngine:
             "UNAUTHENTICATED": 1.0,
             "USER": 1.2,
             "ADMIN": 1.5,
-            "SERVICE_ACCOUNT": 1.3
+            "SERVICE_ACCOUNT": 1.3,
         }.get(privilege_level, 1.0)
 
         # Weighted calculation
         raw_score = (
-            (success_score * 0.30) +  # Payload success (30%)
-            (corroboration_score * 0.30) +  # Corroboration (30%)
-            (tool_agreement_score * 0.20) +  # Tool agreement (20%)
-            (confidence_score * 0.20)  # Confidence from engine (20%)
+            (success_score * 0.30)  # Payload success (30%)
+            + (corroboration_score * 0.30)  # Corroboration (30%)
+            + (tool_agreement_score * 0.20)  # Tool agreement (20%)
+            + (confidence_score * 0.20)  # Confidence from engine (20%)
         )
 
         # Apply multipliers
@@ -252,7 +252,7 @@ class RiskEngine:
             tools=tools,
             evidence=[],  # Will be populated from payload_evidence
             privilege_level=privilege_level,
-            affected_by_auth=(privilege_level != "UNAUTHENTICATED")
+            affected_by_auth=(privilege_level != "UNAUTHENTICATED"),
         )
 
         # Attach evidence
@@ -335,7 +335,7 @@ class RiskEngine:
             "HIGH": len(self.get_high_findings()),
             "MEDIUM": len(self.get_findings_by_severity("MEDIUM")),
             "LOW": len(self.get_findings_by_severity("LOW")),
-            "INFO": len(self.get_findings_by_severity("INFO"))
+            "INFO": len(self.get_findings_by_severity("INFO")),
         }
 
         top_vulnerable_endpoints = {}
@@ -345,11 +345,9 @@ class RiskEngine:
             top_vulnerable_endpoints[finding.endpoint] += 1
 
         top_vulnerable_endpoints = dict(
-            sorted(
-                top_vulnerable_endpoints.items(),
-                key=lambda x: x[1],
-                reverse=True
-            )[:10]
+            sorted(top_vulnerable_endpoints.items(), key=lambda x: x[1], reverse=True)[
+                :10
+            ]
         )
 
         return {
@@ -357,13 +355,17 @@ class RiskEngine:
             "by_severity": by_severity,
             "top_vulnerable_endpoints": top_vulnerable_endpoints,
             "avg_confidence": (
-                sum(f.confidence_score for f in self.findings.values()) / len(self.findings)
-                if self.findings else 0
+                sum(f.confidence_score for f in self.findings.values())
+                / len(self.findings)
+                if self.findings
+                else 0
             ),
             "avg_corroboration": (
-                sum(f.corroboration_count for f in self.findings.values()) / len(self.findings)
-                if self.findings else 0
-            )
+                sum(f.corroboration_count for f in self.findings.values())
+                / len(self.findings)
+                if self.findings
+                else 0
+            ),
         }
 
     def to_dict(self) -> Dict:
@@ -382,16 +384,18 @@ class RiskEngine:
                     "payload_success_rate": f.payload_success_rate,
                     "tools": f.tools,
                     "privilege_level": f.privilege_level,
-                    "evidence_count": len(f.evidence)
+                    "evidence_count": len(f.evidence),
                 }
                 for f in sorted(
                     self.findings.values(),
                     key=lambda f: (
-                        {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}[f.risk_severity],
-                        -f.confidence_score
-                    )
+                        {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}[
+                            f.risk_severity
+                        ],
+                        -f.confidence_score,
+                    ),
                 )
-            ]
+            ],
         }
 
 

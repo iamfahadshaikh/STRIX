@@ -1,7 +1,7 @@
 # VAPT Automated Engine - Complete Project Overview
 
-**Last Updated**: February 27, 2026  
-**Status**: Production-Ready | Intelligence Layer Active | Signal-Driven Gating Enabled  
+**Last Updated**: February 27, 2026
+**Status**: Production-Ready | Intelligence Layer Active | Signal-Driven Gating Enabled
 **Total Python Modules**: 48 active (0 dangling)
 
 ---
@@ -466,22 +466,22 @@ sqlmap checks: "Are parameters available?"
 
 ### Guarantees
 
-✅ **Runtime Budget Enforcement**: Scans respect overall time limits  
-✅ **Per-Tool Timeouts**: Slow tools don't block the pipeline  
-✅ **Discovery Caching**: Results persist across tool executions  
-✅ **State Recovery**: Execution can resume from checkpoints  
-✅ **Deduplication**: Same finding from multiple tools counted once  
-✅ **Confidence Scoring**: Multiple tool agreement increases confidence  
-✅ **OWASP Mapping**: Industry-standard vulnerability classification  
-✅ **False Positive Filtering**: Low-confidence findings suppressed  
+✅ **Runtime Budget Enforcement**: Scans respect overall time limits
+✅ **Per-Tool Timeouts**: Slow tools don't block the pipeline
+✅ **Discovery Caching**: Results persist across tool executions
+✅ **State Recovery**: Execution can resume from checkpoints
+✅ **Deduplication**: Same finding from multiple tools counted once
+✅ **Confidence Scoring**: Multiple tool agreement increases confidence
+✅ **OWASP Mapping**: Industry-standard vulnerability classification
+✅ **False Positive Filtering**: Low-confidence findings suppressed
 
 ### Known Limitations
 
-⚠️ **DNS Tools Not Integrated**: 6 DNS tools available but not orchestrated  
-⚠️ **OSINT Limited**: theharvester and OSINT tools out of scope  
-⚠️ **WordPress-Specific**: wpscan available but not integrated (limited scope)  
-⚠️ **Command Injection**: commix available but not fully integrated  
-⚠️ **Subdomain Discovery**: assetfinder/dnsrecon defined but not called  
+⚠️ **DNS Tools Not Integrated**: 6 DNS tools available but not orchestrated
+⚠️ **OSINT Limited**: theharvester and OSINT tools out of scope
+⚠️ **WordPress-Specific**: wpscan available but not integrated (limited scope)
+⚠️ **Command Injection**: commix available but not fully integrated
+⚠️ **Subdomain Discovery**: assetfinder/dnsrecon defined but not called
 
 ---
 

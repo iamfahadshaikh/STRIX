@@ -17,15 +17,16 @@ OWASP 2021 Categories:
 """
 
 import logging
+from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Set
-from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 
 class OWASP2021(Enum):
     """OWASP Top-10 2021 Categories"""
+
     A01_BROKEN_ACCESS_CONTROL = "A01:2021 – Broken Access Control"
     A02_CRYPTOGRAPHIC_FAILURES = "A02:2021 – Cryptographic Failures"
     A03_INJECTION = "A03:2021 – Injection"
@@ -40,15 +41,17 @@ class OWASP2021(Enum):
 
 class FindingClassification(Enum):
     """How conclusive the finding is"""
-    DISCOVERY = "discovery"           # Endpoint/parameter discovered
+
+    DISCOVERY = "discovery"  # Endpoint/parameter discovered
     EXPLOITATION_ATTEMPT = "attempt"  # Tool attempted exploitation, inconclusive
-    CONFIRMED = "confirmed"           # Vulnerability confirmed via payload
-    FALSE_POSITIVE = "false_positive" # Tool flagged but not real
+    CONFIRMED = "confirmed"  # Vulnerability confirmed via payload
+    FALSE_POSITIVE = "false_positive"  # Tool flagged but not real
 
 
 @dataclass
 class OWASPMapping:
     """Mapping of finding to OWASP category"""
+
     category: OWASP2021
     cwe: Optional[str] = None  # CWE identifier
     classification: FindingClassification = FindingClassification.DISCOVERY
@@ -60,7 +63,7 @@ class OWASPMapping:
 class OWASPMapper:
     """
     Map vulnerability findings to OWASP Top-10 categories.
-    
+
     Design principles:
     - No claim inflation (discovery ≠ confirmed)
     - Clear distinction between attempt and confirmed
@@ -101,7 +104,6 @@ class OWASPMapper:
             "cwe": "CWE-611",
             "name": "Improper Restriction of XML External Entity Reference",
         },
-
         # Broken Access Control (A01)
         "idor": {
             "category": OWASP2021.A01_BROKEN_ACCESS_CONTROL,
@@ -118,14 +120,12 @@ class OWASPMapper:
             "cwe": "CWE-287",
             "name": "Improper Authentication",
         },
-
         # SSRF (A10)
         "ssrf": {
             "category": OWASP2021.A10_SSRF,
             "cwe": "CWE-918",
             "name": "Server-Side Request Forgery (SSRF)",
         },
-
         # Cryptographic Failures (A02)
         "weak_crypto": {
             "category": OWASP2021.A02_CRYPTOGRAPHIC_FAILURES,
@@ -142,7 +142,6 @@ class OWASPMapper:
             "cwe": "CWE-295",
             "name": "Improper Certificate Validation",
         },
-
         # Security Misconfiguration (A05)
         "default_credentials": {
             "category": OWASP2021.A05_MISCONFIGURATION,
@@ -169,7 +168,6 @@ class OWASPMapper:
             "cwe": "CWE-942",
             "name": "Permissive Cross-domain Policy",
         },
-
         # Vulnerable Components (A06)
         "outdated_software": {
             "category": OWASP2021.A06_VULNERABLE_COMPONENTS,
@@ -181,7 +179,6 @@ class OWASPMapper:
             "cwe": "CWE-1035",
             "name": "Use of Vulnerable and Outdated Components",
         },
-
         # Authentication/Session (A07)
         "weak_password_policy": {
             "category": OWASP2021.A07_AUTH_SESSION,
@@ -198,14 +195,12 @@ class OWASPMapper:
             "cwe": "CWE-287",
             "name": "Improper Authentication",
         },
-
         # Insecure Design (A04)
         "missing_rate_limit": {
             "category": OWASP2021.A04_INSECURE_DESIGN,
             "cwe": "CWE-770",
             "name": "Allocation of Resources Without Limits",
         },
-
         # Data Integrity (A08)
         "code_injection": {
             "category": OWASP2021.A08_DATA_INTEGRITY,
@@ -217,14 +212,12 @@ class OWASPMapper:
             "cwe": "CWE-502",
             "name": "Deserialization of Untrusted Data",
         },
-
         # Logging/Monitoring (A09)
         "insufficient_logging": {
             "category": OWASP2021.A09_LOGGING,
             "cwe": "CWE-778",
             "name": "Insufficient Logging",
         },
-
         # Generic
         "information_disclosure": {
             "category": OWASP2021.A05_MISCONFIGURATION,
@@ -233,24 +226,27 @@ class OWASPMapper:
         },
     }
 
-    def map_finding(self, vuln_type: str, 
-                   classification: FindingClassification = FindingClassification.DISCOVERY,
-                   confidence: str = "MEDIUM",
-                   evidence: str = "") -> OWASPMapping:
+    def map_finding(
+        self,
+        vuln_type: str,
+        classification: FindingClassification = FindingClassification.DISCOVERY,
+        confidence: str = "MEDIUM",
+        evidence: str = "",
+    ) -> OWASPMapping:
         """
         Map vulnerability type to OWASP category
-        
+
         Args:
             vuln_type: Type of vulnerability (sqli, xss, etc)
             classification: DISCOVERY/ATTEMPT/CONFIRMED
             confidence: LOW/MEDIUM/HIGH
             evidence: Why this mapping
-            
+
         Returns:
             OWASPMapping with category and details
         """
         vuln_lower = vuln_type.lower().strip()
-        
+
         if vuln_lower not in self.MAPPINGS:
             logger.warning(f"Unknown vulnerability type: {vuln_type}")
             # Default to generic misconfiguration
@@ -258,26 +254,27 @@ class OWASPMapper:
                 category=OWASP2021.A05_MISCONFIGURATION,
                 classification=classification,
                 confidence=confidence,
-                evidence=evidence or "Unknown vulnerability type, categorized as misconfiguration"
+                evidence=evidence
+                or "Unknown vulnerability type, categorized as misconfiguration",
             )
-        
+
         mapping_def = self.MAPPINGS[vuln_lower]
-        
+
         return OWASPMapping(
             category=mapping_def["category"],
             cwe=mapping_def.get("cwe"),
             classification=classification,
             confidence=confidence,
-            evidence=evidence or mapping_def["name"]
+            evidence=evidence or mapping_def["name"],
         )
 
     def bulk_map_findings(self, findings: List[Dict]) -> Dict[str, OWASPMapping]:
         """
         Map multiple findings at once
-        
+
         Args:
             findings: List of dicts with type, classification, confidence, evidence
-            
+
         Returns:
             Dict[finding_id -> OWASPMapping]
         """
@@ -285,9 +282,11 @@ class OWASPMapper:
         for finding in findings:
             mapping = self.map_finding(
                 finding.get("type", "information_disclosure"),
-                FindingClassification[finding.get("classification", "DISCOVERY").upper()],
+                FindingClassification[
+                    finding.get("classification", "DISCOVERY").upper()
+                ],
                 finding.get("confidence", "MEDIUM"),
-                finding.get("evidence", "")
+                finding.get("evidence", ""),
             )
             results[finding.get("id", "unknown")] = mapping
         return results
@@ -303,15 +302,15 @@ class OWASPMapper:
     def get_recommendations(self, mapping: OWASPMapping) -> str:
         """
         Get remediation recommendations based on OWASP category
-        
+
         Args:
             mapping: OWASPMapping instance
-            
+
         Returns:
             Actionable recommendations
         """
         cat = mapping.category
-        
+
         recommendations = {
             OWASP2021.A01_BROKEN_ACCESS_CONTROL: (
                 "1. Implement proper access control checks\n"
@@ -374,10 +373,14 @@ class OWASPMapper:
                 "4. Implement DNS rebinding protection"
             ),
         }
-        
-        return recommendations.get(cat, "Review OWASP Top-10 documentation for remediation")
 
-    def format_finding_report(self, mapping: OWASPMapping, description: str = "") -> str:
+        return recommendations.get(
+            cat, "Review OWASP Top-10 documentation for remediation"
+        )
+
+    def format_finding_report(
+        self, mapping: OWASPMapping, description: str = ""
+    ) -> str:
         """Format finding for report"""
         report = f"""
 OWASP Category: {mapping.category.value}

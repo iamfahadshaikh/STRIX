@@ -24,17 +24,18 @@ Graph Structure:
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional, Tuple
-from enum import Enum
 from collections import defaultdict
-from urllib.parse import urlparse, parse_qs
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
 
 class ParameterSource(Enum):
     """Where parameter was discovered"""
+
     URL_QUERY = "url_query"
     FORM_INPUT = "form_input"
     JS_DETECTED = "js_detected"
@@ -44,6 +45,7 @@ class ParameterSource(Enum):
 
 class HTTPMethod(Enum):
     """HTTP methods"""
+
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
@@ -56,6 +58,7 @@ class HTTPMethod(Enum):
 @dataclass
 class Parameter:
     """Parameter node in graph"""
+
     name: str
     # Where it was found
     sources: Set[ParameterSource] = field(default_factory=set)
@@ -96,13 +99,14 @@ class Parameter:
             "injectable_cmd": self.injectable_cmd,
             "injectable_ssrf": self.injectable_ssrf,
             "sample_values": list(self.sample_values)[:3],
-            "dynamic": self.is_dynamic()
+            "dynamic": self.is_dynamic(),
         }
 
 
 @dataclass
 class Endpoint:
     """Endpoint node in graph"""
+
     path: str  # Normalized path like /api/users, /login
     # HTTP methods that reach this endpoint
     methods: Set[HTTPMethod] = field(default_factory=set)
@@ -145,7 +149,7 @@ class Endpoint:
             "is_api": self.is_api,
             "is_form": self.is_form,
             "dynamic": self.dynamic,
-            "unique_value_count": self.unique_value_count
+            "unique_value_count": self.unique_value_count,
         }
 
 
@@ -153,7 +157,7 @@ class EndpointGraph:
     """
     Lightweight graph: endpoints and parameters
     Built from crawl results, maintains single source of truth
-    
+
     Queries:
     - get_reflectable_endpoints() → endpoints with reflectable params
     - get_parametric_endpoints() → endpoints with any parameters
@@ -167,13 +171,18 @@ class EndpointGraph:
         self.parameters: Dict[str, Parameter] = {}  # name -> Parameter
         self._finalized = False
 
-    def add_crawl_result(self, url: str, method: str = "GET", 
-                        params: Optional[Dict[str, List[str]]] = None,
-                        is_api: bool = False, is_form: bool = False,
-                        status_code: Optional[int] = None):
+    def add_crawl_result(
+        self,
+        url: str,
+        method: str = "GET",
+        params: Optional[Dict[str, List[str]]] = None,
+        is_api: bool = False,
+        is_form: bool = False,
+        status_code: Optional[int] = None,
+    ):
         """
         Add crawled endpoint to graph
-        
+
         Args:
             url: Full or relative URL
             method: HTTP method (GET, POST, etc)
@@ -228,7 +237,7 @@ class EndpointGraph:
     def add_form(self, form_path: str, form_action: str, fields: List[Dict]):
         """
         Add form-discovered endpoint
-        
+
         Args:
             form_path: URL where form was found
             form_action: Form action URL
@@ -248,39 +257,41 @@ class EndpointGraph:
         ep.add_method(HTTPMethod.POST)
         ep.is_form = True
         ep.dynamic = True
-        
+
         # Add form fields as parameters with FORM_INPUT provenance
         for field in fields:
             field_name = field.get("name")
             if not field_name:
                 continue
-            
+
             if field_name not in self.parameters:
                 self.parameters[field_name] = Parameter(name=field_name)
-            
+
             param = self.parameters[field_name]
             param.add_source(ParameterSource.FORM_INPUT)  # PROVENANCE
             ep.add_parameter(param)
-    
-    def add_js_parameter(self, endpoint_path: str, param_name: str, sample_value: Optional[str] = None):
+
+    def add_js_parameter(
+        self, endpoint_path: str, param_name: str, sample_value: Optional[str] = None
+    ):
         """Add parameter discovered via JS analysis with JS_DETECTED provenance"""
         path = self._normalize_path(endpoint_path)
         if not path:
             return
-        
+
         if path not in self.endpoints:
             self.endpoints[path] = Endpoint(path=path)
-        
+
         ep = self.endpoints[path]
         ep.add_source(ParameterSource.JS_DETECTED)
-        
+
         if param_name not in self.parameters:
             self.parameters[param_name] = Parameter(name=param_name)
-        
+
         param = self.parameters[param_name]
         param.add_source(ParameterSource.JS_DETECTED)  # PROVENANCE
         ep.add_parameter(param)
-        
+
         if sample_value:
             param.add_value(sample_value)
 
@@ -323,11 +334,11 @@ class EndpointGraph:
             return ""
 
         # Handle full URLs
-        if url.startswith('http'):
+        if url.startswith("http"):
             parsed = urlparse(url)
             path = parsed.path or "/"
         else:
-            path = url if url.startswith('/') else f"/{url}"
+            path = url if url.startswith("/") else f"/{url}"
 
         # Normalize
         path = path.strip()
@@ -348,31 +359,25 @@ class EndpointGraph:
 
     def get_parametric_endpoints(self) -> List[str]:
         """Get endpoints with ANY parameters"""
-        return sorted([
-            path for path, ep in self.endpoints.items()
-            if ep.dynamic or len(ep.parameters) > 0
-        ])
+        return sorted(
+            [
+                path
+                for path, ep in self.endpoints.items()
+                if ep.dynamic or len(ep.parameters) > 0
+            ]
+        )
 
     def get_dynamic_endpoints(self) -> List[str]:
         """Get endpoints marked as dynamic"""
-        return sorted([
-            path for path, ep in self.endpoints.items()
-            if ep.dynamic
-        ])
+        return sorted([path for path, ep in self.endpoints.items() if ep.dynamic])
 
     def get_form_endpoints(self) -> List[str]:
         """Get endpoints discovered via forms"""
-        return sorted([
-            path for path, ep in self.endpoints.items()
-            if ep.is_form
-        ])
+        return sorted([path for path, ep in self.endpoints.items() if ep.is_form])
 
     def get_api_endpoints(self) -> List[str]:
         """Get endpoints marked as API"""
-        return sorted([
-            path for path, ep in self.endpoints.items()
-            if ep.is_api
-        ])
+        return sorted([path for path, ep in self.endpoints.items() if ep.is_api])
 
     def get_injectable_sql_endpoints(self) -> List[str]:
         """Get endpoints with SQL-injectable parameters"""
@@ -436,12 +441,8 @@ class EndpointGraph:
         return {
             "target": self.target,
             "summary": self.get_summary(),
-            "endpoints": {
-                path: ep.to_dict() for path, ep in self.endpoints.items()
-            },
-            "parameters": {
-                name: p.to_dict() for name, p in self.parameters.items()
-            }
+            "endpoints": {path: ep.to_dict() for path, ep in self.endpoints.items()},
+            "parameters": {name: p.to_dict() for name, p in self.parameters.items()},
         }
 
     def finalize(self):

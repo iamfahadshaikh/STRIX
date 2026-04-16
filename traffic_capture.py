@@ -10,13 +10,13 @@ Features:
   5. Same inputs → same outputs
 """
 
-import logging
+import hashlib
 import json
-from typing import Dict, List, Optional, Tuple
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
-import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HTTPRequest:
     """Single captured HTTP request"""
+
     url: str
     method: str = "GET"
     headers: Dict[str, str] = field(default_factory=dict)
@@ -40,7 +41,7 @@ class HTTPRequest:
             "body": self.body,
             "timestamp": self.timestamp,
             "tool_name": self.tool_name,
-            "payload": self.payload
+            "payload": self.payload,
         }
 
     def get_hash(self) -> str:
@@ -52,13 +53,14 @@ class HTTPRequest:
 @dataclass
 class HTTPResponse:
     """Single captured HTTP response"""
+
     status_code: int
     headers: Dict[str, str] = field(default_factory=dict)
     body: Optional[str] = None  # First 10KB only
     execution_time_ms: float = 0.0
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     error_message: Optional[str] = None  # If error occurred
-    
+
     def to_dict(self) -> Dict:
         return {
             "status_code": self.status_code,
@@ -67,13 +69,14 @@ class HTTPResponse:
             "body_size": len(self.body) if self.body else 0,
             "execution_time_ms": self.execution_time_ms,
             "timestamp": self.timestamp,
-            "error_message": self.error_message
+            "error_message": self.error_message,
         }
 
 
 @dataclass
 class HTTPExchange:
     """Complete request-response pair"""
+
     request: HTTPRequest
     response: HTTPResponse
     exchange_id: str = ""
@@ -88,23 +91,23 @@ class HTTPExchange:
         return {
             "exchange_id": self.exchange_id,
             "request": self.request.to_dict(),
-            "response": self.response.to_dict()
+            "response": self.response.to_dict(),
         }
 
 
 class TrafficCapture:
     """
     Capture and manage HTTP traffic during scanning
-    
+
     Purpose:
     - Record all requests/responses
     - Enable deterministic replay
     - Export for audit trails
     - Support debugging
-    
+
     Usage:
         capture = TrafficCapture(session_id="scan_20260112_143022")
-        
+
         # During scan
         capture.capture_request(
             url="https://example.com/api/users?id=1",
@@ -117,12 +120,12 @@ class TrafficCapture:
             body='{"users": [...]}',
             execution_time_ms=245.5
         )
-        
+
         # Export
         har = capture.export_har()
         with open("scan_traffic.har", "w") as f:
             json.dump(har, f)
-            
+
         # Replay mode
         replay = TrafficCapture.load_from_har("scan_traffic.har")
         replay.set_replay_mode(True)
@@ -140,7 +143,7 @@ class TrafficCapture:
         self.exchange_index = 0
         self.start_time = datetime.now()
         self.end_time: Optional[datetime] = None
-        
+
         # Metadata
         self.endpoints_scanned: set = set()
         self.tools_used: set = set()
@@ -155,11 +158,11 @@ class TrafficCapture:
         headers: Optional[Dict[str, str]] = None,
         body: Optional[str] = None,
         tool_name: Optional[str] = None,
-        payload: Optional[str] = None
+        payload: Optional[str] = None,
     ) -> str:
         """
         Capture an HTTP request
-        
+
         Args:
             url: Request URL
             method: HTTP method
@@ -167,7 +170,7 @@ class TrafficCapture:
             body: Request body
             tool_name: Which tool generated this (dalfox, sqlmap, etc.)
             payload: The actual payload if this is a test
-            
+
         Returns:
             Exchange ID
         """
@@ -187,7 +190,7 @@ class TrafficCapture:
             headers=headers or {},
             body=body,
             tool_name=tool_name,
-            payload=payload
+            payload=payload,
         )
 
         logger.debug(f"[TrafficCapture] Captured request: {method} {url}")
@@ -202,11 +205,11 @@ class TrafficCapture:
         headers: Optional[Dict[str, str]] = None,
         body: Optional[str] = None,
         execution_time_ms: float = 0.0,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ):
         """
         Capture an HTTP response (must follow capture_request)
-        
+
         Args:
             status_code: HTTP status code
             headers: Response headers
@@ -214,7 +217,7 @@ class TrafficCapture:
             execution_time_ms: How long the request took
             error_message: Error message if request failed
         """
-        if not hasattr(self, '_pending_request'):
+        if not hasattr(self, "_pending_request"):
             logger.warning("[TrafficCapture] Response captured without request")
             return
 
@@ -227,20 +230,19 @@ class TrafficCapture:
             headers=headers or {},
             body=body,
             execution_time_ms=execution_time_ms,
-            error_message=error_message
+            error_message=error_message,
         )
 
         # Create exchange
-        exchange = HTTPExchange(
-            request=self._pending_request,
-            response=response
-        )
+        exchange = HTTPExchange(request=self._pending_request, response=response)
 
         self.exchanges.append(exchange)
-        logger.debug(f"[TrafficCapture] Captured response: {status_code} ({execution_time_ms:.1f}ms)")
+        logger.debug(
+            f"[TrafficCapture] Captured response: {status_code} ({execution_time_ms:.1f}ms)"
+        )
 
         # Clean up
-        delattr(self, '_pending_request')
+        delattr(self, "_pending_request")
 
     def set_replay_mode(self, enabled: bool):
         """Enable/disable replay mode"""
@@ -251,10 +253,10 @@ class TrafficCapture:
     def get_next_response(self, expected_url: str) -> Optional[HTTPResponse]:
         """
         During replay mode: get the next expected response
-        
+
         Args:
             expected_url: URL we're about to request
-            
+
         Returns:
             Recorded response if available, None otherwise
         """
@@ -262,7 +264,7 @@ class TrafficCapture:
             return None
 
         exchange = self.exchanges[self.exchange_index]
-        
+
         # Check if URL matches
         if exchange.request.url == expected_url:
             self.exchange_index += 1
@@ -284,7 +286,8 @@ class TrafficCapture:
         """Get session summary"""
         duration_sec = (
             (self.end_time - self.start_time).total_seconds()
-            if self.end_time else (datetime.now() - self.start_time).total_seconds()
+            if self.end_time
+            else (datetime.now() - self.start_time).total_seconds()
         )
 
         return {
@@ -297,15 +300,17 @@ class TrafficCapture:
             "tools_used": list(self.tools_used),
             "payloads_tested": self.payloads_tested,
             "average_response_time_ms": (
-                sum(e.response.execution_time_ms for e in self.exchanges) / len(self.exchanges)
-                if self.exchanges else 0
-            )
+                sum(e.response.execution_time_ms for e in self.exchanges)
+                / len(self.exchanges)
+                if self.exchanges
+                else 0
+            ),
         }
 
     def export_har(self) -> Dict:
         """
         Export to HAR format (HTTP Archive)
-        
+
         Returns:
             HAR-formatted dict
         """
@@ -322,7 +327,7 @@ class TrafficCapture:
                         for k, v in exchange.request.headers.items()
                     ],
                     "body": exchange.request.body,
-                    "queryString": []
+                    "queryString": [],
                 },
                 "response": {
                     "status": exchange.response.status_code,
@@ -332,27 +337,25 @@ class TrafficCapture:
                         for k, v in exchange.response.headers.items()
                     ],
                     "content": {
-                        "size": len(exchange.response.body) if exchange.response.body else 0,
-                        "mimeType": exchange.response.headers.get("content-type", "unknown"),
-                        "text": exchange.response.body
-                    }
+                        "size": (
+                            len(exchange.response.body) if exchange.response.body else 0
+                        ),
+                        "mimeType": exchange.response.headers.get(
+                            "content-type", "unknown"
+                        ),
+                        "text": exchange.response.body,
+                    },
                 },
                 "cache": {},
-                "timings": {
-                    "wait": exchange.response.execution_time_ms,
-                    "receive": 0
-                }
+                "timings": {"wait": exchange.response.execution_time_ms, "receive": 0},
             }
             entries.append(entry)
 
         return {
             "log": {
                 "version": "1.2",
-                "creator": {
-                    "name": "VAPT Scanner",
-                    "version": "4.0.0"
-                },
-                "entries": entries
+                "creator": {"name": "VAPT Scanner", "version": "4.0.0"},
+                "entries": entries,
             }
         }
 
@@ -360,21 +363,21 @@ class TrafficCapture:
         """Export to custom JSON format (more detailed)"""
         return {
             "session": self.get_session_summary(),
-            "exchanges": [e.to_dict() for e in self.exchanges]
+            "exchanges": [e.to_dict() for e in self.exchanges],
         }
 
     @staticmethod
-    def load_from_har(har_file: str) -> 'TrafficCapture':
+    def load_from_har(har_file: str) -> "TrafficCapture":
         """
         Load traffic from HAR file
-        
+
         Args:
             har_file: Path to .har file
-            
+
         Returns:
             TrafficCapture with loaded exchanges
         """
-        with open(har_file, 'r') as f:
+        with open(har_file, "r") as f:
             har_data = json.load(f)
 
         capture = TrafficCapture(session_id=f"replay_{datetime.now().isoformat()}")
@@ -387,26 +390,28 @@ class TrafficCapture:
                 url=req.get("url"),
                 method=req.get("method", "GET"),
                 headers={h["name"]: h["value"] for h in req.get("headers", [])},
-                body=req.get("body")
+                body=req.get("body"),
             )
 
             response = HTTPResponse(
                 status_code=resp.get("status", 0),
                 headers={h["name"]: h["value"] for h in resp.get("headers", [])},
                 body=resp.get("content", {}).get("text"),
-                execution_time_ms=entry.get("time", 0)
+                execution_time_ms=entry.get("time", 0),
             )
 
             exchange = HTTPExchange(request=request, response=response)
             capture.exchanges.append(exchange)
 
-        logger.info(f"[TrafficCapture] Loaded {len(capture.exchanges)} exchanges from {har_file}")
+        logger.info(
+            f"[TrafficCapture] Loaded {len(capture.exchanges)} exchanges from {har_file}"
+        )
         return capture
 
     @staticmethod
-    def load_from_json(json_file: str) -> 'TrafficCapture':
+    def load_from_json(json_file: str) -> "TrafficCapture":
         """Load traffic from custom JSON file"""
-        with open(json_file, 'r') as f:
+        with open(json_file, "r") as f:
             data = json.load(f)
 
         capture = TrafficCapture(session_id=data["session"]["session_id"])
@@ -421,7 +426,7 @@ class TrafficCapture:
                 headers=req_data["headers"],
                 body=req_data["body"],
                 tool_name=req_data.get("tool_name"),
-                payload=req_data.get("payload")
+                payload=req_data.get("payload"),
             )
 
             response = HTTPResponse(
@@ -429,20 +434,22 @@ class TrafficCapture:
                 headers=resp_data["headers"],
                 body=resp_data.get("body_preview"),
                 execution_time_ms=resp_data["execution_time_ms"],
-                error_message=resp_data.get("error_message")
+                error_message=resp_data.get("error_message"),
             )
 
             exchange = HTTPExchange(request=request, response=response)
             capture.exchanges.append(exchange)
 
-        logger.info(f"[TrafficCapture] Loaded {len(capture.exchanges)} exchanges from {json_file}")
+        logger.info(
+            f"[TrafficCapture] Loaded {len(capture.exchanges)} exchanges from {json_file}"
+        )
         return capture
 
     def to_dict(self) -> Dict:
         """Serialize traffic capture"""
         return {
             "session": self.get_session_summary(),
-            "exchanges": [e.to_dict() for e in self.exchanges]
+            "exchanges": [e.to_dict() for e in self.exchanges],
         }
 
 

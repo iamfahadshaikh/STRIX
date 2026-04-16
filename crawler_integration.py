@@ -2,20 +2,20 @@
 Crawler Integration Layer
 Purpose: Orchestrate crawler execution, feed results to discovery cache,
          gate payload tools based on crawl signals
-         
+
 Architecture:
-  crawler_integration.run() 
+  crawler_integration.run()
     -> KatanaCrawler.crawl() OR LightCrawler.crawl()
     -> CrawlParser.parse_katana_results()
     -> cache_discovery.add_endpoints(), add_parameters()
     -> Returns gating signals for payload tools
 """
 
-import logging
 import json
+import logging
 import re
-from typing import Dict, Optional, Tuple, List
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class CrawlerIntegration:
     """
     Bridges crawler (Katana) with discovery cache and payload gating
-    
+
     Workflow:
     1. Check if web is reachable (gating signal)
     2. Run Katana crawl if available
@@ -31,8 +31,15 @@ class CrawlerIntegration:
     4. Return gating signals for downstream payload tools
     """
 
-    def __init__(self, target: str, cache, output_dir: str, 
-                 timeout: int = 180, depth: int = 2, js_crawl: bool = True):
+    def __init__(
+        self,
+        target: str,
+        cache,
+        output_dir: str,
+        timeout: int = 180,
+        depth: int = 2,
+        js_crawl: bool = True,
+    ):
         """
         Args:
             target: Target URL (scheme required: https://example.com)
@@ -54,12 +61,12 @@ class CrawlerIntegration:
     def should_crawl(self) -> bool:
         """
         Determine if crawling is worth attempting
-        
+
         Gating logic:
         - Only crawl if web is reachable (from cache signals)
         - Skip if we've already crawled (check crawl_file)
         - Skip if no params/endpoints discovered yet (can't determine yet)
-        
+
         Returns:
             bool: True if we should attempt crawl
         """
@@ -71,21 +78,21 @@ class CrawlerIntegration:
 
         # Check if web is reachable (would have been discovered by nmap/whatweb)
         # This is implicit for now - if target has HTTP service, web is reachable
-        
+
         logger.info("[CrawlerInt] Web crawling eligible")
         return True
 
     def run(self) -> Tuple[bool, Dict]:
         """
         Execute crawl and integrate results
-        
+
         Strategy:
         1. Try light_crawler first (fast, always works)
         2. If insufficient results, try Katana (comprehensive but slow)
-        
+
         Returns:
             (success: bool, gating_signals: Dict)
-            
+
         gating_signals keys:
             - has_parameters: bool
             - parameter_count: int
@@ -110,12 +117,13 @@ class CrawlerIntegration:
         # Try light crawler first (always fast)
         try:
             from light_crawler import LightCrawler
+
             light = LightCrawler(self.target, timeout=self.timeout)
             logger.info("[CrawlerInt] Starting light crawler (fast)...")
             if light.crawl():
                 crawl_json = light.to_json()
                 self.crawl_result = json.loads(crawl_json)
-                
+
                 # Convert light crawl format to standard format
                 summary = self.crawl_result.get("summary", {})
                 parsed = {
@@ -123,32 +131,38 @@ class CrawlerIntegration:
                     "parameters": summary.get("parameters", {}),
                     "forms": summary.get("forms_list", []),
                     "api_endpoints": summary.get("api_endpoints_list", []),
-                    "debug_page_exposed": bool(summary.get("debug_page_exposed", False)),
+                    "debug_page_exposed": bool(
+                        summary.get("debug_page_exposed", False)
+                    ),
                     "debug_indicators": summary.get("debug_indicators", []),
                     "leaked_routes": summary.get("leaked_routes", []),
                     "reflections": self._identify_reflections_from_light(summary),
                     "total_crawled": summary.get("crawled_urls", 0),
-                    "total_endpoints": summary.get("endpoints", 0)
+                    "total_endpoints": summary.get("endpoints", 0),
                 }
-                
+
                 self._integrate_with_cache(parsed)
                 self._save_crawl_results(crawl_json)
-                
+
                 gating = CrawlParser.extract_for_payload_gating(parsed)
-                gating['crawl_success'] = True
-                gating['crawler_type'] = 'light'
-                gating['debug_page_exposed'] = parsed.get('debug_page_exposed', False)
-                gating['debug_indicators'] = parsed.get('debug_indicators', [])[:10]
-                gating['leaked_routes'] = parsed.get('leaked_routes', [])[:20]
-                
-                logger.info(f"[CrawlerInt] Light crawl: {len(parsed['endpoints'])} endpoints, "
-                           f"{len(parsed['parameters'])} params")
+                gating["crawl_success"] = True
+                gating["crawler_type"] = "light"
+                gating["debug_page_exposed"] = parsed.get("debug_page_exposed", False)
+                gating["debug_indicators"] = parsed.get("debug_indicators", [])[:10]
+                gating["leaked_routes"] = parsed.get("leaked_routes", [])[:20]
+
+                logger.info(
+                    f"[CrawlerInt] Light crawl: {len(parsed['endpoints'])} endpoints, "
+                    f"{len(parsed['parameters'])} params"
+                )
 
                 if not self._needs_katana_fallback(parsed):
                     return True, gating
 
                 light_gating = gating
-                logger.info("[CrawlerInt] Light crawl likely incomplete (static-heavy/no API), trying Katana...")
+                logger.info(
+                    "[CrawlerInt] Light crawl likely incomplete (static-heavy/no API), trying Katana..."
+                )
         except ImportError:
             logger.warning("[CrawlerInt] Light crawler not available")
         except Exception as e:
@@ -156,9 +170,9 @@ class CrawlerIntegration:
 
         # Fall back to Katana (comprehensive but slow)
         try:
-            from katana_crawler import KatanaCrawler
             from crawl_parser import CrawlParser
-            
+            from katana_crawler import KatanaCrawler
+
             crawler = KatanaCrawler(self.target, timeout=self.timeout, depth=self.depth)
             if crawler.is_available():
                 logger.info("[CrawlerInt] Light crawler insufficient, trying Katana...")
@@ -168,13 +182,15 @@ class CrawlerIntegration:
                     parsed = CrawlParser.parse_katana_results(crawl_json)
                     self._integrate_with_cache(parsed)
                     self._save_crawl_results(crawl_json)
-                    
+
                     gating = CrawlParser.extract_for_payload_gating(parsed)
-                    gating['crawl_success'] = True
-                    gating['crawler_type'] = 'katana'
-                    
-                    logger.info(f"[CrawlerInt] Katana crawl: {len(parsed['endpoints'])} endpoints, "
-                               f"{len(parsed['parameters'])} params")
+                    gating["crawl_success"] = True
+                    gating["crawler_type"] = "katana"
+
+                    logger.info(
+                        f"[CrawlerInt] Katana crawl: {len(parsed['endpoints'])} endpoints, "
+                        f"{len(parsed['parameters'])} params"
+                    )
                     return True, gating
         except ImportError:
             pass
@@ -182,7 +198,9 @@ class CrawlerIntegration:
             logger.warning(f"[CrawlerInt] Katana crawl failed: {e}")
 
         if light_gating:
-            logger.info("[CrawlerInt] Katana unavailable/failed, returning light crawl signals")
+            logger.info(
+                "[CrawlerInt] Katana unavailable/failed, returning light crawl signals"
+            )
             return True, light_gating
 
         logger.error("[CrawlerInt] All crawlers failed or unavailable")
@@ -193,7 +211,7 @@ class CrawlerIntegration:
         if not self.cache:
             logger.warning("[CrawlerInt] No cache provided, skipping integration")
             return
-            
+
         # Add endpoints (limit to 100 to avoid cache bloat)
         endpoints_added = 0
         for endpoint in parsed.get("endpoints", [])[:100]:
@@ -211,44 +229,67 @@ class CrawlerIntegration:
         for reflection in parsed.get("reflections", []):
             self.cache.add_reflection(reflection)
             reflections_added += 1
-        
+
         # Add API endpoints to live_endpoints (crawler verified they respond)
         api_endpoints_added = 0
         for api_endpoint in parsed.get("api_endpoints", [])[:50]:
             self.cache.live_endpoints.add(api_endpoint)
             api_endpoints_added += 1
 
-        logger.info(f"[CrawlerInt] Integrated crawl results: "
-                   f"{endpoints_added} endpoints, {params_added} params, "
-                   f"{reflections_added} reflections, {api_endpoints_added} API endpoints")
+        logger.info(
+            f"[CrawlerInt] Integrated crawl results: "
+            f"{endpoints_added} endpoints, {params_added} params, "
+            f"{reflections_added} reflections, {api_endpoints_added} API endpoints"
+        )
 
     def _identify_reflections_from_light(self, summary: Dict) -> List[str]:
         """Identify reflectable params from light crawler output"""
         reflections = set()
-        
+
         reflectable_keywords = {
-            'search', 'q', 'query', 'text', 'message', 'comment',
-            'id', 'uid', 'user_id', 'post_id',
-            'redirect', 'callback', 'return', 'url', 'redirect_to',
-            'file', 'path', 'filename',
-            'name', 'email', 'username',
-            'title', 'description', 'content',
-            'filter', 'sort', 'order', 'category'
+            "search",
+            "q",
+            "query",
+            "text",
+            "message",
+            "comment",
+            "id",
+            "uid",
+            "user_id",
+            "post_id",
+            "redirect",
+            "callback",
+            "return",
+            "url",
+            "redirect_to",
+            "file",
+            "path",
+            "filename",
+            "name",
+            "email",
+            "username",
+            "title",
+            "description",
+            "content",
+            "filter",
+            "sort",
+            "order",
+            "category",
         }
-        
+
         # Check parameter names
         for param in summary.get("parameters", {}).keys():
             if param.lower() in reflectable_keywords:
                 reflections.add(param)
-            elif any(x in param.lower() for x in ['_id', '_name', '_param', '_query']):
+            elif any(x in param.lower() for x in ["_id", "_name", "_param", "_query"]):
                 reflections.add(param)
-        
+
         # Check form fields
         for form in summary.get("forms_list", []):
             for field in form.get("fields", []):
                 if field.lower() in reflectable_keywords:
                     reflections.add(field)
-        
+
         return list(reflections)
 
     def _save_crawl_results(self, crawl_json: str):
@@ -283,7 +324,9 @@ class CrawlerIntegration:
                         "parameters": summary.get("parameters", {}),
                         "forms": summary.get("forms_list", []),
                         "api_endpoints": summary.get("api_endpoints_list", []),
-                        "debug_page_exposed": bool(summary.get("debug_page_exposed", False)),
+                        "debug_page_exposed": bool(
+                            summary.get("debug_page_exposed", False)
+                        ),
                         "debug_indicators": summary.get("debug_indicators", []),
                         "leaked_routes": summary.get("leaked_routes", []),
                         "reflections": self._identify_reflections_from_light(summary),
@@ -294,14 +337,14 @@ class CrawlerIntegration:
                     parsed = CrawlParser.parse_katana_results(crawl_json)
 
                 gating = CrawlParser.extract_for_payload_gating(parsed)
-                gating['crawl_success'] = True
-                gating['debug_page_exposed'] = parsed.get('debug_page_exposed', False)
-                gating['debug_indicators'] = parsed.get('debug_indicators', [])[:10]
-                gating['leaked_routes'] = parsed.get('leaked_routes', [])[:20]
+                gating["crawl_success"] = True
+                gating["debug_page_exposed"] = parsed.get("debug_page_exposed", False)
+                gating["debug_indicators"] = parsed.get("debug_indicators", [])[:10]
+                gating["leaked_routes"] = parsed.get("leaked_routes", [])[:20]
                 return True, gating
             except Exception as e:
                 logger.warning(f"[CrawlerInt] Error loading cached crawl: {e}")
-        
+
         return False, self._empty_signals()
 
     @staticmethod
@@ -333,7 +376,9 @@ class CrawlerIntegration:
         if not endpoints:
             return True
 
-        static_ext_pattern = re.compile(r"\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|map)(\?|$)", re.IGNORECASE)
+        static_ext_pattern = re.compile(
+            r"\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|map)(\?|$)", re.IGNORECASE
+        )
         static_count = sum(1 for ep in endpoints if static_ext_pattern.search(str(ep)))
         static_ratio = static_count / max(len(endpoints), 1)
 
@@ -346,7 +391,7 @@ class CrawlerIntegration:
     def get_gating_decision(self, tool_name: str) -> bool:
         """
         Decide if a payload tool should run based on crawl signals
-        
+
         Tool gating rules:
         - xsstrike: Needs reflectable params OR forms
         - sqlmap: Needs any parameters (URL or form)
@@ -359,6 +404,7 @@ class CrawlerIntegration:
 
         try:
             from crawl_parser import CrawlParser
+
             parsed = CrawlParser.parse_katana_results(json.dumps(self.crawl_result))
             gating = CrawlParser.extract_for_payload_gating(parsed)
         except:
@@ -368,20 +414,20 @@ class CrawlerIntegration:
 
         if "xss" in tool_lower or tool_lower == "dalfox":
             # XSS tools: need reflectable parameters or forms
-            return gating['reflection_count'] > 0 or gating['has_forms']
-        
+            return gating["reflection_count"] > 0 or gating["has_forms"]
+
         elif "sql" in tool_lower:
             # SQL injection: need any parameters
-            return gating['parameter_count'] > 0
-        
+            return gating["parameter_count"] > 0
+
         elif "commix" in tool_lower:
             # Command injection: need any parameters
-            return gating['parameter_count'] > 0
-        
+            return gating["parameter_count"] > 0
+
         elif "nuclei" in tool_lower:
             # Template-based: always run (different gating model)
             return True
-        
+
         else:
             # Default: conservative (don't run)
             return False
@@ -400,7 +446,7 @@ class CrawlerIntegration:
             "forms": summary.get("forms", 0),
             "api_endpoints": summary.get("api_endpoints", 0),
             "crawled_urls": summary.get("crawled_urls", 0),
-            "results_file": str(self.crawl_file)
+            "results_file": str(self.crawl_file),
         }
 
 
@@ -413,13 +459,13 @@ In decision_ledger.py, to gate payload tools on crawl signals:
 
     # After crawl_integration.run()
     crawler_success, gating_signals = crawler_integration.run()
-    
+
     # Gating for xsstrike
     if gating_signals['reflection_count'] > 0:
         decision_ledger.ALLOW['xsstrike'] = True
     else:
         decision_ledger.BLOCK['xsstrike'] = "No reflectable parameters found via crawl"
-    
+
     # Gating for sqlmap
     if gating_signals['parameter_count'] > 0:
         decision_ledger.ALLOW['sqlmap'] = True
