@@ -6,8 +6,44 @@ Extracts structured findings from raw tool outputs.
 
 import re
 import json
+from dataclasses import replace
 from typing import List, Optional, Dict, Any
 from findings_model import Finding, FindingType, Severity, map_to_owasp
+
+
+def _line_number_from_index(text: str, index: int) -> int:
+    """Convert a string offset into a 1-based line number."""
+    if index <= 0:
+        return 1
+    return text.count("\n", 0, index) + 1
+
+
+def _attach_evidence_locations(findings: List[Finding], stdout: str, output_file: Optional[str]) -> List[Finding]:
+    """Bind each finding to source file and nearest evidence line for traceability."""
+    if not findings:
+        return findings
+
+    bound: List[Finding] = []
+    for finding in findings:
+        if finding.evidence_line > 0:
+            line_num = finding.evidence_line
+        else:
+            line_num = 1
+            snippet = (finding.evidence or "").strip()
+            if snippet:
+                first_line = snippet.splitlines()[0].strip()
+                if first_line:
+                    idx = stdout.find(first_line)
+                    if idx >= 0:
+                        line_num = _line_number_from_index(stdout, idx)
+
+        bound.append(replace(
+            finding,
+            evidence_file=finding.evidence_file or (output_file or ""),
+            evidence_line=line_num,
+        ))
+
+    return bound
 
 
 class NmapParser:
@@ -108,25 +144,44 @@ class NiktoParser:
                 owasp=map_to_owasp(FindingType.MISCONFIGURATION)
             ))
         
-        # Missing security headers
-        if 'x-frame-options' not in stdout.lower():
+        # Missing security headers (line-anchored, no inference by absence of generic string)
+        missing_hdr_pattern = r'Suggested security header missing:\s*([^\.]+)'
+        for match in re.finditer(missing_hdr_pattern, stdout, re.IGNORECASE):
+            header_name = match.group(1).strip().lower()
+            severity = Severity.LOW
+            if header_name in {'content-security-policy', 'strict-transport-security'}:
+                severity = Severity.MEDIUM
+
             findings.append(Finding(
                 type=FindingType.MISCONFIGURATION,
-                severity=Severity.LOW,
+                severity=severity,
                 location=target,
-                description="Missing X-Frame-Options header (clickjacking risk)",
+                description=f"Missing security header: {header_name}",
                 tool="nikto",
+                evidence=match.group(0),
+                impact="Weak browser-side hardening increases risk of clickjacking, content sniffing, and script injection abuse.",
+                exploitability="Low alone, higher when chained with XSS/content injection.",
+                remediation=f"Set and validate the {header_name} header at reverse-proxy/web-server level.",
+                verification_steps=f"Re-run Nikto or curl -I and confirm header '{header_name}' is present in responses.",
                 owasp=map_to_owasp(FindingType.MISCONFIGURATION)
             ))
-        
-        if 'x-content-type-options' not in stdout.lower():
+
+        # BREACH should be contextual risk unless exploit is confirmed
+        breach_pattern = r'BREACH attack'
+        for match in re.finditer(breach_pattern, stdout, re.IGNORECASE):
             findings.append(Finding(
-                type=FindingType.MISCONFIGURATION,
+                type=FindingType.WEAK_CRYPTO,
                 severity=Severity.LOW,
                 location=target,
-                description="Missing X-Content-Type-Options header",
+                description="Potential BREACH attack surface (contextual risk)",
                 tool="nikto",
-                owasp=map_to_owasp(FindingType.MISCONFIGURATION)
+                cwe="CWE-200",
+                evidence=match.group(0),
+                impact="If secrets are reflected in compressed HTTPS responses, attackers may infer sensitive values.",
+                exploitability="Context-dependent; requires attacker-controlled input and observable compressed responses.",
+                remediation="Disable compression for secret-bearing responses and avoid reflecting secrets in response bodies.",
+                verification_steps="Use testssl/response analysis to confirm compression on sensitive pages and test token reflection paths.",
+                owasp=map_to_owasp(FindingType.WEAK_CRYPTO)
             ))
         
         # Server version disclosure
@@ -359,7 +414,7 @@ class SSLScanParser:
         }
         
         for protocol, (severity, desc) in weak_protocols.items():
-            if protocol in stdout.lower() and 'enabled' in stdout.lower():
+            if re.search(rf'{re.escape(protocol)}\s+enabled', stdout, re.IGNORECASE):
                 findings.append(Finding(
                     type=FindingType.WEAK_CRYPTO,
                     severity=severity,
@@ -413,44 +468,54 @@ class TestSSLParser:
     @staticmethod
     def parse(stdout: str, target: str) -> List[Finding]:
         findings = []
-        
-        # testssl.sh has colored output and detailed vulnerability checks
+
+        # testssl.sh should only produce vulnerabilities when line explicitly indicates vulnerability,
+        # and must not match "not vulnerable" / "(OK)" lines.
         vulnerabilities = {
             'heartbleed': (Severity.CRITICAL, 'CWE-119', 'Heartbleed vulnerability (CVE-2014-0160)'),
-            'ccs injection': (Severity.HIGH, 'CWE-310', 'CCS Injection vulnerability'),
+            'ccs': (Severity.HIGH, 'CWE-310', 'CCS Injection vulnerability'),
             'ticketbleed': (Severity.HIGH, 'CWE-200', 'Ticketbleed vulnerability'),
             'robot': (Severity.HIGH, 'CWE-203', 'ROBOT attack vulnerability'),
-            'secure renegotiation': (Severity.MEDIUM, 'CWE-310', 'Insecure renegotiation'),
             'crime': (Severity.MEDIUM, 'CWE-310', 'CRIME attack vulnerability'),
-            'breach': (Severity.MEDIUM, 'CWE-310', 'BREACH attack vulnerability'),
             'poodle': (Severity.HIGH, 'CWE-310', 'POODLE vulnerability'),
             'sweet32': (Severity.MEDIUM, 'CWE-327', 'SWEET32 vulnerability'),
             'freak': (Severity.HIGH, 'CWE-327', 'FREAK attack vulnerability'),
             'drown': (Severity.CRITICAL, 'CWE-327', 'DROWN attack vulnerability'),
             'logjam': (Severity.HIGH, 'CWE-327', 'Logjam vulnerability'),
         }
-        
-        for vuln_name, (severity, cwe, desc) in vulnerabilities.items():
-            # testssl uses "VULNERABLE" or "vulnerable" markers
-            pattern = rf'{vuln_name}[^\n]*vulnerable'
-            match = re.search(pattern, stdout, re.IGNORECASE)
-            if match:
-                matched_line = match.group(0)
-                
-                # CVE-2014-0160 (Heartbleed) validation: require confirmation if "not vulnerable" appears
-                if vuln_name == 'heartbleed' and re.search(r'not\s+vulnerable|\(OK\)', matched_line, re.IGNORECASE):
-                    # Downgrade to INFO with unverified status instead of CRITICAL
-                    findings.append(Finding(
-                        type=FindingType.WEAK_CRYPTO,
-                        severity=Severity.INFO,
-                        location=target,
-                        description=f"{desc} - Unverified (Requires Manual Check)",
-                        tool="testssl",
-                        cwe=cwe,
-                        owasp=map_to_owasp(FindingType.WEAK_CRYPTO),
-                        evidence=f"Detection contradictory - testssl output: {matched_line.strip()}"
-                    ))
-                else:
+
+        for line in stdout.splitlines():
+            lower_line = line.lower()
+            if not lower_line.strip():
+                continue
+
+            # BREACH is contextual by default unless exploit confirmation exists.
+            if 'breach' in lower_line and ('potentially' in lower_line or 'gzip' in lower_line):
+                findings.append(Finding(
+                    type=FindingType.WEAK_CRYPTO,
+                    severity=Severity.LOW,
+                    location=target,
+                    description="Potential BREACH attack surface (contextual risk)",
+                    tool="testssl",
+                    cwe="CWE-200",
+                    owasp=map_to_owasp(FindingType.WEAK_CRYPTO),
+                    evidence=line.strip(),
+                    impact="Compression over HTTPS can leak secrets when attacker-controlled input is reflected.",
+                    exploitability="Context-dependent; not a direct confirmed exploit.",
+                    remediation="Disable compression for authenticated/secret-bearing responses or randomize secret-bearing responses.",
+                    verification_steps="Validate compression behavior and reflection on secret-bearing endpoints."
+                ))
+                continue
+
+            for vuln_name, (severity, cwe, desc) in vulnerabilities.items():
+                if vuln_name not in lower_line:
+                    continue
+
+                # Never treat explicit negatives as vulnerable.
+                if any(marker in lower_line for marker in ['not vulnerable', '(ok)', 'no heartbeat extension', 'no rc4 ciphers detected']):
+                    continue
+
+                if 'vulnerable' in lower_line or 'vulnerability' in lower_line:
                     findings.append(Finding(
                         type=FindingType.WEAK_CRYPTO,
                         severity=severity,
@@ -459,8 +524,13 @@ class TestSSLParser:
                         tool="testssl",
                         cwe=cwe,
                         owasp=map_to_owasp(FindingType.WEAK_CRYPTO),
-                        evidence=f"Vulnerable to {vuln_name}"
+                        evidence=line.strip(),
+                        impact="Weak TLS posture may enable interception or cryptographic attacks.",
+                        exploitability="Medium to high depending on protocol/cipher exposure and attacker position.",
+                        remediation="Disable vulnerable protocol/cipher options and enforce strong modern TLS configuration.",
+                        verification_steps=f"Re-run testssl and confirm {vuln_name} no longer reports vulnerable status."
                     ))
+                break
         
         return findings
 
@@ -617,7 +687,7 @@ class WPScanParser:
         return findings
 
 
-def parse_tool_output(tool: str, stdout: str, stderr: str, target: str) -> List[Finding]:
+def parse_tool_output(tool: str, stdout: str, stderr: str, target: str, output_file: Optional[str] = None) -> List[Finding]:
     """
     Unified parser dispatcher.
     
@@ -644,7 +714,8 @@ def parse_tool_output(tool: str, stdout: str, stderr: str, target: str) -> List[
     parser = parsers.get(tool)
     if parser:
         try:
-            return parser(stdout, target)
+            findings = parser(stdout, target)
+            return _attach_evidence_locations(findings, stdout, output_file)
         except Exception as e:
             # Log but don't crash
             print(f"[WARN] Parser error for {tool}: {e}")
