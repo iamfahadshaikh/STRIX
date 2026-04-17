@@ -300,7 +300,7 @@ async def main():
 
     # Run assessment
     success = await orchestrator.run_full_assessment(
-        config_path="auth_config/auth_config.json",
+        config_path="config/auth_config.json",
         endpoints=test_endpoints,
         roles=test_roles,
         output_file="auth_idor_assessment_report.json",

@@ -94,7 +94,7 @@ Core entry and implementation files:
 - `html_report_generator.py`: HTML report output
 - `proof_based_reporter.py`: confirmed-findings reporting
 - `scan_results_*`: generated scan output folders, ignored by default
-- `auth_config/`: authentication config for scoped testing
+- `config/`: authentication config for scoped testing
 - `core/`, `modules/`, `auth_utils/`: auth and IDOR engine components
 - `diagram/`: architecture or design assets
 - `modules/`: reusable engine modules
@@ -255,7 +255,7 @@ STRIX generates multi-layer reports:
 
 Key config areas:
 
-- `auth_config/`: authentication and session settings for scoped testing
+- `config/`: authentication and session settings for scoped testing
 - `tool_manager.py`: tool mapping and installation metadata
 - `scan_profiles.py`: scan behavior and profile tuning
 - `decision_ledger.py`: execution policy and tool gating

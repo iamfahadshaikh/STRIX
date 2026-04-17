@@ -1386,7 +1386,7 @@ class AutomationScannerV2:
                 "endpoints_tested": 0,
                 "idor_findings": 0,
                 "access_control_findings": 0,
-                "errors": ["auth_config/auth_config.json not found"],
+                "errors": ["config/auth_config.json not found"],
             }
 
         with config_path.open("r", encoding="utf-8") as fh:
@@ -3066,7 +3066,12 @@ class AutomationScannerV2:
         return False, ""
 
     def _classify_manual_failure(
-        self, rc: int, stdout: str, stderr: str, failure_reason: str | None
+        self,
+        tool_name: str,
+        rc: int,
+        stdout: str,
+        stderr: str,
+        failure_reason: str | None,
     ) -> str:
         """Classify manual sweep failures into actionable buckets."""
         text = f"{stdout}\n{stderr}".lower()
@@ -3086,6 +3091,18 @@ class AutomationScannerV2:
             or "not applicable" in text
         ):
             return "NOT_APPLICABLE"
+        if tool_name == "ping" and (
+            "100% packet loss" in text
+            or "0 received" in text
+            or "destination host unreachable" in text
+        ):
+            return "TARGET_BLOCKED"
+        if tool_name == "gobuster" and (
+            "server returns a status code that matches" in text
+            or "set the wildcard option" in text
+            or "exclude the response length" in text
+        ):
+            return "NOT_APPLICABLE"
         if rc == 0 and ("[no output]" in text or "no issues found" in text):
             return "NOT_APPLICABLE"
         return "EXECUTION_ERROR"
@@ -3102,7 +3119,7 @@ class AutomationScannerV2:
             tool_name, rc, signal, failure_reason
         )
         failure_class = self._classify_manual_failure(
-            rc, stdout, stderr, failure_reason
+            tool_name, rc, stdout, stderr, failure_reason
         )
         output_file = self._save_tool_output(
             f"manual_{tool_name}", command, stdout, stderr, rc

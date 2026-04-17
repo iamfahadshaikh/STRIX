@@ -15,7 +15,7 @@ setup(
     url="https://github.com/iamfahadshaikh/VAPT-Automated-Engine",
     license="MIT",
     python_requires=">=3.10",
-    packages=find_packages(exclude=["tests", "docs", "example_config"]),
+    packages=find_packages(exclude=["tests", "docs", "config"]),
     install_requires=[
         "httpx>=0.27.0",
         "requests>=2.32.0",
