@@ -1,0 +1,28 @@
+{
+  "enabled": false,
+  "notes": "Sample config only. Do not store real credentials in Git.",
+  "base_url": "https://example.com",
+  "roles": [
+    {
+      "name": "user",
+      "auth_type": "form_login",
+      "login_url": "/login",
+      "username": "user@example.com",
+      "password": "CHANGE_ME",
+      "fields": {
+        "username": "user@example.com",
+        "password": "CHANGE_ME"
+      }
+    },
+    {
+      "name": "admin",
+      "auth_type": "bearer_token",
+      "token": "CHANGE_ME"
+    }
+  ],
+  "request_settings": {
+    "timeout_seconds": 20,
+    "verify_tls": true,
+    "retries": 2
+  }
+}
