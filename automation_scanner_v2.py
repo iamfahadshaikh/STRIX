@@ -3155,7 +3155,40 @@ class AutomationScannerV2:
         endpoint_urls = [
             self._build_full_url(ep) for ep in discovery_lists.get("endpoints_list", [])
         ]
-        targets = sorted(set(endpoint_urls + [self.profile.url]))
+        # Keep manual sweep focused on actionable pages/APIs, not static assets.
+        static_exts = {
+            ".js",
+            ".css",
+            ".map",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".webp",
+            ".avif",
+            ".ico",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+            ".mp4",
+            ".mp3",
+            ".pdf",
+            ".zip",
+        }
+        raw_targets = sorted(set(endpoint_urls + [self.profile.url]))
+        targets = []
+        for target in raw_targets:
+            parsed = urlparse(target)
+            path = (parsed.path or "").lower()
+            if any(path.endswith(ext) for ext in static_exts):
+                continue
+            targets.append(target)
+
+        # Cap target fanout so manual sweep remains practical and deterministic.
+        if len(targets) > 120:
+            targets = targets[:120]
 
         self.manual_out_of_scope_report.update(
             {
@@ -3183,6 +3216,9 @@ class AutomationScannerV2:
             "sublist3r",
             "assetfinder",
             "dnsrecon",
+            # Site-level scanners should run once per host, not per endpoint.
+            "gobuster",
+            "wpscan",
         }
 
         estimated_total_runs = 0

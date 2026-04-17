@@ -1,16 +1,16 @@
-# Security Policy
+# STRIX Security Policy
 
 ## Supported Versions
 
-The latest main branch is currently supported.
+The latest main branch of STRIX is actively supported.
 
 ## Reporting a Vulnerability
 
-Do not post sensitive vulnerabilities in public issues.
+Do not post security issues in public GitHub issues.
 
-Please report privately with:
+Report privately to maintainers with:
 
-- Subject: Security Report - VAPT Automated Engine
+- Subject: Security Report - STRIX
 - Affected component and version
 - Reproduction steps
 - Impact assessment

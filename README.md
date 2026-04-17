@@ -1,12 +1,14 @@
-# VAPT Automated Engine
+# STRIX
 
-VAPT Automated Engine is a Python-based vulnerability assessment and penetration testing orchestration framework. It coordinates multiple reconnaissance, crawling, fingerprinting, exploitation-validation, and reporting components into a single workflow so security testing can be executed in a structured, repeatable, and evidence-driven way.
+**STRIX** is a precision-driven vulnerability assessment and penetration testing orchestration framework. It coordinates multiple reconnaissance, crawling, fingerprinting, exploitation-validation, and reporting components into a single workflow so security testing can be executed in a structured, repeatable, and evidence-driven way.
 
-This project is designed for authorized security work only. Use it only on systems you own or have explicit permission to test.
+STRIX is designed for authorized security work only. Use it only on systems you own or have explicit permission to test.
 
-## Why this project exists
+> **STRIX**: From Latin *strix*, the Roman owl of night and prophecy. An intelligent reconnaissance system that sees what others miss.
 
-Security testing often becomes slow and inconsistent because each tool produces different output formats, different confidence levels, and different assumptions about target scope. This engine was built to solve that problem by:
+## Why STRIX exists
+
+Security testing often becomes slow and inconsistent because each tool produces different output formats, different confidence levels, and different assumptions about target scope. STRIX solves this by:
 
 - Centralizing tool execution behind a single workflow
 - Reducing noise by gating expensive steps on discovery signals
@@ -14,21 +16,21 @@ Security testing often becomes slow and inconsistent because each tool produces 
 - Producing consistent reports in JSON, HTML, and text formats
 - Preserving evidence and confidence context instead of only raw tool output
 
-In short, this project turns a loose collection of scanners into a production-style security testing pipeline.
+In short, STRIX orchestrates multiple scanners into a unified, evidence-driven security testing pipeline.
 
-## Who benefits from it
+## Who uses STRIX
 
-This project is useful for:
+STRIX is built for:
 
-- Security researchers who want repeatable, automated recon and validation
-- Penetration testers who need structured evidence and reports
-- DevSecOps teams that want security checks in CI or scheduled pipelines
-- Internal red teams that need a standardized target workflow
-- Small security teams that want one orchestrator instead of many manual tools
+- Security researchers who need repeatable, automated recon and validation
+- Penetration testers who require structured evidence and OWASP-mapped reports
+- DevSecOps teams that want security checks in CI/CD pipelines
+- Internal red teams that need standardized, auditable scan workflows
+- Security teams that want single-pane-of-glass orchestration
 
-## What it does
+## What STRIX does
 
-At a high level, the engine:
+At a high level, STRIX:
 
 1. Classifies the target type, such as root domain, subdomain, or IP address
 2. Probes reachability and HTTPS capability
@@ -39,37 +41,46 @@ At a high level, the engine:
 7. Maps results to OWASP categories and confidence levels
 8. Generates production-style reports
 
-## Main capabilities
+## STRIX capabilities
 
-- Target classification for domains, subdomains, and IPs
-- Decision-led tool orchestration instead of blind execution
-- Discovery caching for endpoints, parameters, and reflections
-- Crawler gating so payload tools only run when there is something to test
-- Tool output parsing and normalization
-- Findings deduplication and correlation
-- Confidence scoring and severity alignment
-- JSON, HTML, and summary report generation
-- Runtime resilience with timeouts, retries, and fallback paths
+- **Intelligent gating**: Tools execute only when discovery signals justify them
+- **Target classification**: Domains, subdomains, IP addresses with context-aware scanning
+- **Evidence caching**: Endpoints, parameters, reflections stored and correlated
+- **Tool orchestration**: Coordinates 15+ security tools with unified output parsing
+- **Proof-based reporting**: Confirmed findings only; confidence scores for each result
+- **Deduplication & correlation**: Same vulnerability from multiple tools = one finding
+- **OWASP mapping**: Automatic severity and category alignment
+- **Multi-format reports**: JSON (machine), HTML (visual), text (summary)
+- **Resilience**: Timeouts, retries, fallbacks, state recovery
 
-## Core workflow
+## STRIX workflow
 
 ```text
-Target input
-  -> target classification
-  -> HTTPS / reachability probe
-  -> decision ledger
-  -> discovery and crawl
-  -> fingerprinting and enrichment
-  -> payload validation where justified
-  -> finding correlation and deduplication
-  -> report generation
+Target
+  ↓
+  Target Classification (domain/subdomain/IP)
+  ↓
+  HTTPS & Reachability Probe
+  ↓
+  Decision Ledger (which tools are authorized)
+  ↓
+  Discovery & Crawling
+  ↓
+  Fingerprinting & Enrichment
+  ↓
+  Payload Validation (with proof requirements)
+  ↓
+  Correlation & Deduplication
+  ↓
+  Report Generation
 ```
 
-## Repository layout
+## STRIX architecture
 
-The most important files and folders are:
+Core entry and implementation files:
 
-- `automation_scanner_v2.py`: main orchestrator and entry point
+- `strix.py`: main entry point (use this to run STRIX)
+- `automation_scanner_v2.py`: core orchestration engine
 - `decision_ledger.py`: tool allow/deny policy and execution routing
 - `target_profile.py`: target classification model
 - `cache_discovery.py`: discovery cache for endpoints, params, and reflections
@@ -116,11 +127,11 @@ Use the built-in tool check before scanning so the engine can tell you what is i
 
 ## Installation
 
-### 1. Clone the repository
+### 1. Clone STRIX
 
 ```bash
-git clone <your-github-repo-url>
-cd VAPT-Automated-Engine
+git clone https://github.com/yourusername/strix.git
+cd strix
 ```
 
 ### 2. Create a virtual environment
@@ -143,14 +154,34 @@ source .venv/bin/activate
 
 ### 3. Install Python dependencies
 
-This repository does not currently ship with a pinned `requirements.txt` or `pyproject.toml`. For a public release, add one before publishing so installation is reproducible.
+**Option A: Direct installation (development)**
 
-Until then, install the Python packages your local environment needs for the scanner and its plugins, then verify imports by running the scanner's tool check.
+```bash
+pip install -r requirements.txt
+```
+
+**Option B: Install as a package (recommended)**
+
+```bash
+pip install -e .
+```
+
+This installs STRIX as a package with the `strix` command available globally.
+
+External security tools (nmap, nuclei, etc.) must be installed separately.
 
 ### 4. Verify external tools
 
+**If installed via pip:**
+
 ```bash
-python automation_scanner_v2.py --check-tools
+strix --check-tools
+```
+
+**If running directly:**
+
+```bash
+python strix.py --check-tools
 ```
 
 This will inspect which third-party binaries are available and which ones still need installation.
@@ -160,36 +191,42 @@ This will inspect which third-party binaries are available and which ones still 
 ### Basic scan
 
 ```bash
-python automation_scanner_v2.py example.com
+strix example.com
+```
+
+Or if not installed via pip:
+
+```bash
+python strix.py example.com
 ```
 
 ### Scan a full URL
 
 ```bash
-python automation_scanner_v2.py https://example.com
+strix https://example.com
 ```
 
 ### Scan with a custom output directory
 
 ```bash
-python automation_scanner_v2.py example.com -o ./my_results
+strix example.com -o ./my_results
 ```
 
 ### Install missing tools before scanning
 
 ```bash
-python automation_scanner_v2.py example.com --install-missing
+strix example.com --install-missing
 ```
 
-### Interactive installation flow
+### Interactive tool installation
 
 ```bash
-python automation_scanner_v2.py example.com --install-interactive
+strix example.com --install-interactive
 ```
 
-## Output
+## STRIX output
 
-Each scan creates a timestamped output directory such as:
+Each scan creates a timestamped output directory:
 
 ```text
 scan_results_example.com_YYYYMMDD_HHMMSS/
@@ -204,9 +241,9 @@ Typical outputs include:
 
 These folders are generated artifacts and should stay out of version control.
 
-## How the reporting is organized
+## STRIX reports
 
-The engine is built around a few report layers:
+STRIX generates multi-layer reports:
 
 - Discovery summary: endpoints, parameters, reflections, and surface signals
 - Findings summary: normalized severity and OWASP counts
@@ -214,14 +251,28 @@ The engine is built around a few report layers:
 - Phase and risk summaries: execution results and final risk view
 - HTML report: presentation layer for quick review and sharing
 
-## Configuration
+## STRIX configuration
 
-Important configuration areas include:
+Key config areas:
 
 - `auth_config/`: authentication and session settings for scoped testing
 - `tool_manager.py`: tool mapping and installation metadata
 - `scan_profiles.py`: scan behavior and profile tuning
 - `decision_ledger.py`: execution policy and tool gating
 
-Before running against authenticated or protected targets, configure the relevant auth files and validate that the scope is correct.
+Before testing authenticated or protected targets, configure STRIX's auth settings and verify scope.
+
+## Quick install and run
+
+For the impatient:
+
+```bash
+git clone https://github.com/yourusername/strix.git
+cd strix
+pip install -e .
+strix --check-tools
+strix example.com
+```
+
+Done. STRIX handles the rest.
 

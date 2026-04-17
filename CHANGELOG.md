@@ -8,17 +8,17 @@ Versioning follows Semantic Versioning.
 ## [Unreleased]
 
 ### Added
-- Open-source publishing files for contributions, security, and governance.
+- STRIX branding and identity applied across all project documentation
+- Open-source governance files (CONTRIBUTING, SECURITY, CODE_OF_CONDUCT)
 
 ### Changed
-- Repository README updated for public release readiness.
-
-### Fixed
-- Report consistency alignment between findings, risk summaries, and HTML output.
+- Project name and references updated to STRIX throughout
+- Documentation refined for precision-focused positioning
 
 ## [0.1.0] - 2026-04-17
 
 ### Added
-- Initial public baseline release of the VAPT orchestration engine.
-- Multi-phase scanning pipeline with discovery, gating, validation, and reporting.
-- JSON and HTML reporting workflow with confidence-aware processing.
+- Initial public release of STRIX: precision-driven VAPT orchestration engine
+- Multi-phase scanning with signal-driven gating
+- Proof-based vulnerability validation and reporting
+- JSON, HTML, and text report generation with OWASP mapping

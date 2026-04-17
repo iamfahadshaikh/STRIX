@@ -1,12 +1,12 @@
-# Contributing
+# Contributing to STRIX
 
-Thanks for your interest in improving VAPT Automated Engine.
+Thanks for your interest in improving STRIX.
 
 ## Before You Start
 
-- Use this project only for authorized security testing.
-- Open an issue before large or architectural changes.
-- Keep pull requests focused on one clearly scoped change.
+- Use STRIX only for authorized security testing on systems you own or have permission to test
+- Open an issue before large architectural changes
+- Keep pull requests focused, well-tested, and clearly scoped
 
 ## Development Setup
 
