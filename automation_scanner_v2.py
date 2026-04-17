@@ -19,6 +19,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_DIR = PROJECT_ROOT / "src"
+if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 from adaptive_fuzzing_engine import AdaptiveFuzzingEngine
 from api_schema_importer import APISchemaImporter
 from auth_utils.param_extractor import ParameterExtractor
