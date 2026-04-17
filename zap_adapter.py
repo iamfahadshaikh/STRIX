@@ -6,6 +6,7 @@ Design rule: ZAP is secondary intelligence only, never the primary scanner.
 
 import json
 import logging
+import shutil
 import subprocess
 import time
 import uuid
@@ -237,6 +238,16 @@ class ZAPAdapter:
             container_name,
             "-p",
             "8090:8090",
+            "--health-cmd",
+            "curl --silent --output /dev/null --fail http://localhost:8090/JSON/core/view/version/ || exit 1",
+            "--health-interval",
+            "30s",
+            "--health-timeout",
+            "10s",
+            "--health-retries",
+            "10",
+            "--health-start-period",
+            "180s",
             "zaproxy/zap-stable",
             "zap.sh",
             "-daemon",
@@ -349,11 +360,31 @@ class ZAPAdapter:
     ) -> ZAPDiscoveryResult:
         """Run ZAP baseline scan in Docker and parse JSON output."""
         zap_json_path = output_dir / "zap.json"
+        baseline_timeout = min(self.timeout_seconds, 180)
         image_candidates = ["zaproxy/zap-stable", "owasp/zap2docker-stable"]
+
+        docker_ready, docker_error = self._is_docker_ready()
+        if not docker_ready:
+            local_result = self._run_baseline_local(target_url, output_dir)
+            if local_result.executed:
+                return local_result
+            return ZAPDiscoveryResult(
+                executed=True,
+                success=False,
+                error=(
+                    f"ZAP baseline unavailable (docker + local): {docker_error}; "
+                    f"{local_result.error}"
+                ),
+            )
 
         try:
             last_error = "Unknown ZAP error"
             for image in image_candidates:
+                pulled, pull_error = self._pull_docker_image(image)
+                if not pulled:
+                    last_error = pull_error
+                    continue
+
                 cmd = [
                     "docker",
                     "run",
@@ -362,10 +393,11 @@ class ZAPAdapter:
                     "-v",
                     f"{str(output_dir.resolve())}:/zap/wrk:rw",
                     image,
-                    # "zap-baseline.py",
-                    "zap-full-scan.py",
+                    "zap-baseline.py",
                     "-t",
                     target_url,
+                    "-m",
+                    "2",
                     "-J",
                     "zap.json",
                 ]
@@ -375,7 +407,7 @@ class ZAPAdapter:
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=self.timeout_seconds,
+                    timeout=baseline_timeout,
                     check=False,
                 )
                 if completed.returncode == 0:
@@ -426,6 +458,113 @@ class ZAPAdapter:
         except Exception as e:  # noqa: BLE001
             return ZAPDiscoveryResult(
                 executed=True, success=False, error=f"ZAP execution error: {e}"
+            )
+
+    def _pull_docker_image(self, image: str) -> tuple[bool, str]:
+        """Pull a Docker image before running ZAP baseline."""
+        try:
+            completed = subprocess.run(
+                ["docker", "pull", image],
+                capture_output=True,
+                text=True,
+                timeout=max(60, min(self.timeout_seconds, 600)),
+                check=False,
+            )
+            if completed.returncode != 0:
+                err = (
+                    completed.stderr or completed.stdout or "unknown docker pull error"
+                ).strip()
+                return False, self._docker_error_hint(err)
+            return True, ""
+        except FileNotFoundError as e:
+            return False, self._docker_error_hint(str(e))
+        except subprocess.TimeoutExpired:
+            return False, f"Docker pull timed out for {image}"
+
+    def _is_docker_ready(self) -> tuple[bool, str]:
+        """Quick probe to avoid long waits when Docker daemon is unavailable."""
+        try:
+            completed = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+            if completed.returncode != 0:
+                err = (
+                    completed.stderr or completed.stdout or "unknown docker error"
+                ).strip()
+                return False, self._docker_error_hint(err)
+            return True, ""
+        except FileNotFoundError as e:
+            return False, self._docker_error_hint(str(e))
+        except subprocess.TimeoutExpired:
+            return False, "Docker daemon readiness check timed out"
+
+    def _run_baseline_local(
+        self, target_url: str, output_dir: Path
+    ) -> ZAPDiscoveryResult:
+        """Run ZAP baseline using local zap-baseline.py when Docker is unavailable."""
+        zap_json_path = output_dir / "zap.json"
+        baseline_timeout = min(self.timeout_seconds, 180)
+        baseline_cmd = shutil.which("zap-baseline.py")
+        if not baseline_cmd:
+            return ZAPDiscoveryResult(
+                executed=False,
+                success=False,
+                error="local zap-baseline.py not found in PATH",
+            )
+
+        cmd = [
+            baseline_cmd,
+            "-t",
+            target_url,
+            "-m",
+            "2",
+            "-J",
+            str(zap_json_path),
+        ]
+
+        try:
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=baseline_timeout,
+                check=False,
+            )
+            if completed.returncode != 0:
+                err = (completed.stderr or completed.stdout or "Unknown ZAP error").strip()
+                return ZAPDiscoveryResult(
+                    executed=True,
+                    success=False,
+                    error=f"Local ZAP baseline failed: {err}",
+                )
+
+            if not zap_json_path.exists():
+                return ZAPDiscoveryResult(
+                    executed=True,
+                    success=False,
+                    error="Local ZAP baseline completed but zap.json not found",
+                )
+
+            parsed = self._parse_zap_json(zap_json_path)
+            parsed.executed = True
+            parsed.success = True
+            parsed.source = "zap_local"
+            return parsed
+        except subprocess.TimeoutExpired:
+            return ZAPDiscoveryResult(
+                executed=True,
+                success=False,
+                error="Local ZAP baseline timed out",
+            )
+        except Exception as e:  # noqa: BLE001
+            return ZAPDiscoveryResult(
+                executed=True,
+                success=False,
+                error=f"Local ZAP execution error: {e}",
             )
 
     def _docker_error_hint(self, raw_error: str) -> str:

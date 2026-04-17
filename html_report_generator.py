@@ -252,6 +252,7 @@ class HTMLReportGenerator:
         )
         if findings_summary:
             total_findings = int(findings_summary.get("total", total_findings) or 0)
+        canonical_total_findings = int(total_findings)
         severity_counts = {}
         for cf in correlated_findings:
             # Support both object-based and dict-based findings
@@ -309,7 +310,9 @@ class HTMLReportGenerator:
         vuln_section_html = HTMLReportGenerator._render_vulnerabilities(
             vulnerability_report
         )
-        risk_section_html = HTMLReportGenerator._render_risk(risk_report)
+        risk_section_html = HTMLReportGenerator._render_risk(
+            risk_report, canonical_total_findings=canonical_total_findings
+        )
         coverage_section_html = HTMLReportGenerator._render_coverage(coverage_report)
         management_plan_html = HTMLReportGenerator._render_management_action_plan(
             discovery_summary, risk_report, auth_access_control_summary
@@ -788,11 +791,19 @@ class HTMLReportGenerator:
         return f"<div class='compliance-card'><h3>Security Strengths</h3>{rows}</div>"
 
     @staticmethod
-    def _render_risk(risk_report: Optional[Dict[str, Any]]) -> str:
+    def _render_risk(
+        risk_report: Optional[Dict[str, Any]],
+        canonical_total_findings: Optional[int] = None,
+    ) -> str:
         if not risk_report:
             return "<p>No risk aggregation available.</p>"
 
         app = risk_report.get("application_risk", {})
+        total_findings = (
+            int(canonical_total_findings)
+            if canonical_total_findings is not None
+            else int(app.get("total_findings", 0) or 0)
+        )
         per_owasp = risk_report.get("per_owasp_category", {})
         execution_quality = risk_report.get("execution_quality", {}) or {}
         ssl_consistency = risk_report.get("ssl_consistency", {}) or {}
@@ -833,7 +844,7 @@ class HTMLReportGenerator:
         <div class="stats-grid">
             <div class="stat-card"><div class="label">Risk Rating</div><div class="value">{app.get('risk_rating','UNKNOWN')}</div></div>
             <div class="stat-card"><div class="label">Business Score</div><div class="value">{app.get('business_risk_score',0)}</div></div>
-            <div class="stat-card"><div class="label">Total Findings</div><div class="value">{app.get('total_findings',0)}</div></div>
+            <div class="stat-card"><div class="label">Total Findings</div><div class="value">{total_findings}</div></div>
         </div>
         <div class="compliance-card">
             <h3>Risk Confidence Controls</h3>
@@ -1034,6 +1045,16 @@ class HTMLReportGenerator:
         endpoint_inventory = discovery_summary.get("endpoint_inventory", []) or []
         api_candidates = discovery_summary.get("api_endpoint_candidates", []) or []
         high_value_targets = discovery_summary.get("high_value_targets", []) or []
+        api_endpoints_list = discovery_summary.get("api_endpoints_list", []) or []
+        if not api_endpoints_list:
+            api_endpoints_list = [str(r.get("url", "")) for r in api_candidates]
+        if not api_endpoints_list:
+            api_endpoints_list = [
+                str(r.get("url", ""))
+                for r in high_value_targets
+                if str(r.get("classification", "")).upper() == "API"
+            ]
+        api_endpoints_list = sorted(set([p for p in api_endpoints_list if p]))
         js_assets = discovery_summary.get("js_asset_inventory", {}) or {}
         parameter_inventory = discovery_summary.get("parameter_inventory", []) or []
         summary_metrics = discovery_summary.get("summary_metrics", {}) or {}
@@ -1168,7 +1189,7 @@ class HTMLReportGenerator:
                 <span class='tool-tag'>unverified_path: {endpoint_confidence_counts.get('unverified_path', 0)}</span>
             </div>
             <h3>API Endpoints Found</h3>
-            <div class="tools-list">{_render_tags(discovery_summary.get('api_endpoints_list', []), 'No API endpoints found')}</div>
+            <div class="tools-list">{_render_tags(api_endpoints_list, 'No API endpoints found')}</div>
             <h3 style="margin-top:12px;">All Endpoints / Directories / Pages</h3>
             <div class="tools-list">{_render_tags(discovery_summary.get('endpoints_list', []), 'No endpoints found')}</div>
             <h3 style="margin-top:12px;">Parameters</h3>

@@ -385,7 +385,23 @@ class AutomationScannerV2:
     def _build_discovery_detail_lists(self) -> dict:
         """Build detailed discovery lists for report sections."""
         endpoints = self.cache.get_normalized_endpoints()
-        api_endpoints = [ep for ep in endpoints if "/api" in ep.lower()]
+        api_endpoints = []
+        for ep in endpoints:
+            low = ep.lower()
+            if any(
+                marker in low
+                for marker in [
+                    "/api",
+                    "/v1",
+                    "/v2",
+                    "/graphql",
+                    "/wp-json",
+                    "swagger.json",
+                    "openapi.json",
+                    "/v3/api-docs",
+                ]
+            ):
+                api_endpoints.append(ep)
         params = sorted(
             str(p) for p in self.cache.params if self._is_testable_param_name(str(p))
         )
@@ -402,7 +418,7 @@ class AutomationScannerV2:
 
         return {
             "endpoints_list": endpoints,
-            "api_endpoints_list": api_endpoints,
+            "api_endpoints_list": sorted(set(api_endpoints)),
             "parameters_list": params,
             "technical_parameters_list": technical_params,
             "reflections_list": reflections,
@@ -1108,7 +1124,7 @@ class AutomationScannerV2:
         """
         try:
             result = self.zap_adapter.run_intelligence_scan(
-                base_url, include_active_scan=True
+                base_url, include_active_scan=False
             )
             if not result.success:
                 self.log(
@@ -5683,6 +5699,23 @@ class AutomationScannerV2:
     def _build_phase5_risk_report(self, proof_report: Dict[str, Any]) -> Dict[str, Any]:
         """Run strict risk scoring only on confirmed exploitation findings."""
         risk_engine = RiskEngine()
+
+        def _fallback_owasp_from_type(vuln_type: str) -> str:
+            low = str(vuln_type or "").lower()
+            if "misconfiguration" in low:
+                return "A05_SECURITY_MISCONFIGURATION"
+            if "crypto" in low or "tls" in low or "cipher" in low:
+                return "A02_CRYPTOGRAPHIC_FAILURES"
+            if "info" in low or "disclosure" in low:
+                return "A09_LOGGING_MONITORING_FAILURES"
+            if "auth" in low or "idor" in low or "access" in low:
+                return "A01_BROKEN_ACCESS_CONTROL"
+            if "ssrf" in low:
+                return "A10_SSRF"
+            if "xss" in low or "sql" in low or "inject" in low:
+                return "A03_INJECTION"
+            return "A05_SECURITY_MISCONFIGURATION"
+
         findings = (
             proof_report.get("findings", []) if isinstance(proof_report, dict) else []
         )
@@ -5692,7 +5725,10 @@ class AutomationScannerV2:
                 confidence = float(
                     proof.get("confidence", finding.get("confidence", 0.0)) or 0.0
                 )
-                owasp_category = str(finding.get("owasp") or "A03_INJECTION")
+                vuln_type = str(finding.get("type", "UNKNOWN"))
+                owasp_category = str(finding.get("owasp") or "")
+                if not owasp_category:
+                    owasp_category = _fallback_owasp_from_type(vuln_type)
                 sanitized_owasp = owasp_category.split(":", 1)[0].replace("-", "_")
                 if sanitized_owasp.startswith("A10"):
                     sanitized_owasp = "A10_SSRF"
@@ -5719,17 +5755,45 @@ class AutomationScannerV2:
                 risk_engine.calculate_risk(
                     endpoint=str(finding.get("endpoint", "")),
                     parameter=str(finding.get("parameter", "")),
-                    vulnerability_type=str(finding.get("type", "UNKNOWN")),
+                    vulnerability_type=vuln_type,
                     owasp_category=sanitized_owasp,
                     confidence_score=confidence,
                     corroboration_count=1,
                     tools=["exploitation_engine"],
-                    payload_success_rate=1.0,
+                    payload_success_rate=max(0.2, min(confidence, 1.0)),
                     privilege_level=str(finding.get("role", "UNAUTHENTICATED")).upper(),
                 )
             except Exception:
                 continue
-        return risk_engine.to_dict()
+
+        risk_report = risk_engine.to_dict()
+
+        # Keep phase5 risk severity aligned with proof-based confirmed severities.
+        severity_by_key: Dict[tuple[str, str, str], str] = {}
+        for finding in findings:
+            key = (
+                str(finding.get("endpoint", "")),
+                str(finding.get("parameter", "")),
+                str(finding.get("type", "UNKNOWN")),
+            )
+            severity_by_key[key] = str(finding.get("severity", "INFO")).upper()
+
+        by_severity = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
+        for row in risk_report.get("findings", []):
+            key = (
+                str(row.get("endpoint", "")),
+                str(row.get("parameter", "")),
+                str(row.get("vulnerability_type", "UNKNOWN")),
+            )
+            aligned = severity_by_key.get(key, str(row.get("risk_severity", "INFO")).upper())
+            row["risk_severity"] = aligned
+            by_severity[aligned] = by_severity.get(aligned, 0) + 1
+
+        summary = risk_report.get("summary", {})
+        summary["by_severity"] = by_severity
+        summary["total_findings"] = len(risk_report.get("findings", []))
+        risk_report["summary"] = summary
+        return risk_report
 
     def _build_fallback_endpoints_for_exploitation(self) -> List[Dict]:
         """Build minimal endpoint/param targets from discovery cache when crawler graph is unavailable."""
