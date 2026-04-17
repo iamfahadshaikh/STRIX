@@ -3,3 +3,7 @@ scan_results*
 *.pyc
 pre-commit-*.pyz
 */__pycache__/*
+Documentations/
+*.log
+COMMANDS.sh
+COMPLETE_USAGE_GUIDE.sh
